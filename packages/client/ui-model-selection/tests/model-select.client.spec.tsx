@@ -181,4 +181,97 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
   })
+
+  it('filters models and providers by search query', () => {
+    const groups = [
+      {
+        id: 'deepseek-official',
+        name: 'DeepSeek',
+        models: [
+          { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', inputModalities: ['text'] },
+          { id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision (Exp)', inputModalities: ['text', 'image'] },
+        ],
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        models: [
+          { id: 'qwen-vl', name: 'Qwen VL', inputModalities: ['text', 'image', 'video'] },
+        ],
+      },
+    ]
+    const directory = createSnapshotStore(state({ groups }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+
+    // Initially both groups are present
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(2)
+    expect(screen.getAllByTitle('Qwen VL').length).toBe(1)
+
+    // Search by modality 'video'
+    const searchInput = screen.getByPlaceholderText('搜索模型或提供商…')
+    fireEvent.change(searchInput, { target: { value: 'video' } })
+
+    expect(screen.getAllByTitle('Qwen VL').length).toBe(1)
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(1) // only trigger
+    expect(screen.queryByTitle('DeepSeek-V4-Flash-Vision (Exp)')).toBeNull()
+
+    // Search by modality 'image'
+    fireEvent.change(searchInput, { target: { value: 'image' } })
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash-Vision (Exp)').length).toBe(1)
+    expect(screen.getAllByTitle('Qwen VL').length).toBe(1)
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(1) // only trigger
+
+    // Search by German alias 'bild'
+    fireEvent.change(searchInput, { target: { value: 'bild' } })
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash-Vision (Exp)').length).toBe(1)
+    expect(screen.getAllByTitle('Qwen VL').length).toBe(1)
+
+    // Clear search query
+    fireEvent.change(searchInput, { target: { value: 'non-existent-xyz' } })
+    expect(screen.getByText('未找到匹配的模型。')).toBeTruthy()
+  })
+
+  it('collapses and expands provider groups on click', () => {
+    const groups = [{
+      id: 'deepseek-official',
+      name: 'DeepSeek',
+      models: [
+        { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' },
+      ],
+    }]
+    const directory = createSnapshotStore(state({ groups }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(2)
+
+    // Click header to collapse
+    const groupHeader = screen.getByTitle('DeepSeek')
+    fireEvent.click(groupHeader)
+
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(1) // only trigger
+
+    // Click header again to expand
+    fireEvent.click(groupHeader)
+    expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(2)
+  })
 })

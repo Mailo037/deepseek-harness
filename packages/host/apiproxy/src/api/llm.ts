@@ -86,4 +86,6 @@ export interface DiscoveredModelView {
   contextWindow?: number
   /** Maximum output tokens, when disclosed. */
   maxTokens?: number
+  /** Accepted input modalities when known (`text`, `image`, `video`). */
+  inputModalities?: string[]
 }

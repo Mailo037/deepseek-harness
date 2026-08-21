@@ -49,6 +49,14 @@ export interface HostDescriptionSource {
   subscribe(listener: () => void): () => void
 }
 
+/** Observable connection state published on generation loss/establishment. */
+export interface ConnectionStateSource {
+  /** Latest connection state ('connected' or 'reconnecting'). */
+  getSnapshot(): ConnectionState
+  /** Subscribe to connection state changes. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Required services (none — this is the wire root). */
 export const inject: string[] = []
 
@@ -64,6 +72,8 @@ export interface ConnectionHandle {
   readonly isLoopback: boolean
   /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
+  /** Connection state source for observing live connected/reconnecting transitions. */
+  readonly state: ConnectionStateSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
   /**
@@ -89,7 +99,9 @@ export function apply(ctx: Context): void {
   const rpc = fixtureClient?.rpc ?? createWebConnectionRpc()
   let started = false
   let description: HostDescription | undefined
+  let connectionState: ConnectionState = 'connected'
   const descriptionListeners = new Set<() => void>()
+  const stateListeners = new Set<() => void>()
   const publishDescription = (next: HostDescription | undefined): void => {
     if (Object.is(description, next)) return
     description = next
@@ -98,6 +110,17 @@ export function apply(ctx: Context): void {
         listener()
       } catch (error) {
         console.error('[web-runtime] host-description listener threw:', error)
+      }
+    }
+  }
+  const publishState = (next: ConnectionState): void => {
+    if (connectionState === next) return
+    connectionState = next
+    for (const listener of [...stateListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[web-runtime] connection-state listener threw:', error)
       }
     }
   }
@@ -111,6 +134,13 @@ export function apply(ctx: Context): void {
         return () => { descriptionListeners.delete(listener) }
       },
     },
+    state: {
+      getSnapshot: () => connectionState,
+      subscribe: (listener) => {
+        stateListeners.add(listener)
+        return () => { stateListeners.delete(listener) }
+      },
+    },
     rpc,
     start(sinks, config) {
       if (started) throw new Error('connection: the stream loop is already owned by another consumer')
@@ -119,6 +149,7 @@ export function apply(ctx: Context): void {
         ...sinks,
         onConnected: (next) => {
           publishDescription(next)
+          publishState('connected')
           // A description subscriber may synchronously stop the loop. In that
           // case publishDescription(undefined) has already retracted this
           // generation, so do not leak its stale connected notification to
@@ -128,6 +159,7 @@ export function apply(ctx: Context): void {
         },
         onStateChange: (state) => {
           if (state === 'reconnecting') publishDescription(undefined)
+          publishState(state)
           sinks.onStateChange?.(state)
         },
       }, config ?? {})
@@ -136,6 +168,7 @@ export function apply(ctx: Context): void {
         stop: () => {
           controller.stop()
           publishDescription(undefined)
+          publishState('reconnecting')
         },
       }
     },

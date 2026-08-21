@@ -23,6 +23,11 @@ export interface AssistantMarkdownProps {
   streaming: boolean
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
   interrupted?: boolean | undefined
+  /**
+   * Render reasoning blocks as Think rows; false omits them (ChatView shows
+   * the reasoning in the tool window instead when it splits a mixed step).
+   */
+  includeReasoning?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   /** Resolved prose file mentions for this Assistant's closing turn. */
@@ -33,22 +38,23 @@ export interface AssistantMarkdownProps {
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages, mentions, t,
+  blocks, streaming, interrupted, includeReasoning = true, renderMessageImages, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const codeLabels = useMemo(() => ({ copyLabel: t('copy'), copiedLabel: t('copied') }), [t])
-  const last = blocks.length - 1
+  const visibleBlocks = includeReasoning ? blocks : blocks.filter(block => block.kind !== 'reasoning')
+  const last = visibleBlocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
   // between tool groups — skip the shell unless something visible remains.
   const hasVisible = streaming
     || interrupted === true
-    || blocks.some(block => block.kind !== 'tool-call')
+    || visibleBlocks.some(block => block.kind !== 'tool-call')
   if (!hasVisible) return null
   const rendered: ReactNode[] = []
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i]
+  for (let i = 0; i < visibleBlocks.length; i++) {
+    const block = visibleBlocks[i]
     if (block === undefined) continue
     switch (block.kind) {
       case 'text':

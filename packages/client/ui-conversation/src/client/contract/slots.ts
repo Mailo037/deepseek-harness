@@ -40,6 +40,8 @@ export interface ComposerAttachmentsOwnerProps {
   onAddImages: (files: readonly File[]) => void
   /** Remove one draft image through the conversation service. */
   onRemoveImage: (id: DraftAttachmentId) => void
+  /** Warning tooltip when the active model does not support this attachment. */
+  warning?: string | undefined
   /** Display-ready limits for the drop invitation. */
   dropLimits?: { readonly count: number; readonly size: string } | undefined
 }
@@ -404,6 +406,11 @@ export interface ChatNodeOwnerProps {
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
+  /**
+   * Assistant renderer omits its reasoning blocks — ChatView shows them as a
+   * Think row inside the adjacent tool window instead of inline above the text.
+   */
+  hideAssistantReasoning?: boolean | undefined
 }
 
 /** Full props of one registered keyed Chat business renderer. */

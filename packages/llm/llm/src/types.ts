@@ -152,6 +152,7 @@ export interface LlmProviderInfo {
 export interface ModelModalityMap {
   text: 'text'
   image: 'image'
+  video: 'video'
 }
 
 /** Any declared provider model modality. */

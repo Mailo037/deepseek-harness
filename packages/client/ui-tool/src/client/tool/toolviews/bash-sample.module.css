@@ -117,6 +117,8 @@
 }
 
 .leading {
+  /* Solid base disc so the ToolCallGroup connector line passing through the
+     icon column centre does not show through the glyph. */
   position: relative; /* .chevronHover overlay anchor */
   flex: none;
   width: 16px;
@@ -125,6 +127,8 @@
   align-items: center;
   justify-content: center;
   margin-right: 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -195,6 +199,7 @@
 .bodyWrap {
   display: flex;
   flex-direction: column;
+  padding-left: 24px;
 }
 
 .inspectButton {

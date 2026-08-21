@@ -50,6 +50,13 @@ async function startHost(): Promise<void> {
       // The booted app requested exit (e.g. --help). Close cleanly.
       void shutdown(code)
     },
+    onRestart: () => {
+      // The booted app applied a self-update: schedule Electron's relaunch
+      // (re-executes this app with the same arguments after exit), then run
+      // the ordinary shutdown so sessions flush before the process ends.
+      app.relaunch()
+      void shutdown(0)
+    },
   })
   createWindow(state.host.url)
 }

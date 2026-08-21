@@ -41,12 +41,26 @@ export interface AppExit {
   (code: number): void
 }
 
+/**
+ * Request bounded process replacement; the launcher wires it to its shutdown
+ * controller. After the tree has been disposed the launcher starts this same
+ * invocation anew and exits, so a restarted app serves updated code from the
+ * same command line. A launcher that cannot replace itself provides no value,
+ * and `ctx.get('appRestart')` reads `undefined`.
+ */
+export interface AppRestart {
+  /** Request dispose → respawn → exit exactly once; repeat calls are no-ops. */
+  (): void
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The invocation's inner arguments; provided by a launcher before the tree mounts. */
     cmdlineArgs?: CmdlineArgs
     /** Bounded process-exit request; provided by a launcher before the tree mounts. */
     appExit?: AppExit
+    /** Bounded process-replacement request; provided only by launchers that can respawn themselves. */
+    appRestart?: AppRestart
   }
 }
 
@@ -56,6 +70,11 @@ export interface CmdlineHost {
   args: readonly string[]
   /** Bounded process-exit request. */
   exit: AppExit
+  /**
+   * Bounded process-replacement request; optional because not every launcher
+   * can respawn itself (an embedding host owns its own lifecycle).
+   */
+  restart?: AppRestart
 }
 
 /**
@@ -63,12 +82,13 @@ export interface CmdlineHost {
  * tree entry mounts. Both are launcher facts, not config: an embedding host
  * with no command line provides an empty argument list.
  * @param ctx - the host context the tree will mount under.
- * @param host - the invocation's arguments and its exit request.
+ * @param host - the invocation's arguments and its exit (and optional restart) request.
  */
 export function provideCmdline(ctx: Context, host: CmdlineHost): void {
   const snapshot: readonly string[] = Object.freeze([...host.args])
   ctx.provide('cmdlineArgs', { get: () => snapshot })
   ctx.provide('appExit', host.exit)
+  if (host.restart !== undefined) ctx.provide('appRestart', host.restart)
 }
 
 /** The process streams commander output is written to; production writes to the process. */

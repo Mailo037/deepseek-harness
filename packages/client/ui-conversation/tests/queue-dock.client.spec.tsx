@@ -5,7 +5,7 @@
  * strict steering, failure notices, and live retirement.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import {
   EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
@@ -244,23 +244,24 @@ describe('QueueDock', () => {
   })
 
   it('reorders with ArrowUp/ArrowDown on the handle', async () => {
-    const snap = snapshotWith([row('i-1', 'one'), row('i-2', 'two')])
+    const snap = snapshotWith([row('i-1', 'one'), row('i-2', 'two'), row('i-3', 'three')])
     const updateQueue = vi.fn(() => Promise.resolve())
     const view = render(
       <QueueDock {...kitFor(snap, { updateQueue })} useSession={liveSession(snap).useSession} />,
     )
-    fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
+    fireEvent.click(view.getByRole('button', { name: '3 条排队消息' }))
 
-    // Re-query per gesture: each op flips busy and rerenders the row.
-    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'ArrowUp' })
+    // Re-query per gesture: each op flips busy and rerenders the row. The
+    // snapshot fixture never moves, so the middle handle stays the source.
+    fireEvent.keyDown(within(view.container).getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'ArrowUp' })
     await waitFor(() => {
       expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 0 })
     })
-    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'ArrowDown' })
+    fireEvent.keyDown(within(view.container).getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'ArrowDown' })
     await waitFor(() => {
       expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 2 })
     })
-    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'Enter' })
+    fireEvent.keyDown(within(view.container).getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'Enter' })
     expect(updateQueue).toHaveBeenCalledTimes(2)
   })
 
@@ -282,8 +283,8 @@ describe('QueueDock', () => {
   it('omits the drag handle for a single row and for subagent queues', () => {
     const single = snapshotWith([row('i-solo', 'only')])
     const solo = render(<QueueDock {...kitFor(single)} useSession={liveSession(single).useSession} />)
-    expect(solo.queryByLabelText('拖动调整发送顺序')).toBeNull()
-    expect(solo.getByText('only')).toBeTruthy()
+    expect(within(solo.container).queryByLabelText('拖动调整发送顺序')).toBeNull()
+    expect(within(solo.container).getByText('only')).toBeTruthy()
 
     const snap = {
       ...snapshotWith([row('i-sub', 'child one'), row('i-sub2', 'child two')]),
@@ -293,11 +294,11 @@ describe('QueueDock', () => {
       },
     }
     const child = render(<QueueDock {...kitFor(snap)} useSession={liveSession(snap).useSession} />)
-    fireEvent.click(child.getByRole('button', { name: '2 条排队消息' }))
-    expect(child.queryByLabelText('拖动调整发送顺序')).toBeNull()
+    fireEvent.click(within(child.container).getByRole('button', { name: '2 条排队消息' }))
+    expect(within(child.container).queryByLabelText('拖动调整发送顺序')).toBeNull()
     // Subagent queues render rows read-only: no handle, no actions.
-    expect(child.queryByLabelText('删除排队消息')).toBeNull()
-    expect(child.getByText('child one')).toBeTruthy()
+    expect(within(child.container).queryByLabelText('删除排队消息')).toBeNull()
+    expect(within(child.container).getByText('child one')).toBeTruthy()
   })
 
   it('defaults a new multi-row queue to collapsed after the prior queue empties', () => {

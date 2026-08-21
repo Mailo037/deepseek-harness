@@ -10,6 +10,7 @@ A launcher calls `provideCmdline(ctx, host)` before any tree entry mounts, which
 
 - `ctx.cmdlineArgs` — the invocation's inner arguments. `get()` is the whole interface, and it returns a snapshot: `dsh --profile tui --resume abc` yields `['--resume', 'abc']`.
 - `ctx.appExit` — a bounded process-exit request, wired to the launcher's shutdown controller.
+- `ctx.appRestart` (optional) — a bounded process-replacement request: the launcher disposes the tree, starts this exact invocation again (a detached respawn for the CLI; `app.relaunch()` for Electron), and exits, so a restarted app serves updated code from the same command line. A launcher that cannot replace itself provides no value, and `ctx.get('appRestart')` reads `undefined` — consumers degrade (the GUI hides the self-update gesture) instead of failing late.
 
 An embedding host with no command line provides an empty list; that is the honest answer, not a missing value.
 

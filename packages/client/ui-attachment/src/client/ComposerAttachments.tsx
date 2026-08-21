@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {
   ComposerAttachment, ComposerAttachmentsProps,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -9,15 +9,101 @@ import { ImageLightbox } from '../ImageLightbox.tsx'
 import { attachmentRailLabels, dropOverlayLabels, lightboxLabels } from './labels.ts'
 import css from './ComposerAttachments.module.css'
 
+/** Model description structure from the directory store. */
+interface ModelCatalogModelLike {
+  id: string
+  name?: string
+  inputModalities?: string[]
+}
+
+interface ModelProviderGroupLike {
+  provider: string
+  models: readonly ModelCatalogModelLike[]
+}
+
+interface ModelDirectorySnapshotLike {
+  current: { provider?: string; model?: string } | null
+  groups: readonly ModelProviderGroupLike[]
+}
+
+export interface ComposerAttachmentsInjected {
+  directory?: {
+    subscribe: (fn: () => void) => () => void
+    getSnapshot: () => ModelDirectorySnapshotLike | null
+  } | undefined
+}
+
 /** Rail item retaining its browser-owned attachment for callbacks. */
 interface ComposerRailItem extends AttachmentRailItem {
   attachment: ComposerAttachment
 }
 
+/** Check whether a model ID or catalog entry lacks image capability. */
+function isModelMissingImageSupport(
+  modelId: string | undefined,
+  groups: readonly ModelProviderGroupLike[] | undefined,
+): boolean {
+  if (!modelId) return false
+  if (groups) {
+    for (const group of groups) {
+      for (const m of group.models) {
+        if (m.id === modelId) {
+          if (m.inputModalities && m.inputModalities.length > 0) {
+            return !m.inputModalities.includes('image')
+          }
+          if (
+            modelId.includes('vision')
+            || modelId.includes('gemini')
+            || modelId.includes('ox-alpha')
+            || modelId.includes('vl')
+            || modelId.includes('grok-4')
+            || modelId.includes('seed-2')
+          ) {
+            return false
+          }
+          return true
+        }
+      }
+    }
+  }
+  if (
+    modelId.includes('vision')
+    || modelId.includes('gemini')
+    || modelId.includes('ox-alpha')
+    || modelId.includes('vl')
+    || modelId.includes('grok-4')
+    || modelId.includes('seed-2')
+  ) {
+    return false
+  }
+  if (
+    modelId.startsWith('deepseek-v4')
+    || modelId.startsWith('deepseek-v3')
+    || modelId.includes('llama')
+    || modelId.includes('mistral')
+    || modelId.includes('qwen-2.5')
+    || modelId.includes('r1')
+  ) {
+    return true
+  }
+  return false
+}
+
 /** Draft-image rail, document drop target, and original-image preview slot entry. */
 export function ComposerAttachments({
-  attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, t,
-}: ComposerAttachmentsProps) {
+  attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, warning, directory, t,
+}: ComposerAttachmentsProps & ComposerAttachmentsInjected) {
+  const dirState = useSyncExternalStore(
+    fn => (directory ? directory.subscribe(fn) : () => {}),
+    () => (directory ? directory.getSnapshot() : null),
+  )
+
+  const isModelMissingImage = useMemo(() => {
+    if (!dirState?.current?.model) return false
+    return isModelMissingImageSupport(dirState.current.model, dirState.groups)
+  }, [dirState?.current?.model, dirState?.groups])
+
+  const effectiveWarning = warning ?? (isModelMissingImage ? t('image.modelUnsupported') : undefined)
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
@@ -83,8 +169,9 @@ export function ComposerAttachments({
     previewUrl: attachment.previewUrl,
     alt: attachment.file.name || t('image.pending'),
     removeLabel: t('image.remove', { name: attachment.file.name }),
+    warning: effectiveWarning,
     attachment,
-  })), [attachments, t])
+  })), [attachments, t, effectiveWarning])
 
   return (
     <>

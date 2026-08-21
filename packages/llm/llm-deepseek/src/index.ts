@@ -51,9 +51,15 @@ const PROVIDER = 'deepseek-official'
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
   { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW },
   { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: DEFAULT_CONTEXT_WINDOW },
+  {
+    id: 'deepseek-v4-flash-vision-exp',
+    name: 'DeepSeek-V4-Flash-Vision (Exp)',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+    inputModalities: ['text', 'image'],
+  },
 ]
 
-const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+const MODEL_MODALITIES = ['text', 'image', 'video'] as const satisfies readonly ModelModality[]
 
 /**
  * Plugin config, validated by the same-named schemastery schema and doubling
@@ -147,7 +153,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
     if (inputModalities.length === 0) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not be empty`)
     }
-    if (inputModalities.some(modality => !MODEL_MODALITIES.includes(modality))) {
+    if (inputModalities.some(modality => !(MODEL_MODALITIES as readonly string[]).includes(modality))) {
       throw new Error(
         `llm-deepseek: catalog model "${model.id}" inputModalities must contain only "text" and "image"`,
       )

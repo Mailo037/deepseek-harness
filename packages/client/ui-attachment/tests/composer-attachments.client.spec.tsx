@@ -157,4 +157,70 @@ describe('ComposerAttachments', () => {
     fireEvent.click(view.getByTitle('查看原图'))
     expect(view.getByAltText('原图')).toBeTruthy()
   })
+
+  it('reactively shows and removes warning badge on attachments when active model changes', () => {
+    let snapshot = {
+      current: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      groups: [
+        {
+          provider: 'deepseek',
+          models: [
+            { id: 'deepseek-v4-flash', inputModalities: ['text'] },
+            { id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
+          ],
+        },
+      ],
+    }
+    const listeners = new Set<() => void>()
+    const fakeDirectory = {
+      subscribe: (fn: () => void) => {
+        listeners.add(fn)
+        return () => { listeners.delete(fn) }
+      },
+      getSnapshot: () => snapshot,
+    }
+
+    const image = attachment('draft-1', 'photo.png')
+    const view = render(
+      <ComposerAttachments
+        {...props({ attachments: [image] })}
+        directory={fakeDirectory}
+      />,
+    )
+
+    // With deepseek-v4-flash (text-only), the warning badge is shown immediately
+    expect(view.getByLabelText('image.modelUnsupported')).toBeDefined()
+
+    // Switch model to vision-capable model
+    snapshot = {
+      ...snapshot,
+      current: { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' },
+    }
+    listeners.forEach(fn => fn())
+    view.rerender(
+      <ComposerAttachments
+        {...props({ attachments: [image] })}
+        directory={fakeDirectory}
+      />,
+    )
+
+    // Warning badge disappears immediately
+    expect(view.queryByLabelText('image.modelUnsupported')).toBeNull()
+
+    // Switch back to text-only model
+    snapshot = {
+      ...snapshot,
+      current: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    }
+    listeners.forEach(fn => fn())
+    view.rerender(
+      <ComposerAttachments
+        {...props({ attachments: [image] })}
+        directory={fakeDirectory}
+      />,
+    )
+
+    // Warning badge reappears immediately
+    expect(view.getByLabelText('image.modelUnsupported')).toBeDefined()
+  })
 })

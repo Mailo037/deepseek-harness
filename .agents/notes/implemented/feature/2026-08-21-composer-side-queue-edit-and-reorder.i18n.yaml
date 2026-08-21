@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-composer-side-queue-edit-and-reorder.md
+2026-08-21-composer-side-queue-edit-and-reorder.md: 1f1b5c93ca68876393f2f02fd77d968f1e3948d2
+2026-08-21-composer-side-queue-edit-and-reorder.zh.md: 666c7fd6a44e98670a8ab0f38593b72b541195ed

@@ -1,7 +1,20 @@
 /* Trigger row label (the shell's button provides layout/colors; the label
- * only guards against overflow during the sidebar collapse crossfade). */
+ * only guards against overflow during the sidebar collapse crossfade) and
+ * the update badge (a blue dot pinned to the icon's top-right corner). */
 
 .triggerLabel {
   overflow: hidden;
   white-space: nowrap;
+}
+
+.updateBadge {
+  position: absolute;
+  /* The shell's trigger button is the positioning context; the dot rides the
+   * icon's top-right corner in both sidebar widths. */
+  top: 8px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--dsw-static-blue-500);
 }

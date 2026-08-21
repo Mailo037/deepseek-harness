@@ -61,11 +61,14 @@
   border-radius: 6px;
 }
 
-/* Bounded tool/think window: a contiguous run of tool seats (and the Think
-   rows woven with them) lives inside one max-height scroll frame. The header
-   bar sits ABOVE the scrollport — it never scrolls with the rows — and shows
-   the run's last action; hovering swaps the action icon for the chevron. */
+/* Tool/think window: a contiguous run of tool seats (and the Think rows woven
+   with them) under one header naming the run's last action; hovering swaps
+   the action icon for the chevron. The body grows in flow: the column's
+   scrollport stays the conversation's only vertical scroller, and each row's
+   payload caps (IO sections, terminal output, card blocks) bound what one
+   disclosure can add. */
 .toolGroup {
+  position: relative; /* timeline connector-line anchor (spans header + body) */
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -107,9 +110,13 @@
 }
 
 .idleLead {
+  /* Solid base disc so the connector line rising from the header to the tool
+     icons does not show through the action icon. */
   display: inline-flex;
   opacity: 1;
   transition: opacity 100ms ease;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
 }
 
 .hoverChevron {
@@ -122,16 +129,12 @@
 }
 
 .toolGroupToggle:hover .idleLead,
-.toolGroupToggle:focus-visible .idleLead,
-.turnSummary:hover .idleLead,
-.turnSummary:focus-visible .idleLead {
+.toolGroupToggle:focus-visible .idleLead {
   opacity: 0;
 }
 
 .toolGroupToggle:hover .hoverChevron,
-.toolGroupToggle:focus-visible .hoverChevron,
-.turnSummary:hover .hoverChevron,
-.turnSummary:focus-visible .hoverChevron {
+.toolGroupToggle:focus-visible .hoverChevron {
   opacity: 1;
 }
 
@@ -173,14 +176,40 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.toolGroupScroll {
+/* The unfold chevron rides the line's right end, past the duration text. */
+.turnSummaryChevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.toolGroupBody {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: min(40vh, 420px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 4px;
+}
+
+/* Timeline connector: a vertical 1px hairline through the icon column centre
+   (8px = half of the 16px left-aligned tool icon) linking a run's tool calls
+   down to the last call. The segment that rises to the header's action icon
+   (11px ≈ its vertical centre in the 24px toggle) only shows while the group
+   is open — collapsed, the line starts below the header instead of leaving a
+   stray hook by the icon. Each row's icon carries a base-solid circular
+   background that occludes the line under it, so the visible segment reads
+   between the icons and on up to the header icon when open. */
+.toolGroup::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 28px; /* below the 24px header toggle + its 4px margin */
+  bottom: 2px;
+  width: 1px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* Open only: run the line up to the header's action icon centre. */
+.toolGroup:not([data-hidden])::before {
+  top: 11px;
 }
 
 /* Selection still sets data-selected for details linkage; no outline —

@@ -123,6 +123,24 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
+   * Open a session as a navigation side effect. Failures (the manager not
+   * knowing the id yet, transport loss) are non-fatal diagnostics — the
+   * current view stays usable, matching the create/connect posture. The port
+   * face declares `void`, so both synchronous throws and an implementation's
+   * promise rejection are absorbed.
+   * @param sessionId - the session to select.
+   */
+  private openSession(sessionId: SessionId): void {
+    try {
+      Promise.resolve(this.sessions.open(sessionId)).catch((reason: unknown) => {
+        console.warn('open session failed:', reason)
+      })
+    } catch (error: unknown) {
+      console.warn('open session failed:', error)
+    }
+  }
+
+  /**
    * Follow the first complete Workspace/Session baseline and select a default
    * session exactly once. A restored current session wins; otherwise the most
    * recent Workspace is connected (reusing or creating its blank session).
@@ -152,7 +170,7 @@ export class WorkspaceRuntime implements IWorkspaces {
         (sessionId) => {
           if (disposed) return
           if (this.sessions.list.getSnapshot().current === undefined) {
-            this.sessions.open(sessionId)
+            this.openSession(sessionId)
           }
           state = 'done'
         },
@@ -196,17 +214,17 @@ export class WorkspaceRuntime implements IWorkspaces {
         return s !== undefined && s.blank && !accounted.has(id)
       })
       if (blankUngrouped !== undefined) {
-        this.sessions.open(blankUngrouped)
+        this.openSession(blankUngrouped)
         return
       }
       void this.sessions.create({}).then(
-        (sessionId) => { this.sessions.open(sessionId) },
+        (sessionId) => { this.openSession(sessionId) },
         (reason: unknown) => { console.warn('new session failed:', reason) },
       )
       return
     }
     void this.connectWorkspace(target).then(
-      (sessionId) => { this.sessions.open(sessionId) },
+      (sessionId) => { this.openSession(sessionId) },
       (reason: unknown) => { console.warn('new session failed:', reason) },
     )
   }

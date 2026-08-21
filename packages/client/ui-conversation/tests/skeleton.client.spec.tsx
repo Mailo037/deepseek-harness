@@ -297,20 +297,19 @@ describe('ConversationRoot resident composer', () => {
     expect(seat('conversation.input.plan')).toEqual({ locked: true })
   })
 
-  it('lets the no-workspace posture win over a block', () => {
-    // Picking a workspace is the earlier prerequisite; naming a model first
-    // would send the user somewhere they cannot act yet.
+  it('applies a composer block even to a blank standalone session', () => {
+    // A standalone (no-workspace) session is usable; a block raised for it is
+    // honored rather than dismissed by forcing a workspace pick first.
     const b = mount(conversationSnapshot({ composerPhase: 'blank' }), [], undefined, {
       summaryBlank: true,
       composerBlock: { reason: 'select a model first' },
     })
     const box = b.view.getByRole('textbox') as HTMLTextAreaElement
-    expect(box.disabled).toBe(false)
-    expect(box.readOnly).toBe(true)
-    expect(box.getAttribute('aria-haspopup')).toBe('menu')
-    expect(box.placeholder).not.toBe('select a model first')
+    expect(box.disabled).toBe(true)
+    expect(box.placeholder).toBe('select a model first')
+    expect(box.getAttribute('aria-haspopup')).toBeNull()
     const modelSeat = b.seatOwners.filter(call => call.key === 'conversation.input.model').at(-1)?.owner
-    expect(modelSeat).toEqual({ locked: true })
+    expect(modelSeat).toEqual({ locked: false })
   })
 
   it('keeps composer text in the machine, mirrors to the chat store, and submits through the sink', () => {

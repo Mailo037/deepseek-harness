@@ -170,6 +170,34 @@ describe('connection client apply', () => {
     }
   })
 
+  it('publishes connection state transitions through handle.state', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
+    const handle = await mount()
+    const states: string[] = []
+    const stopState = handle.state.subscribe(() => {
+      states.push(handle.state.getSnapshot())
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const loop = handle.start({}, { backoffBaseMs: 10, backoffFactor: 1, backoffMaxMs: 10, streamOpenTimeoutMs: 500 })
+    try {
+      await vi.waitFor(() => {
+        expect(handle.state.getSnapshot()).toBe('connected')
+      })
+      const timing = (globalThis as Record<string, unknown>).__fxTiming as
+        | { breakStreams(): void }
+        | undefined
+      if (timing === undefined) throw new Error('fixture timing hooks missing')
+      timing.breakStreams()
+
+      await vi.waitFor(() => { expect(states).toContain('reconnecting') })
+      await vi.waitFor(() => { expect(handle.state.getSnapshot()).toBe('connected') })
+    } finally {
+      stopState()
+      loop.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('WebApiClient keeps unary calls and respond on globalThis.fetch', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '' }
     const handle = await mount()

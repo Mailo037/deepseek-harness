@@ -25,8 +25,13 @@ export const zh = {
   'action.reload': '重新加载',
   'warning.groupLoad': '{name} 加载失败：{message}',
   'empty.models': '没有可用的模型。',
+  'empty.search': '未找到匹配的模型。',
   'blocked.composer': '当前模型不可用，请先选择模型',
   'empty.efforts': '当前模型未提供推理等级。',
+  'search.placeholder': '搜索模型或提供商…',
+  'modality.text': '文本',
+  'modality.image': '图片',
+  'modality.video': '视频',
 } satisfies Record<string, string>
 
 /** The model namespace key union. */
@@ -49,6 +54,11 @@ export const en = {
   'action.reload': 'Reload',
   'warning.groupLoad': '{name} failed to load: {message}',
   'empty.models': 'No models available.',
+  'empty.search': 'No matching models found.',
   'blocked.composer': 'This model is unavailable — select one to continue',
   'empty.efforts': 'This model provides no reasoning effort levels.',
+  'search.placeholder': 'Search models or providers…',
+  'modality.text': 'Text',
+  'modality.image': 'Image',
+  'modality.video': 'Video',
 } satisfies Record<ModelKey, string>

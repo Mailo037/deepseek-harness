@@ -2618,6 +2618,28 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     host: {
       describe: request => ok(request, {
         version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
+        repository: {
+          branch: 'master', commit: 'f1xture00000000000000000000000000000000', remoteUrl: null,
+        },
+        canRestart: true,
+        surface: 'web',
+      }),
+      // Deterministic update plane: one commit behind on origin/master with a
+      // stable subject, and an apply that reports the fast-forward without
+      // touching any process.
+      checkUpdate: request => ok(request, {
+        available: true,
+        branch: 'master',
+        commit: 'f1xture00000000000000000000000000000000',
+        upstream: 'origin/master',
+        behind: 1,
+        latest: { commit: 'a11c0de000000000000000000000000000000000', subject: 'fixture: newest upstream commit' },
+        checkedAt: 0,
+      }),
+      applyUpdate: request => ok(request, {
+        advanced: true,
+        previousCommit: 'f1xture00000000000000000000000000000000',
+        commit: 'a11c0de000000000000000000000000000000000',
       }),
       // Deterministic native pick: the keyless lanes drive the full
       // pick-then-adopt path without an OS chooser (design-mock content,
@@ -3231,6 +3253,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'subagent.prompt': return this.api.subagents.prompt(request, signal)
       case 'subagent.interrupt': return this.api.subagents.interrupt(request)
       case 'host.describe': return this.api.host.describe(request)
+      case 'host.checkUpdate': return this.api.host.checkUpdate(request)
+      case 'host.applyUpdate': return this.api.host.applyUpdate(request)
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)

@@ -106,6 +106,38 @@ describe('resident composer', () => {
     await runtime.dispose()
   })
 
+  it('keeps a blank standalone session usable (not inert) after picking No workspace', async () => {
+    const runtime = await SlotTestRuntime.create()
+    runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
+    runtime.provide('remote', { $on: () => () => {} })
+    runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    runtime.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
+    const locale = new LocaleRuntime(runtime.ctx)
+    runtime.provide('locale', locale)
+    runtime.slots.installLocale(locale)
+    // A standalone (No workspace) session: no owning Workspace and the list is ready.
+    await runtime.sessions.add({
+      id: SID,
+      summary: { title: 'S', displayTitle: 'S', cwd: '', blank: true },
+      snapshot: { nodes: [], blank: true, composerPhase: 'blank' },
+      session: {
+        loadOlder: vi.fn<ISession['loadOlder']>(),
+        prompt: vi.fn<ISession['prompt']>(async () => ({ ok: true, value: { accepted: true } })),
+      },
+    })
+    await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
+    await runtime.mount({ inject: [...inject], apply })
+    runtime.slots.register({ name: 'conversation.hero.workspace' }, WorkspaceProbe)
+    const view = runtime.renderRoot()
+    const textarea = view.container.querySelector('textarea')!
+    // The session is editable with the hero prompt, NOT gated behind a Workspace pick.
+    expect(textarea.disabled).toBe(false)
+    expect(textarea.readOnly).toBe(false)
+    // The chip still reflects the standalone posture (visible "No workspace" label).
+    expect(view.getByText('无工作区')).toBeTruthy()
+    await runtime.dispose()
+  })
+
   it('keeps the complete Hero tree mounted when the first Workspace session appears', async () => {
     const runtime = await SlotTestRuntime.create()
     runtime.provide('connection', { api: { settings: {} }, isLoopback: false })

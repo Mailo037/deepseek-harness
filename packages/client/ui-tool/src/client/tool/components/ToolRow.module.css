@@ -38,7 +38,12 @@
 }
 
 .leading {
+  /* Solid base disc so the ToolCallGroup connector line passing through the
+     icon column centre does not show through the glyph (position unchanged —
+     the row still starts flush left). */
   flex-shrink: 0;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
 }
 
 /* Cordis lifecycle tools retain their generic row mechanics while carrying a
@@ -130,10 +135,14 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* Expanded body + Inspect pill wrapper (sibling of .row: clicks never toggle). */
+/* Expanded body + Inspect pill wrapper (sibling of .row: clicks never toggle).
+   Left padding clears the ToolCallGroup connector line (icon column centre at
+   8px), so an opened card starts to the right of it instead of the line
+   running through the content. */
 .bodyWrap {
   display: flex;
   flex-direction: column;
+  padding-left: 24px;
 }
 
 /* Hover-revealed jump to the trajectory record: a small pill in real flow

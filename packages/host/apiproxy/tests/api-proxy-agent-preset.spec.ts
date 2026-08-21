@@ -111,7 +111,15 @@ async function harness(
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
-  ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
+  ctx.provide('sessionPersistence', (persistence ?? {
+    list: () => Promise.resolve([]),
+    // JSONL-shaped artifact location so unlinked-session project directories
+    // derive from the session storage root like the real backend's do.
+    locate: (meta: { readonly id: string }) => ({
+      kind: 'jsonl',
+      path: join(cwd, 'sessions', meta.id.slice(0, 2), meta.id, 'session.jsonl.zstd'),
+    }),
+  }) as never)
   if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds) as never)
 
   const factory: AgentFactory = {

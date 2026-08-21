@@ -93,6 +93,9 @@
       "path": "../directory-picker"
     },
     {
+      "path": "../self-update"
+    },
+    {
       "path": "../../extensions/cordis-host-runner"
     },
     {

@@ -75,7 +75,15 @@ async function harness(
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
-  ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  ctx.provide('sessionPersistence', {
+    list: () => Promise.resolve([]),
+    // JSONL-shaped artifact location so unlinked-session project directories
+    // derive from the session storage root like the real backend's do.
+    locate: (meta: { readonly id: string }) => ({
+      kind: 'jsonl',
+      path: join(root, 'sessions', meta.id.slice(0, 2), meta.id, 'session.jsonl.zstd'),
+    }),
+  } as never)
   await ctx.plugin(WorkspaceRegistry)
 
   const factory: AgentFactory = {
@@ -604,7 +612,7 @@ describe('Host Workspace increments', () => {
     const sessionId = SessionId('session-move-test')
     expectOk(await api.sessions.create(request({ workspaceId: wsA.workspaceId, sessionId })))
 
-    let listA = expectOk(await api.workspace.list(request({})))
+    const listA = expectOk(await api.workspace.list(request({})))
     expect(listA.items.find(w => w.workspaceId === wsA.workspaceId)?.sessionIds).toContain(sessionId)
     expect(listA.items.find(w => w.workspaceId === wsB.workspaceId)?.sessionIds).not.toContain(sessionId)
 
@@ -614,7 +622,7 @@ describe('Host Workspace increments', () => {
       targetWorkspaceId: wsB.workspaceId,
     })))
 
-    let listB = expectOk(await api.workspace.list(request({})))
+    const listB = expectOk(await api.workspace.list(request({})))
     expect(listB.items.find(w => w.workspaceId === wsA.workspaceId)?.sessionIds).not.toContain(sessionId)
     expect(listB.items.find(w => w.workspaceId === wsB.workspaceId)?.sessionIds).toContain(sessionId)
   })

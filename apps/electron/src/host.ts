@@ -80,6 +80,14 @@ export interface BootWebHostOptions {
   port?: number
   /** Called when a booted app requests exit (for example `--help`). */
   onExit?: (code: number) => void
+  /**
+   * Called when a booted app requests process replacement (`ctx.appRestart`,
+   * the self-update flow): the implementation schedules Electron's relaunch
+   * and then shuts the host down, so the app re-executes into the updated
+   * code. Absent, `ctx.appRestart` stays unserved and the GUI reports the
+   * restart capability as unavailable.
+   */
+  onRestart?: () => void
 }
 
 /** A booted web host owned by the caller: the settled tree and its URL. */
@@ -145,6 +153,7 @@ export async function bootWebHost(options: BootWebHostOptions = {}): Promise<Web
     provideCmdline(hostCtx, {
       args,
       exit: code => options.onExit?.(code),
+      ...(options.onRestart === undefined ? {} : { restart: options.onRestart }),
     })
   })
   app.current = ctx

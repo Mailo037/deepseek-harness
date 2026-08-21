@@ -10,8 +10,10 @@
  * through the three framework shares — zero cordis or framework imports,
  * zero self-made hooks.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { ConnectionLostOverlay } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   computeColumns, drawerWidth, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_BREAKPOINT,
@@ -24,6 +26,10 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & {
+    /** Observable connection state handle from the wire root. */
+    readonly connection?: ConnectionHandle | undefined
+  }
 
 /**
  * How long the drawer column keeps its overlay mode after the drawer closes:
@@ -98,7 +104,13 @@ export function AppFrame({
   useSessions,
   actions,
   renderSlot,
+  connection,
 }: AppFrameProps) {
+  const connectionState = useSyncExternalStore(
+    connection === undefined ? (() => () => {}) : connection.state.subscribe,
+    connection === undefined ? (() => 'connected') : connection.state.getSnapshot,
+  )
+  const reconnecting = connectionState === 'reconnecting'
   const panels = useStore(s => s)
   const detailsSession = useSessions((s) => {
     const current = s.current
@@ -228,6 +240,7 @@ export function AppFrame({
           the drawer is a phone overlay, not a resizable column. */}
       {!sidebarCollapsed && !drawerMode && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      <ConnectionLostOverlay reconnecting={reconnecting} />
     </div>
   )
 }

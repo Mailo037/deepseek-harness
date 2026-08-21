@@ -12,6 +12,16 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.input.attachments', () => ctx.slots.register({
     name: 'conversation.input.attachments',
     locale: 'conversation',
+    inject: (sessionId) => {
+      try {
+        const models = ctx.reflect.get('modelDirectories', false) as { directoryFor: (id: string) => { store: unknown } } | undefined
+        return {
+          directory: sessionId && models ? models.directoryFor(sessionId)?.store : undefined,
+        } as never
+      } catch {
+        return {} as never
+      }
+    },
   }, ComposerAttachments))
   ctx.slots.inject('conversation.message.images', () => ctx.slots.register({
     name: 'conversation.message.images',

@@ -223,3 +223,139 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
     await b.runtime.dispose()
   })
 })
+
+describe('InputHub queue editing (composer-side edit flow)', () => {
+  const row = (id: string, text: string | null = id): QueuedMessage => ({
+    id: id as never,
+    messageId: `message-${id}` as never,
+    placement: 'queued',
+    content: text === null ? [{ type: 'image', data: 'x' } as never] : [{ type: 'text', text }],
+    preview: text ?? '[image]',
+    text,
+  })
+
+  async function editBench() {
+    const b = await bench()
+    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+      draft.queue = [row('q-1'), row('q-2')]
+    })
+    return b
+  }
+
+  it('stashes the draft and attachments, then publishes the edited occurrence', async () => {
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-edit')
+    try {
+      const b = await editBench()
+      const [attachment] = b.root.createDraftImages([
+        new File([Uint8Array.of(1)], 'a.png', { type: 'image/png' }),
+      ])
+      if (attachment === undefined) throw new Error('draft attachment missing')
+      b.shell.addImages([attachment.id])
+      b.shell.setDraft('my pending draft')
+
+      expect(b.shell.beginQueueEdit('q-1' as never)).toBe(true)
+      expect(b.shell.snapshot.draft).toBe('q-1')
+      expect(b.shell.snapshot.queueEdit).toEqual({ itemId: 'q-1' })
+      // Attachments detach for the edit; the descriptors stay alive.
+      expect(b.shell.snapshot.imageIds).toEqual([])
+      expect(b.root.draftImages([attachment.id])).toHaveLength(1)
+
+      b.shell.cancelQueueEdit()
+      expect(b.shell.snapshot.draft).toBe('my pending draft')
+      expect(b.shell.snapshot.imageIds).toEqual([attachment.id])
+      expect(b.shell.snapshot.queueEdit).toBeUndefined()
+      expect(b.updateQueue).not.toHaveBeenCalled()
+      await b.runtime.dispose()
+    } finally {
+      created.mockRestore()
+    }
+  })
+
+  it('submits the edit in place and restores the stash on success', async () => {
+    const b = await editBench()
+    b.shell.setDraft('my pending draft')
+
+    expect(b.shell.beginQueueEdit('q-1' as never)).toBe(true)
+    b.shell.setDraft('edited body')
+    b.shell.submit()
+
+    await vi.waitFor(() => {
+      expect(b.updateQueue).toHaveBeenCalledWith('q-1', {
+        kind: 'edit',
+        content: [{ type: 'text', text: 'edited body' }],
+      })
+    })
+    await vi.waitFor(() => {
+      expect(b.shell.snapshot.draft).toBe('my pending draft')
+    })
+    expect(b.shell.snapshot.queueEdit).toBeUndefined()
+    expect(b.prompt).not.toHaveBeenCalled()
+    expect(b.shell.notices.getSnapshot()).toBeNull()
+    await b.runtime.dispose()
+  })
+
+  it('keeps the edit open with a localized notice when the host rejects', async () => {
+    const b = await editBench()
+    b.updateQueue.mockResolvedValueOnce({
+      ok: false, error: { code: 'internal', message: 'broken', details: {} },
+    } as never)
+    b.shell.beginQueueEdit('q-1' as never)
+    b.shell.submit()
+
+    await vi.waitFor(() => {
+      expect(b.shell.notices.getSnapshot()).toEqual(
+        expect.objectContaining({ level: 'error', text: '编辑失败：这条消息可能已经开始发送。' }),
+      )
+    })
+    expect(b.shell.snapshot.draft).toBe('q-1')
+    expect(b.shell.snapshot.queueEdit).toEqual({ itemId: 'q-1' })
+    await b.runtime.dispose()
+  })
+
+  it('restores the stash when the edited row retires from the queue', async () => {
+    const b = await editBench()
+    b.shell.setDraft('my pending draft')
+    b.shell.beginQueueEdit('q-2' as never)
+
+    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+      draft.queue = [row('q-1')]
+    })
+    await vi.waitFor(() => {
+      expect(b.shell.snapshot.draft).toBe('my pending draft')
+    })
+    expect(b.shell.snapshot.queueEdit).toBeUndefined()
+    await b.runtime.dispose()
+  })
+
+  it('switching rows keeps exactly one stash: cancel returns to the original draft', async () => {
+    const b = await editBench()
+    b.shell.setDraft('original')
+    b.shell.beginQueueEdit('q-1' as never)
+    b.shell.beginQueueEdit('q-2' as never)
+
+    expect(b.shell.snapshot.draft).toBe('q-2')
+    b.shell.cancelQueueEdit()
+    expect(b.shell.snapshot.draft).toBe('original')
+    await b.runtime.dispose()
+  })
+
+  it('refuses unsupported begins and no-ops whitespace submits', async () => {
+    const b = await editBench()
+    // Missing row and image-only rows cannot enter the composer.
+    expect(b.shell.beginQueueEdit('missing' as never)).toBe(false)
+    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+      draft.queue = [row('img', null)]
+    })
+    expect(b.shell.beginQueueEdit('img' as never)).toBe(false)
+
+    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+      draft.queue = [row('q-1')]
+    })
+    b.shell.beginQueueEdit('q-1' as never)
+    b.shell.setDraft('   ')
+    b.shell.submit()
+    expect(b.updateQueue).not.toHaveBeenCalled()
+    expect(b.shell.snapshot.queueEdit).toEqual({ itemId: 'q-1' })
+    await b.runtime.dispose()
+  })
+})

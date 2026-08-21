@@ -146,23 +146,28 @@ function closedTurnOf(node: ChatConversationViewNode): number | undefined {
 /** Narrowed view of the Assistant chat payload fields the fold decision reads. */
 interface AssistantMeta {
   readonly finalNode?: { readonly seq: number }
-  readonly blocks?: readonly { readonly kind: string }[]
+  readonly blocks?: readonly { readonly kind: string; readonly text?: string }[]
 }
 
 /**
  * Whether an assistant Step renders only Think chrome plus tool heads — no
  * visible text (or image/other content). Such nodes belong inside the tool
- * window, since their only rendered content is the Think row. A node with just
- * tool heads (no reasoning/text) renders an empty shell and stays out.
+ * window, since their only rendered content is the Think row. Whitespace-only
+ * text blocks don't count as visible text; a node with just tool heads (no
+ * reasoning/text) renders an empty shell and stays out.
  * @param node - settled/interrupted Assistant chat node.
  * @returns true when reasoning is present and nothing visible except it remains.
  */
 function isThinkOnly(node: ChatConversationViewNode): boolean {
   if (node.kind !== 'assistant-step') return false
   const { blocks } = node.data as AssistantMeta
-  if (blocks === undefined || blocks.length === 0 || !blocks.some(block => block.kind === 'reasoning')) return false
-  return blocks.every(block => block.kind === 'reasoning' || block.kind === 'tool-call')
+  if (blocks === undefined || !blocks.some(block => block.kind === 'reasoning')) return false
+  return blocks.every(block =>
+    block.kind === 'reasoning'
+    || block.kind === 'tool-call'
+    || (block.kind === 'text' && (block.text ?? '').trim() === ''))
 }
+
 
 /** Wire tool names whose calls mutate files. */
 const EDIT_TOOL_NAMES = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'str_replace'])
@@ -212,20 +217,17 @@ interface GroupHeader {
 }
 
 /**
- * Derive the run header from its seats: the LAST action names the run, unless
- * the run edited several files — then the header summarizes the file work.
- * A run of Think rows alone names itself "Think".
- * @param keys - the run's node keys, in display order.
- * @param nodeStore - chat node reader.
+ * Derive the run header from its member nodes: the LAST action names the run,
+ * unless the run edited several files — then the header summarizes the file
+ * work. A run of Think rows alone names itself "Think".
+ * @param nodes - the run's member nodes, in display order.
  * @param t - the owning view's locale seat.
  * @returns icon and label for the run header.
  */
 function groupHeaderOf(
-  keys: readonly string[],
-  nodeStore: { get(key: string): ChatConversationViewNode | undefined },
+  nodes: readonly ChatConversationViewNode[],
   t: ChatViewSlotProps['t'],
 ): GroupHeader {
-  const nodes = keys.map(key => nodeStore.get(key)).filter((node): node is ChatConversationViewNode => node !== undefined)
   const toolNodes = nodes.filter(node => node.kind === 'tool-call')
   const edited = toolNodes.filter((node) => {
     const name = toolNameOf(node)
@@ -250,20 +252,36 @@ function blockActive(block: ToolCallBlock): boolean {
 /**
  * Whether any call inside a run is still running (drives the window's
  * open-while-active / tuck-when-settled behavior).
- * @param keys - the run's node keys, in display order.
- * @param nodeStore - chat node reader.
+ * @param nodes - the run's member nodes, in display order.
  * @returns true when at least one member call lacks its result.
  */
-function runIsActive(
-  keys: readonly string[],
-  nodeStore: { get(key: string): ChatConversationViewNode | undefined },
-): boolean {
-  return keys.some((key) => {
-    const node = nodeStore.get(key)
-    if (node === undefined || node.kind !== 'tool-call') return false
+function runIsActive(nodes: readonly ChatConversationViewNode[]): boolean {
+  return nodes.some((node) => {
+    if (node.kind !== 'tool-call') return false
     return blockActive((node.data as { readonly root: ToolCallBlock }).root)
   })
 }
+
+/** Whale-and-sea quip locale keys shown while a turn runs. The first key is
+ *  the default label; later ones take over every `DIVE_PHRASE_STEP_MS`, so a
+ *  long-running turn gets a rotating gag instead of a frozen status. Purely
+ *  cosmetic: the index is a pure function of elapsed time, keeping replay and
+ *  snapshots deterministic. */
+const DIVE_PHRASE_KEYS = [
+  'status.dive.0',
+  'status.dive.1',
+  'status.dive.2',
+  'status.dive.3',
+  'status.dive.4',
+  'status.dive.5',
+  'status.dive.6',
+  'status.dive.7',
+  'status.dive.8',
+  'status.dive.9',
+] as const
+
+/** How long each quip stays on screen before the next one surfaces. */
+const DIVE_PHRASE_STEP_MS = 15_000
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
 function TurnStatus({ startTime, t }: {
@@ -289,9 +307,13 @@ function TurnStatus({ startTime, t }: {
   // Short turns keep the plain label; the clock only appears once the turn
   // has clearly been running for a while.
   const showClock = elapsedMs >= 15_000
+  // Deterministic gag: index advances one step per DIVE_PHRASE_STEP_MS, so the
+  // label cycles without randomising replay or snapshots.
+  const phrase = t(DIVE_PHRASE_KEYS[Math.floor(elapsedMs / DIVE_PHRASE_STEP_MS) % DIVE_PHRASE_KEYS.length]
+    ?? 'status.dive.0')
   return (
     <div className={css.turnStatus} role="status" aria-live="polite">
-      Deep diving...
+      {phrase}
       {showClock && (
         <span className={css.turnStatusClock} aria-hidden>
           {formatRunDuration(elapsedMs, t)}
@@ -584,7 +606,7 @@ export function ChatView({
     loadOlder()
   }
 
-  const seat = (nodeKey: string): ReactNode => (
+  const seat = (nodeKey: string, hideAssistantReasoning?: boolean): ReactNode => (
     <ChatNodeSeat
       key={nodeKey}
       nodeKey={nodeKey}
@@ -596,32 +618,18 @@ export function ChatView({
       forkAt={forkAt}
       renderMessageImages={renderMessageImages}
       fileMentions={fileMentions}
+      {...(hideAssistantReasoning === undefined ? {} : { hideAssistantReasoning })}
       renderSlot={renderSlot}
       t={t}
     />
   )
 
-  // Flow construction. Live turns render contiguous tool/think runs inside
-  // one bounded scroll window whose header names the run's last action. When a
-  // turn closes, its whole work — those windows, Think rows, model retries,
-  // and mid-turn narration (everything except the closing message and error
-  // notices) — folds behind one plain duration line with a hairline separator;
-  // unfolding restores the rows exactly as they streamed.
-  const runOf = (keys: readonly string[]): ReactNode => {
-    const header = groupHeaderOf(keys, nodeStore, t)
-    return (
-      <ToolCallGroup
-        key={`tool-group:${keys[0]}`}
-        icon={header.icon}
-        label={header.label}
-        active={runIsActive(keys, nodeStore)}
-      >
-        {keys.map(seat)}
-      </ToolCallGroup>
-    )
-  }
-  const isRunMember = (node: ChatConversationViewNode): boolean =>
-    node.kind === 'tool-call' || isThinkOnly(node)
+  // Flow construction. Contiguous tool runs live inside one bounded scroll
+  // window whose header names the run's last action; a run of one call renders
+  // as the bare row (no window chrome). Think-only steps join the surrounding
+  // run so their reasoning row stays inside one tool window; steps with visible
+  // text render in flow and split the run.
+  interface FlowElement { readonly el: ReactNode; readonly fold: boolean }
   const foldableNode = (node: ChatConversationViewNode, closingSeq: number | null): boolean => {
     if (node.kind === 'tool-call' || node.kind === 'model-retry' || isThinkOnly(node)) return true
     if (closingSeq === null || node.kind !== 'assistant-step') return false
@@ -629,28 +637,58 @@ export function ChatView({
     return data.blocks?.some(block => block.kind === 'text') === true
       && data.finalNode !== undefined && data.finalNode.seq !== closingSeq
   }
-  /** Emit a key range as live-style runs plus inline seats. */
-  const emitRange = (keys: readonly string[], out: ReactNode[]): void => {
-    let at = 0
-    while (at < keys.length) {
-      const nodeKey = keys[at] as string
-      const node = nodeStore.get(nodeKey)
-      if (node === undefined || !isRunMember(node)) {
-        out.push(seat(nodeKey))
-        at++
+  const buildElements = (keys: readonly string[], closingSeq: number | null): FlowElement[] => {
+    const out: FlowElement[] = []
+    let run: {
+      firstKey: string
+      toolKey: string
+      children: ReactNode[]
+      nodes: ChatConversationViewNode[]
+    } | null = null
+    const flushRun = (): void => {
+      if (run === null) return
+      if (run.children.length === 1) {
+        // A single call needs no window chrome around it — the bare row IS
+        // the one-line summary.
+        out.push({ el: run.children[0] as ReactNode, fold: true })
+      } else {
+        const header = groupHeaderOf(run.nodes, t)
+        out.push({
+          el: (
+            <ToolCallGroup
+              key={`tool-group:${run.toolKey}`}
+              icon={header.icon}
+              label={header.label}
+              active={runIsActive(run.nodes)}
+            >
+              {run.children}
+            </ToolCallGroup>
+          ),
+          fold: true,
+        })
+      }
+      run = null
+    }
+    for (const key of keys) {
+      const node = nodeStore.get(key)
+      if (node === undefined) {
+        flushRun()
+        out.push({ el: seat(key), fold: false })
         continue
       }
-      const runKeys: string[] = [nodeKey]
-      let next = at + 1
-      while (next < keys.length) {
-        const candidate = nodeStore.get(keys[next] as string)
-        if (candidate === undefined || !isRunMember(candidate)) break
-        runKeys.push(keys[next] as string)
-        next++
+      if (node.kind === 'tool-call' || node.kind === 'model-retry' || isThinkOnly(node)) {
+        if (run === null) {
+          run = { firstKey: key, toolKey: key, children: [], nodes: [] }
+        }
+        run.children.push(seat(key))
+        run.nodes.push(node)
+        continue
       }
-      out.push(runOf(runKeys))
-      at = next
+      flushRun()
+      out.push({ el: seat(key), fold: foldableNode(node, closingSeq) })
     }
+    flushRun()
+    return out
   }
 
   const flow: ReactNode[] = []
@@ -658,87 +696,63 @@ export function ChatView({
     const nodeKey = order[index] as string
     const node = nodeStore.get(nodeKey)
     const closedTurn = node === undefined ? undefined : closedTurnOf(node)
+    const chunk: string[] = [nodeKey]
+    let next = index + 1
+    while (next < order.length) {
+      const candidate = nodeStore.get(order[next] as string)
+      const candidateTurn = candidate === undefined ? undefined : closedTurnOf(candidate)
+      if (candidateTurn !== closedTurn) break
+      chunk.push(order[next] as string)
+      next++
+    }
     if (closedTurn === undefined) {
-      const chunk: string[] = [nodeKey]
-      let next = index + 1
-      while (next < order.length) {
-        const candidate = nodeStore.get(order[next] as string)
-        if (candidate === undefined || closedTurnOf(candidate) !== undefined) break
-        chunk.push(order[next] as string)
-        next++
-      }
-      emitRange(chunk, flow)
+      for (const element of buildElements(chunk, null)) flow.push(element.el)
       index = next
       continue
     }
     // Collect the closed turn's complete segment, then fold its work behind
-    // one duration line; the closing message and error notices stay inline.
-    const segKeys: string[] = [nodeKey]
-    let next = index + 1
-    while (next < order.length) {
-      const candidate = nodeStore.get(order[next] as string)
-      if (candidate === undefined || closedTurnOf(candidate) !== closedTurn) break
-      segKeys.push(order[next] as string)
-      next++
-    }
+    // one duration line only if the turn exceeds 10 actions; otherwise
+    // intermediate work and tools remain inline in flow.
     const turn = timeline.turns.get(closedTurn)
     const startTime = turn?.start?.time
     const endTime = turn?.end?.time
     const closingSeq = turn?.data.get('turn-tail')?.closing?.finalNode.seq ?? null
-    const hasFoldable = segKeys.some((key) => {
-      const candidate = nodeStore.get(key)
-      return candidate !== undefined && foldableNode(candidate, closingSeq)
-    })
-    if (startTime === undefined || endTime === undefined || !hasFoldable) {
-      emitRange(segKeys, flow)
+    const elements = buildElements(chunk, closingSeq)
+    let actionCount = 0
+    for (const key of chunk) {
+      const node = nodeStore.get(key)
+      if (node !== undefined && foldableNode(node, closingSeq)) {
+        actionCount++
+      }
+    }
+    const shouldFold = startTime !== undefined && endTime !== undefined && actionCount >= 10
+    if (!shouldFold) {
+      for (const element of elements) flow.push(element.el)
       index = next
       continue
     }
-    type Element = { readonly el: ReactNode; readonly fold: boolean }
-    const elements: Element[] = []
-    {
-      let at = 0
-      while (at < segKeys.length) {
-        const innerKey = segKeys[at] as string
-        const innerNode = nodeStore.get(innerKey)
-        if (innerNode === undefined) {
-          elements.push({ el: seat(innerKey), fold: false })
-          at++
-          continue
-        }
-        if (!isRunMember(innerNode)) {
-          elements.push({ el: seat(innerKey), fold: foldableNode(innerNode, closingSeq) })
-          at++
-          continue
-        }
-        const runKeys: string[] = [innerKey]
-        let runNext = at + 1
-        while (runNext < segKeys.length) {
-          const candidate = nodeStore.get(segKeys[runNext] as string)
-          if (candidate === undefined || !isRunMember(candidate)) break
-          runKeys.push(segKeys[runNext] as string)
-          runNext++
-        }
-        elements.push({ el: runOf(runKeys), fold: true })
-        at = runNext
-      }
+    const folded: ReactNode[] = []
+    const flushFolded = (): void => {
+      if (folded.length === 0) return
+      flow.push(
+        <TurnWorkSummary
+          key={`turn-work:${closedTurn}`}
+          label={t('message.ranFor', { duration: formatRunDuration(endTime - startTime, t) })}
+        >
+          {[...folded]}
+        </TurnWorkSummary>,
+      )
+      folded.length = 0
     }
-    const folded = elements.filter(element => element.fold).map(element => element.el)
-    const summary = (
-      <TurnWorkSummary key={`turn-work:${closedTurn}`} label={t('message.ranFor', { duration: formatRunDuration(endTime - startTime, t) })}>
-        {folded}
-      </TurnWorkSummary>
-    )
-    let inserted = false
     for (const element of elements) {
-      if (element.fold && !inserted) {
-        flow.push(summary)
-        inserted = true
+      if (element.fold) {
+        folded.push(element.el)
+      } else {
+        flushFolded()
+        flow.push(element.el)
       }
-      if (!element.fold) flow.push(element.el)
     }
-    /* v8 ignore next -- a foldable member is guaranteed by hasFoldable above. */
-    if (!inserted) flow.push(summary)
+    flushFolded()
     index = next
   }
 

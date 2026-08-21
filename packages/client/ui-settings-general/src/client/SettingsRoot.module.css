@@ -6,6 +6,7 @@
 
 /* Trigger row: the 42px foot-row box shared with the Cordis footer action. */
 .trigger {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Button, ConnectionBanner, Input, Menu, Modal, Pill, Select } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ConnectionBanner, ConnectionLostOverlay, Input, Menu, Modal, MultiSelect, Pill, Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)
@@ -42,6 +42,45 @@ describe('Select', () => {
 
     rerender(<Select invalid options={options} value="opt-a" aria-label="Choices" />)
     expect(trigger.getAttribute('aria-invalid')).toBe('true')
+  })
+})
+
+describe('MultiSelect', () => {
+  const options = [
+    { value: 'opt-a', label: 'Option A' },
+    { value: 'opt-b', label: 'Option B' },
+    { value: 'opt-c', label: 'Option C' },
+  ]
+
+  it('toggles multiple options without closing menu on item click', () => {
+    const onChange = vi.fn()
+    render(<MultiSelect values={['opt-a']} options={options} onChange={onChange} aria-label="Choices" />)
+    const trigger = screen.getByRole('combobox', { name: 'Choices' })
+    expect(trigger.textContent).toContain('Option A')
+
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    const optionB = screen.getByRole('menuitem', { name: 'Option B' })
+    fireEvent.click(optionB)
+    expect(onChange).toHaveBeenCalledWith(['opt-a', 'opt-b'])
+
+    const optionA = screen.getByRole('menuitem', { name: 'Option A' })
+    fireEvent.click(optionA)
+    expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('uses custom renderSummary when provided', () => {
+    render(
+      <MultiSelect
+        values={['opt-a', 'opt-b']}
+        options={options}
+        renderSummary={vals => `${vals.length} selected items`}
+        aria-label="Choices"
+      />,
+    )
+    const trigger = screen.getByRole('combobox', { name: 'Choices' })
+    expect(trigger.textContent).toContain('2 selected items')
   })
 })
 
@@ -453,5 +492,27 @@ describe('ConnectionBanner', () => {
     expect(container.firstChild).toBeNull()
     rerender(<ConnectionBanner reconnecting />)
     expect(container.textContent).toContain('重连')
+  })
+})
+
+describe('ConnectionLostOverlay', () => {
+  it('renders nothing when not reconnecting', () => {
+    const { container } = render(<ConnectionLostOverlay reconnecting={false} />)
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('renders full-screen overlay with wordmark, spinner, and label when reconnecting', () => {
+    const { container, rerender } = render(<ConnectionLostOverlay reconnecting={false} />)
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+
+    rerender(<ConnectionLostOverlay reconnecting />)
+    const overlay = container.querySelector('[data-connection-lost]')
+    expect(overlay).not.toBeNull()
+    expect(overlay?.textContent).toContain('HARNESS')
+    expect(overlay?.textContent).toContain('Connection lost. Trying to connect to server…')
+    expect(container.querySelector('[data-boot-spinner]')).not.toBeNull()
+
+    rerender(<ConnectionLostOverlay reconnecting label="Custom reconnect message" />)
+    expect(container.textContent).toContain('Custom reconnect message')
   })
 })

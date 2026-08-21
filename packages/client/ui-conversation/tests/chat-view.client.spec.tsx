@@ -37,6 +37,7 @@ import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 // Keyless create() persists under the bare declared key; clear between cases
 // so one harness's selection cannot rehydrate into the next.
@@ -117,8 +118,8 @@ const toolResult = (seq: number, callId: string, name = 'bash'): ToolResultNode 
   callTime: seq * 1_000 - 500,
   content: [], isError: false, callView: null, resultView: null, subCalls: [],
 })
-const runningCall = (callId: string, name = 'bash'): RunningToolCall => ({
-  callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, callView: null, subCalls: [],
+const runningCall = (callId: string, name = 'bash', turn = 2): RunningToolCall => ({
+  callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn, step: 1, time: 1_000, callView: null, subCalls: [],
 })
 const command = (over: Partial<CommandNode> = {}): CommandNode => ({
   kind: 'command', seq: 5, time: 5_000, commandId: 'cmd-1' as CommandNode['commandId'],
@@ -459,7 +460,7 @@ describe('ChatView', () => {
       ])
   })
 
-  it('tucks settled runs, opens while a call inside runs, and keeps a manual hide sticky', () => {
+  it('opens while a call runs, stays open on the settle (waiting on the next action), and keeps a manual hide sticky', () => {
     const h = makeHarness({
       nodes: [
         user(1, 'go'),
@@ -483,52 +484,56 @@ describe('ChatView', () => {
     act(() => {
       h.set({
         nodes: [user(1, 'go'), assistant(2, 'working', 1), settledTool(3, 'a', 1), settledTool(4, 'b', 1)],
-        runningCalls: [runningCall('r1')],
+        runningCalls: [runningCall('r1', 'bash', 1)],
         running: true,
       })
     })
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
-    // When the run settles, the window tucks itself away again.
+    const settledNodes = (): ConversationNode[] => [
+      user(1, 'go'),
+      assistant(2, 'working', 1),
+      settledTool(3, 'a', 1),
+      settledTool(4, 'b', 1),
+      { ...toolResult(5, 'r1'), turn: 1 } as unknown as ConversationNode,
+    ]
+    // When the run settles, an opened window stays open — it waits on the
+    // next action rather than tucking shut and re-opening mid-turn.
+    act(() => {
+      h.set({ nodes: settledNodes(), runningCalls: [], running: false })
+    })
+    expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    // A call running again (and settling) also leaves the window open: a
+    // manual hide is the only way to close an opened window.
     act(() => {
       h.set({
-        nodes: [
-          user(1, 'go'),
-          assistant(2, 'working', 1),
-          settledTool(3, 'a', 1),
-          settledTool(4, 'b', 1),
-          { ...toolResult(5, 'r1'), turn: 1 } as unknown as ConversationNode,
-        ],
-        runningCalls: [],
-        running: false,
+        nodes: settledNodes(),
+        runningCalls: [runningCall('r2', 'bash', 1)],
+        running: true,
       })
     })
-    expect(view.queryByTestId('tool-seat-r1')).toBeNull()
-    expect(view.queryByTestId('tool-seat-a')).toBeNull()
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    // A MANUAL hide is sticky: reopen, hide again, then keep activity coming —
-    // arriving work never forces the window back open.
-    fireEvent.click(toggle)
+    expect(view.getByTestId('tool-seat-r2')).toBeTruthy()
+    act(() => {
+      h.set({ nodes: settledNodes(), runningCalls: [], running: false })
+    })
     expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    // A MANUAL hide is sticky: hide, then keep activity coming — arriving
+    // work never forces the window back open.
     fireEvent.click(toggle)
     expect(group.getAttribute('data-hidden')).toBe('true')
     act(() => {
       h.set({
-        nodes: [
-          user(1, 'go'),
-          assistant(2, 'working', 1),
-          settledTool(3, 'a', 1),
-          settledTool(4, 'b', 1),
-          { ...toolResult(5, 'r1'), turn: 1 } as unknown as ConversationNode,
-        ],
-        runningCalls: [runningCall('r2')],
+        nodes: settledNodes(),
+        runningCalls: [runningCall('r3', 'bash', 1)],
         running: true,
       })
     })
     expect(group.getAttribute('data-hidden')).toBe('true')
-    expect(view.queryByTestId('tool-seat-r2')).toBeNull()
+    expect(view.queryByTestId('tool-seat-r3')).toBeNull()
   })
 
-  it('includes Think-only assistant steps inside the tool window', () => {
+  it('renders Think steps inside the tool group alongside tool calls', () => {
     // A Think-only step is one whose data has only reasoning blocks (no text).
     const thinkBlock = (seq: number, turn = 1): ReturnType<typeof assistant> => ({
       ...assistant(seq, '', turn),
@@ -539,9 +544,8 @@ describe('ChatView', () => {
         user(1, 'go'),
         thinkBlock(2, 1),
         settledTool(3, 'a', 1),
-        thinkBlock(4, 1),
-        settledTool(5, 'b', 1),
-        assistant(6, 'done', 1),
+        settledTool(4, 'b', 1),
+        assistant(5, 'done', 1),
       ],
     })
     const view = render(<h.ChatView {...h.props} />)
@@ -550,8 +554,9 @@ describe('ChatView', () => {
     // The settled run mounts tucked; open it to inspect the window contents.
     fireEvent.click(groups[0]?.querySelector('button') as HTMLElement)
     const scroll = groups[0]?.querySelector('[data-tool-scroll]')
-    // Text-bearing assistant steps stay OUT of the group.
-    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:6"]')).toBeNull()
+    // Think rows belong inside the tool group, while final text stays out.
+    expect(scroll?.querySelector('[data-variant="think"]')).toBeTruthy()
+    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeNull()
   })
 
   it('names the run "edited files" when it edited several files', () => {
@@ -568,38 +573,86 @@ describe('ChatView', () => {
     expect(toggle.textContent).toContain('已编辑文件')
   })
 
-  it('folds a closed turn\'s work behind one duration line, keeping the closing message inline', () => {
+  it('folds a closed turn\'s work behind one duration line only when actions >= 10', () => {
+    const tools = Array.from({ length: 10 }, (_, i) => settledTool(i + 2, `t${i + 1}`, 1))
     const h = makeHarness({
       nodes: [
         user(1, 'go'),
-        assistant(2, 'working', 1),
-        settledTool(3, 'a', 1),
-        settledTool(4, 'b', 1),
-        assistant(5, 'done', 1),
+        ...tools,
+        assistant(12, 'done', 1),
       ],
-      turnEnds: new Map([[1, 6]]),
+      turnEnds: new Map([[1, 13]]),
       turnTimings: new Map([[1, { startTime: 1_000, endTime: 4_000 }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // The work is folded: no tool seats, no mid-turn narration; only the
+    // The work is folded: no tool seats in root flow; only the
     // closing message and the duration line remain.
-    expect(view.queryByTestId('tool-seat-a')).toBeNull()
-    expect(view.queryByText('working')).toBeNull()
+    expect(view.queryByTestId('tool-seat-t1')).toBeNull()
     expect(view.getByText('done')).toBeTruthy()
+    expect(view.getByText('go')).toBeTruthy()
+    const elements = [...view.container.querySelectorAll('[data-chat-flow-key], [data-turn-summary]')]
+    const keys = elements.map(el => el.getAttribute('data-chat-flow-key') ?? 'turn-summary')
+    expect(keys).toEqual(['fixture:user:1', 'turn-summary', 'fixture:assistant:12', 'fixture:turn-tail:1'])
     const fold = view.getByRole('button', { name: '用时 3秒' })
     expect(fold.getAttribute('aria-expanded')).toBe('false')
     // Unfolding restores the work as it streamed — the run windows come back
     // tucked (their own headers only) until each is opened individually.
     fireEvent.click(fold)
-    expect(view.getByText('working')).toBeTruthy()
     expect(view.container.querySelectorAll('[data-tool-group]')).toHaveLength(1)
-    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-t1')).toBeNull()
     expect(fold.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(view.container.querySelector('[data-tool-group] button') as HTMLElement)
-    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-t1')).toBeTruthy()
     fireEvent.click(fold)
-    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-t1')).toBeNull()
     expect(view.getByText('done')).toBeTruthy()
+  })
+
+  it('keeps closed turn work inline in flow when actions < 10', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        settledTool(2, 'a', 1),
+        settledTool(3, 'b', 1),
+        assistant(4, 'done', 1),
+      ],
+      turnEnds: new Map([[1, 5]]),
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 4_000 }]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // < 10 actions: not folded behind duration summary
+    expect(view.container.querySelector('[data-turn-summary]')).toBeNull()
+    expect(view.getByText('go')).toBeTruthy()
+    expect(view.getByText('done')).toBeTruthy()
+    expect(view.container.querySelector('[data-tool-group]')).toBeTruthy()
+  })
+
+  it('renders a single tool call as a bare row without window chrome', () => {
+    const h = makeHarness({ nodes: [user(1, 'go'), settledTool(2, 'solo', 1)] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelector('[data-tool-group]')).toBeNull()
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+  })
+
+  it('renders mixed reasoning+text step: Think and text render in flow cleanly', () => {
+    const mixed = {
+      ...assistant(2, 'working', 1),
+      blocks: [{ kind: 'reasoning', text: 'hmm...' }, { kind: 'text', text: 'working' }],
+    } as ReturnType<typeof assistant>
+    const h = makeHarness({
+      nodes: [user(1, 'go'), mixed, settledTool(3, 'a', 1), settledTool(4, 'b', 1)],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // The step's Think row renders cleanly as a standalone disclosure row
+    expect(view.container.querySelector('[data-variant="think"]')).toBeTruthy()
+    expect(view.getByText('working')).toBeTruthy()
+    // Following tool calls form a tool window
+    const group = view.container.querySelector('[data-tool-group]') as HTMLElement
+    expect(group).toBeTruthy()
+    fireEvent.click(group.querySelector('button') as HTMLElement)
+    const scroll = group.querySelector('[data-tool-scroll]') as HTMLElement
+    expect(scroll.querySelector('[data-variant="think"]')).toBeNull()
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
   })
 
   it('degrades a stale order key to a null seat', () => {
@@ -833,8 +886,8 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     // The exact turn/end includes trailing tool activity after the final text.
-    // The duration shows twice by design: the work fold's line and the footer.
-    expect(view.getAllByText(/用时 19秒/)).toHaveLength(2)
+    // When turn has < 10 actions, the footer alone displays the duration.
+    expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
   })
 
   it('the settled footer appends first-step ttft and turn decode throughput', () => {
@@ -854,9 +907,8 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 20]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // First-step ttft (1.2s) plus 100 tokens over 5s of decode. The duration
-    // shows twice by design: the work fold's line and the footer.
-    expect(view.getAllByText(/用时 19秒/)).toHaveLength(2)
+    // First-step ttft (1.2s) plus 100 tokens over 5s of decode.
+    expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
     expect(view.getAllByText(/首 token 1\.2秒/)).toHaveLength(1)
     expect(view.getAllByText(/20 tok\/s/)).toHaveLength(1)
   })
@@ -1048,10 +1100,10 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+    expect(view.getByRole('status').textContent).toBe('正在深海下潜…')
   })
 
-  it('keeps the Tool renderer mounted when a running call settles into log order', () => {
+  it('renders a single running call as a bare row that settles in place', () => {
     const mounted = vi.fn()
     const unmounted = vi.fn()
     function StatefulToolNode({ node }: { readonly node: ChatNode<'tool-call'> }) {
@@ -1079,8 +1131,9 @@ describe('ChatView', () => {
         : opts?.fallback ?? null
     }) as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...h.props} />)
+    // A lone call renders bare — no window chrome around it.
+    expect(view.container.querySelector('[data-tool-group]')).toBeNull()
     const tool = view.getByTestId('stateful-tool')
-    const row = view.container.querySelector('[data-chat-flow-key="fixture:tool:r1"]')
     expect(tool.dataset.state).toBe('running')
     expect(mounted).toHaveBeenCalledTimes(1)
 
@@ -1092,8 +1145,8 @@ describe('ChatView', () => {
       })
     })
 
+    // Settling flips the row's state in place — same instance, no remount.
     expect(view.getByTestId('stateful-tool')).toBe(tool)
-    expect(view.container.querySelector('[data-chat-flow-key="fixture:tool:r1"]')).toBe(row)
     expect(tool.dataset.state).toBe('settled')
     expect(mounted).toHaveBeenCalledTimes(1)
     expect(unmounted).not.toHaveBeenCalled()
@@ -1108,7 +1161,8 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    // The rotating quip changes at 15s steps, so only pin the running clock here.
+    expect(status.textContent).toMatch(/2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.set({ queue: [{
@@ -1120,7 +1174,23 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/2分0\d秒$/)
+  })
+
+  it('rotates the whale-and-sea quips deterministically during a long turn', () => {
+    // ~125s elapsed → floor(~125000/15000) = 8 → 8 % 6 = 2, so the third gag
+    // shows instead of the default label, while the running clock is kept.
+    const startTime = Date.now() - 125_000
+    const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
+    const h = makeHarness({
+      nodes: [trigger], turnTimings: new Map([[1, { startTime }]]), running: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const status = view.getByRole('status')
+    // ~125s elapsed → floor(~125000/15000) = 8 → 8 % 10 = 8, so the 8th gag
+    // surfaces (via the zh dictionary) instead of the default label, while the
+    // running clock is kept.
+    expect(status.textContent).toMatch(/^找独角鲸的角…2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {
@@ -1220,7 +1290,8 @@ describe('ChatView', () => {
       }))
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     await act(async () => { h.toolOwners[0]!.openFile('src/a.ts') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('first refusal')
@@ -1241,7 +1312,8 @@ describe('ChatView', () => {
       }))
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     await act(async () => { h.toolOwners[0]!.openFile('src/a.ts') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('first refusal')

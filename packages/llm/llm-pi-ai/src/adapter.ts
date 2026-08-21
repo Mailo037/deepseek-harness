@@ -43,6 +43,7 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  ModelModality,
   ReasoningEffortId as ReasoningEffortIdType,
   ResolvedRetryPolicy,
   StreamChunk,
@@ -183,11 +184,19 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
   }
 }
 
-/**
- * pi-ai-backed multi-provider adapter. Each operation reads the current
- * profiles, so a configuration change reaches the next request without a
- * restart; model descriptors come from the collection those profiles built.
- */
+/** Determine model input modalities including video when supported. */
+function modelModalities(model: Model<Api>): ModelModality[] {
+  if (model.id === 'stealth/ox-alpha') return ['text', 'image', 'video']
+  const input = model.input as readonly string[]
+  const res: ModelModality[] = []
+  if (input.includes('text') || input.length === 0) res.push('text')
+  if (input.includes('image')) res.push('image')
+  if (model.id.includes('gemini') || model.id.includes('qwen-vl') || model.id.includes('glm-4v')) {
+    res.push('video')
+  }
+  return res
+}
+
 export class PiAiAdapter extends LlmAdapter {
   private snapshot: PiAiSnapshot | undefined
 
@@ -248,7 +257,7 @@ export class PiAiAdapter extends LlmAdapter {
         provider,
         id: model.id,
         name: model.name,
-        inputModalities: [...model.input],
+        inputModalities: modelModalities(model),
       }))
     })
   }
@@ -270,7 +279,7 @@ export class PiAiAdapter extends LlmAdapter {
         provider,
         id: model,
         name: resolvedModel.name,
-        inputModalities: [...resolvedModel.input],
+        inputModalities: modelModalities(resolvedModel),
         context: { contextWindow: resolvedModel.contextWindow },
         ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
         ...reasoningInfo(resolvedModel, defaultLevel),

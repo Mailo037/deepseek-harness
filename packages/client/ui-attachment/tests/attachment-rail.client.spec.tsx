@@ -179,4 +179,16 @@ describe('AttachmentRail', () => {
     // Removal keeps the position; only growth jumps to the end.
     expect(rail.scrollLeft).toBe(200)
   })
+
+  it('renders a warning badge with aria-label when warning is present on an item', () => {
+    const warningItem: AttachmentRailItem = {
+      ...item('warn-1'),
+      warning: 'Model does not support images',
+    }
+    const view = render(
+      <AttachmentRail items={[warningItem]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+    )
+    const badge = view.getByLabelText('Model does not support images')
+    expect(badge).toBeDefined()
+  })
 })

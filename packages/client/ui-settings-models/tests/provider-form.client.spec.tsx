@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelProviderGroup, RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { ModelsSection, providerCopy } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
@@ -73,6 +73,7 @@ function scriptedFace(options: {
   baseProviders?: Record<string, unknown>
   /** Routes the adapter reports as hand-declared; the rest come back as shipped. */
   declaredRoutes?: readonly string[]
+  groups?: readonly ModelProviderGroup[]
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
@@ -96,7 +97,7 @@ function scriptedFace(options: {
           declared: options.declaredRoutes?.includes(provider) ?? false,
         })),
       }))),
-      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
+      models: vi.fn(() => Promise.resolve(ok({ groups: options.groups ?? [], failures: [] }))),
       discoverModels: discover,
     },
     settings: {
@@ -1407,7 +1408,7 @@ describe('API key field', () => {
     expect(screen.queryByText(en.customTitle)).toBeNull()
   })
 
-  it('can configure provider reasoning and model reasoning efforts for pi-ai', async () => {
+  it('can configure provider reasoning and multiple model reasoning efforts for pi-ai', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')
     fireEvent.click(screen.getByText(en.customized))
@@ -1416,12 +1417,14 @@ describe('API key field', () => {
     const providerReasoning = screen.getByLabelText(en.providerReasoning)
     fireEvent.change(providerReasoning, { target: { value: 'high' } })
 
-    // Add model and configure reasoning
+    // Add model and configure multiple reasoning efforts
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'custom-model' } })
     fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
     const modelReasoning = screen.getByLabelText(`${en.modelReasoning} 1`)
-    fireEvent.change(modelReasoning, { target: { value: 'disabled' } })
+    fireEvent.click(modelReasoning)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.reasoningHigh }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en.reasoningLow }))
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
@@ -1432,9 +1435,95 @@ describe('API key field', () => {
         {
           op: 'set',
           path: ['providers', 'openai', 'models'],
-          value: [{ id: 'custom-model', reasoningEfforts: false }],
+          value: [{ id: 'custom-model', reasoningEfforts: { high: 'high', low: 'low' } }],
         },
       ],
     })
+  })
+
+  it('disables reasoning selection for catalog models that do not support reasoning', async () => {
+    await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [{ id: 'gpt-4o' }],
+        },
+      },
+      groups: [
+        {
+          id: 'openai',
+          name: 'OpenAI',
+          models: [
+            { id: 'gpt-4o', name: 'GPT-4o' },
+            {
+              id: 'o3-mini',
+              name: 'o3-mini',
+              reasoning: {
+                efforts: [
+                  { id: 'low', name: 'Low' },
+                  { id: 'medium', name: 'Medium' },
+                  { id: 'high', name: 'High' },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    openEditor('openai')
+    fireEvent.click(screen.getByText(en.customized))
+    fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
+
+    const modelReasoning = screen.getByLabelText(`${en.modelReasoning} 1`)
+    // Reasoning selector is enabled and can be customized on any model
+    await waitFor(() => {
+      expect((modelReasoning as HTMLSelectElement).disabled).toBe(false)
+    })
+  })
+
+  it('renders modality badges and allows toggling inherit model settings', async () => {
+    await mountSection({
+      providers: {
+        openrouter: {
+          baseURL: 'https://openrouter.ai/api/v1',
+          models: [{ id: 'stealth/ox-alpha' }],
+        },
+      },
+      groups: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          models: [
+            {
+              id: 'stealth/ox-alpha',
+              name: 'Ox Alpha',
+              inputModalities: ['text', 'image', 'video'],
+              reasoning: {
+                efforts: [
+                  { id: 'low', name: 'Low' },
+                  { id: 'high', name: 'High' },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    openEditor('openrouter')
+    fireEvent.click(screen.getByText(en.customized))
+
+    // Modality badges should render
+    await waitFor(() => {
+      expect(screen.getByText(en.modalityText)).toBeDefined()
+      expect(screen.getByText(en.modalityImage)).toBeDefined()
+      expect(screen.getByText(en.modalityVideo)).toBeDefined()
+    })
+
+    // Expand advanced settings and check inherit checkbox
+    fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
+    const inheritCheckbox = screen.getByLabelText(en.inheritModelSettings) as HTMLInputElement
+    expect(inheritCheckbox.checked).toBe(true)
   })
 })

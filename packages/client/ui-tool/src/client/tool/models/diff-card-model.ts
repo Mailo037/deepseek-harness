@@ -7,8 +7,28 @@
  * call this, so the hunks they show are derived once.
  * @module
  */
-import type { DiffBlockProps, DiffHunk } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DiffBlockLabels, DiffBlockProps, DiffHunk } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallBlock } from './tool-call-model.ts'
+
+/**
+ * Build the {@link DiffBlock} display copy from the conversation locale seat —
+ * the one place the primitive's label surface pairs with this package's
+ * dictionary, shared by every diff render site (chat row, file-mutation row,
+ * details panel).
+ * @param t - the render site's conversation locale seat.
+ * @returns the full label set for {@link DiffBlockProps}'s `labels`.
+ */
+export function diffBlockLabels(t: TranslateNS<'conversation'>): DiffBlockLabels {
+  return {
+    copy: t('copy'),
+    copied: t('copied'),
+    collapseAria: t('diff.collapseAria'),
+    collapse: t('collapse'),
+    expandAria: hidden => t('diff.expandAria', { n: hidden }),
+    expand: hidden => t('diff.expandRest', { n: hidden }),
+  }
+}
 
 /**
  * Diff-body lines the chat row shows before collapsing the middle — half the

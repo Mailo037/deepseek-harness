@@ -76,9 +76,13 @@ export class FakeApiClient implements IApiClient {
     attachedSessions: number
     home: string
     canOpenPath: boolean
+    repository: { branch: string; commit: string; remoteUrl: string | null } | null
+    canRestart: boolean
+    surface: 'web' | 'electron'
   }>> =
     () => Promise.resolve(ok({
       version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
+      repository: null, canRestart: false, surface: 'web',
     }))
   onPickDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string | null }>> =
     () => Promise.resolve(ok({ path: null }))
@@ -143,6 +147,20 @@ export class FakeApiClient implements IApiClient {
 
   readonly host: IApiClient['host'] = {
     describe: payload => this.record('host.describe', payload, this.onDescribe(payload)),
+    checkUpdate: (payload: unknown) => this.record('host.checkUpdate', payload, Promise.resolve(ok({
+      available: false,
+      branch: 'master',
+      commit: 'f1xture00000000000000000000000000000000',
+      upstream: 'origin/master',
+      behind: 0,
+      latest: null,
+      checkedAt: 0,
+    }))),
+    applyUpdate: (payload: unknown) => this.record('host.applyUpdate', payload, Promise.resolve(ok({
+      advanced: true,
+      previousCommit: 'f1xture00000000000000000000000000000000',
+      commit: 'a11c0de000000000000000000000000000000000',
+    }))),
     pickDirectory: payload => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
     listDirectory: payload => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: payload => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),

@@ -14,27 +14,27 @@
  * rows the user can still fill in by hand.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, Modal, Select } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, MultiSelect } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import { messageOf } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
-/** Determine selected reasoning effort option string for a model draft. */
-function reasoningOptionOf(model: ModelDraft): string {
+/** Determine selected reasoning effort keys array for a model draft. */
+function reasoningValuesOf(model: ModelDraft, defaultEfforts: readonly string[] = []): readonly string[] {
   const value = model['reasoningEfforts']
-  if (value === false) return 'disabled'
+  if (value === false) return []
   if (typeof value === 'object' && value !== null) {
-    const keys = Object.keys(value)
-    if (keys.length === 1 && keys[0] !== undefined) return keys[0]
-    if (keys.length === 3 && 'low' in value && 'high' in value && 'max' in value) return 'standard'
-    return 'all'
+    return Object.keys(value).filter(k => (value as Record<string, unknown>)[k] !== null || k === 'off')
   }
-  return ''
+  if (value === undefined) {
+    return defaultEfforts
+  }
+  return []
 }
 
 /**
@@ -171,12 +171,48 @@ function adopt(candidate: DiscoveredModelView): ModelDraft {
  * @param props - the drafted rows, probe target, wire face, and copy.
  * @returns the model-list editor.
  */
+interface CatalogModelInfo {
+  supportsReasoning: boolean
+  defaultEfforts: string[]
+  inputModalities: string[]
+}
+
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, api, t, disabled } = props
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [candidates, setCandidates] = useState<readonly DiscoveredModelView[] | undefined>(undefined)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  const [catalogMap, setCatalogMap] = useState<ReadonlyMap<string, CatalogModelInfo>>(new Map())
+
+  useEffect(() => {
+    let active = true
+    api.llm.models({}).then((response) => {
+      if (!active || !response.result.ok) return
+      const map = new Map<string, CatalogModelInfo>()
+      const group = response.result.value.groups.find(g => g.id === probe.provider)
+      if (group) {
+        for (const m of group.models) {
+          const supportsReasoning = m.reasoning !== undefined
+          const defaultEfforts = m.reasoning?.efforts.map(e => e.id) ?? []
+          const inputModalities = m.inputModalities ?? (
+            m.id.includes('gemini') || m.id.includes('qwen-vl') || m.id.includes('glm-4v')
+              ? ['text', 'image', 'video']
+              : m.id.includes('image') || m.id.includes('vision') || m.id.includes('4o') || m.id.includes('sonnet') || m.id.includes('opus') || m.id.includes('o1') || m.id.includes('o3')
+                ? ['text', 'image']
+                : ['text']
+          )
+          map.set(m.id, {
+            supportsReasoning,
+            defaultEfforts,
+            inputModalities,
+          })
+        }
+      }
+      setCatalogMap(map)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [api.llm, probe.provider])
   // Rows carry an id and a name; capacities are the exception, so they stay
   // folded until asked for rather than crowding every row with four inputs.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
@@ -356,144 +392,189 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         </button>
       </div>
       {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
-      {models.map((model, index) => (
-        <div key={index} className={styles['modelEntry']}>
-          <div className={styles['modelRow']}>
-            <input
-              className={styles['input']}
-              type="text"
-              value={textOf(model, 'id')}
-              placeholder={t('modelId')}
-              aria-label={`${t('modelId')} ${index + 1}`}
-              disabled={disabled}
-              onChange={(event) => { patch(index, { id: event.target.value }) }}
-            />
-            <input
-              className={styles['input']}
-              type="text"
-              value={textOf(model, 'name')}
-              placeholder={t('modelName')}
-              aria-label={`${t('modelName')} ${index + 1}`}
-              disabled={disabled}
-              onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
-            />
-            <button
-              type="button"
-              className={styles['iconButton']}
-              aria-label={`${t('modelAdvanced')} ${index + 1}`}
-              aria-expanded={expanded.has(index)}
-              title={t('modelAdvanced')}
-              onClick={() => { toggleExpanded(index) }}
-            >
-              <IconChevron open={expanded.has(index)} />
-            </button>
-            <button
-              type="button"
-              className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
-              aria-label={`${t('removeModel')} ${index + 1}`}
-              title={t('removeModel')}
-              disabled={disabled}
-              onClick={() => {
-                onChange(models.filter((_model, at) => at !== index))
-                // Both stores are keyed by position, so every row after this
-                // one shifts down and would otherwise inherit its neighbour's
-                // state — a different row's capacities popping open, or its
-                // half-typed text appearing in another row's field.
-                setExpanded((current) => {
-                  const next = new Set<number>()
-                  for (const at of current) {
-                    if (at < index) next.add(at)
-                    else if (at > index) next.add(at - 1)
-                  }
-                  return next
-                })
-                setEditing(current => reindexOnRemove(current, index))
-              }}
-            >
-              <IconTrash />
-            </button>
+      {models.map((model, index) => {
+        const modelId = textOf(model, 'id')
+        const catalogInfo = modelId !== '' ? catalogMap.get(modelId) : undefined
+        const inCatalog = catalogInfo !== undefined
+        const isReasoningDisabled = disabled
+        const defaultEfforts = catalogInfo?.defaultEfforts ?? []
+        const currentValues = reasoningValuesOf(model, defaultEfforts)
+        const isInheriting = inCatalog && model['contextWindow'] === undefined && model['maxTokens'] === undefined && model['reasoningEfforts'] === undefined
+
+        return (
+          <div key={index} className={styles['modelEntry']}>
+            <div className={styles['modelRow']}>
+              <input
+                className={styles['input']}
+                type="text"
+                value={textOf(model, 'id')}
+                placeholder={t('modelId')}
+                aria-label={`${t('modelId')} ${index + 1}`}
+                disabled={disabled}
+                onChange={(event) => { patch(index, { id: event.target.value }) }}
+              />
+              <input
+                className={styles['input']}
+                type="text"
+                value={textOf(model, 'name')}
+                placeholder={t('modelName')}
+                aria-label={`${t('modelName')} ${index + 1}`}
+                disabled={disabled}
+                onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
+              />
+              <button
+                type="button"
+                className={styles['iconButton']}
+                aria-label={`${t('modelAdvanced')} ${index + 1}`}
+                aria-expanded={expanded.has(index)}
+                title={t('modelAdvanced')}
+                onClick={() => { toggleExpanded(index) }}
+              >
+                <IconChevron open={expanded.has(index)} />
+              </button>
+              <button
+                type="button"
+                className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
+                aria-label={`${t('removeModel')} ${index + 1}`}
+                title={t('removeModel')}
+                disabled={disabled}
+                onClick={() => {
+                  onChange(models.filter((_model, at) => at !== index))
+                  // Both stores are keyed by position, so every row after this
+                  // one shifts down and would otherwise inherit its neighbour's
+                  // state — a different row's capacities popping open, or its
+                  // half-typed text appearing in another row's field.
+                  setExpanded((current) => {
+                    const next = new Set<number>()
+                    for (const at of current) {
+                      if (at < index) next.add(at)
+                      else if (at > index) next.add(at - 1)
+                    }
+                    return next
+                  })
+                  setEditing(current => reindexOnRemove(current, index))
+                }}
+              >
+                <IconTrash />
+              </button>
+            </div>
+            {expanded.has(index)
+              ? (
+                <div className={styles['modelAdvanced']}>
+                  {catalogInfo?.inputModalities && catalogInfo.inputModalities.length > 0 ? (
+                    <div className={styles['modalitiesRow']}>
+                      <span className={styles['modalitiesLabel']}>{t('modelModalities')}:</span>
+                      <div className={styles['modelBadges']}>
+                        {catalogInfo.inputModalities.map(mod => (
+                          <span key={mod} className={styles['modalityBadge']}>
+                            {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {inCatalog ? (
+                    <div className={styles['inheritRow']}>
+                      <label className={styles['inheritLabel']}>
+                        <input
+                          type="checkbox"
+                          checked={isInheriting}
+                          disabled={disabled}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              patch(index, {
+                                contextWindow: undefined,
+                                maxTokens: undefined,
+                                reasoningEfforts: undefined,
+                              })
+                            } else {
+                              patch(index, {
+                                reasoningEfforts: catalogInfo.supportsReasoning
+                                  ? Object.fromEntries(defaultEfforts.map(k => [k, k]))
+                                  : false,
+                              })
+                            }
+                          }}
+                        />
+                        <span>{t('inheritModelSettings')}</span>
+                      </label>
+                      <span className={styles['modelFieldLabel']}>{t('inheritModelSettingsHint')}</span>
+                    </div>
+                  ) : null}
+                  <label className={styles['modelField']}>
+                    <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
+                    <input
+                      className={styles['input']}
+                      type="text"
+                      inputMode="numeric"
+                      value={capacityText(model, index, 'contextWindow')}
+                      placeholder={CAPACITY_HINT.contextWindow}
+                      aria-label={`${t('modelContextWindow')} ${index + 1}`}
+                      disabled={disabled}
+                      onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
+                    />
+                  </label>
+                  <label className={styles['modelField']}>
+                    <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
+                    <input
+                      className={styles['input']}
+                      type="text"
+                      inputMode="numeric"
+                      value={capacityText(model, index, 'maxTokens')}
+                      placeholder={CAPACITY_HINT.maxTokens}
+                      aria-label={`${t('modelMaxTokens')} ${index + 1}`}
+                      disabled={disabled}
+                      onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
+                    />
+                  </label>
+                  <label className={styles['modelField']}>
+                    <span className={styles['modelFieldLabel']}>{t('modelReasoning')}</span>
+                    <MultiSelect
+                      className={styles['selectInput']}
+                      values={currentValues}
+                      aria-label={`${t('modelReasoning')} ${index + 1}`}
+                      disabled={isReasoningDisabled}
+                      placeholder={t('reasoningInherit')}
+                      options={[
+                        { value: 'minimal', label: t('reasoningMinimal') },
+                        { value: 'low', label: t('reasoningLow') },
+                        { value: 'medium', label: t('reasoningMedium') },
+                        { value: 'high', label: t('reasoningHigh') },
+                        { value: 'xhigh', label: t('reasoningXHigh') },
+                        { value: 'max', label: t('reasoningMax') },
+                      ]}
+                      renderSummary={(selectedValues, options) => {
+                        if (model['reasoningEfforts'] === undefined) {
+                          return t('reasoningInherit')
+                        }
+                        if (selectedValues.length === 0) {
+                          return t('reasoningNone')
+                        }
+                        if (selectedValues.length === 1) {
+                          const opt = options.find(o => o.value === selectedValues[0])
+                          return opt?.label ?? selectedValues[0]
+                        }
+                        return t('reasoningSelected').replace('{count}', String(selectedValues.length))
+                      }}
+                      onChange={(newValues) => {
+                        if (newValues.length === 0) {
+                          patch(index, { reasoningEfforts: false })
+                        } else {
+                          const map: Record<string, string> = {}
+                          for (const v of newValues) {
+                            map[v] = v
+                          }
+                          patch(index, { reasoningEfforts: map })
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              )
+              : null}
           </div>
-          {expanded.has(index)
-            ? (
-              <div className={styles['modelAdvanced']}>
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={capacityText(model, index, 'contextWindow')}
-                    placeholder={CAPACITY_HINT.contextWindow}
-                    aria-label={`${t('modelContextWindow')} ${index + 1}`}
-                    disabled={disabled}
-                    onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
-                  />
-                </label>
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={capacityText(model, index, 'maxTokens')}
-                    placeholder={CAPACITY_HINT.maxTokens}
-                    aria-label={`${t('modelMaxTokens')} ${index + 1}`}
-                    disabled={disabled}
-                    onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
-                  />
-                </label>
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelReasoning')}</span>
-                  <Select
-                    className={styles['selectInput']}
-                    value={reasoningOptionOf(model)}
-                    aria-label={`${t('modelReasoning')} ${index + 1}`}
-                    disabled={disabled}
-                    options={[
-                      { value: '', label: t('reasoningInherit') },
-                      { value: 'disabled', label: t('reasoningDisabled') },
-                      { value: 'low', label: t('reasoningLow') },
-                      { value: 'medium', label: t('reasoningMedium') },
-                      { value: 'high', label: t('reasoningHigh') },
-                      { value: 'max', label: t('reasoningMax') },
-                      { value: 'standard', label: 'Low, High, Max' },
-                      { value: 'all', label: 'Minimal .. Max' },
-                    ]}
-                    onChange={(option) => {
-                      if (option === '') {
-                        patch(index, { reasoningEfforts: undefined })
-                      } else if (option === 'disabled') {
-                        patch(index, { reasoningEfforts: false })
-                      } else if (option === 'low') {
-                        patch(index, { reasoningEfforts: { low: 'low' } })
-                      } else if (option === 'medium') {
-                        patch(index, { reasoningEfforts: { medium: 'medium' } })
-                      } else if (option === 'high') {
-                        patch(index, { reasoningEfforts: { high: 'high' } })
-                      } else if (option === 'max') {
-                        patch(index, { reasoningEfforts: { max: 'max' } })
-                      } else if (option === 'standard') {
-                        patch(index, { reasoningEfforts: { low: 'low', high: 'high', max: 'max' } })
-                      } else if (option === 'all') {
-                        patch(index, {
-                          reasoningEfforts: {
-                            minimal: 'minimal',
-                            low: 'low',
-                            medium: 'medium',
-                            high: 'high',
-                            xhigh: 'xhigh',
-                            max: 'max',
-                          },
-                        })
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-            )
-            : null}
-        </div>
-      ))}
+        )
+      })}
       <button
         type="button"
         className={styles['addModelButton']}

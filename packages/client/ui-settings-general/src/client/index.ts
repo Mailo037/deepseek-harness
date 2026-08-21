@@ -20,22 +20,29 @@ import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
 } from './shell-contract.ts'
 import { SettingsRoot } from './SettingsRoot.tsx'
-import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
+import {
+  CloseLabel, HeaderContent, TriggerContent, type TriggerContentInjected,
+} from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
+import { AboutSection, type AboutSectionInjected } from './AboutSection.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
+import { UpdateStore, updatePlaneAvailable } from './update-store.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
 
 export type {
-  CloseLabelProps, HeaderContentProps, TriggerContentProps,
+  CloseLabelProps, HeaderContentProps, TriggerContentProps, TriggerContentInjected,
 } from './chrome.tsx'
 export type {
   GeneralSectionComponentProps,
 } from './GeneralSection.tsx'
+export type { AboutSectionInjected, AboutSectionProps } from './AboutSection.tsx'
 export type { SettingsDocumentActionInjected, SettingsDocumentActionProps } from './SettingsDocumentAction.tsx'
 export type { SettingsDocumentState } from './settings-document-store.ts'
 export { SettingsDocumentStore } from './settings-document-store.ts'
+export type { UpdatePhase, UpdateState, UpdateCheckView } from './update-store.ts'
+export { UpdateStore, updatePlaneAvailable } from './update-store.ts'
 export type { SettingsKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -80,6 +87,30 @@ export function apply(ctx: ClientContext): void {
       hooks: { snapshot: documentController.store },
     })
   ctx.effect(() => () => { documentController?.dispose() }, 'ui-settings-general: document action directory')
+  // The shared update surface: one store for the trigger badge and the About
+  // section. Automatic checks only run once the mirror confirms the plane is
+  // usable (a git checkout behind an installation whose launcher can respawn)
+  // and this client is on loopback — the wire methods are loopback-pinned.
+  const updateController = new UpdateStore(connection.api)
+  const updateStopAuto = connection.hostDescription.subscribe(() => {
+    if (connection.isLoopback && updatePlaneAvailable(connection.hostDescription.getSnapshot())) {
+      updateController.startAutoCheck()
+    }
+  })
+  ctx.effect(() => () => {
+    updateStopAuto()
+    updateController.dispose()
+  }, 'ui-settings-general: update store')
+  const triggerInjected = (): TriggerContentInjected => ({
+    hooks: { snapshot: updateController.store },
+  })
+  const aboutInjected = (): AboutSectionInjected => ({
+    controller: updateController,
+    hooks: {
+      snapshot: updateController.store,
+      describe: connection.hostDescription,
+    },
+  })
   // The settings shell: this package occupies the sidebar-owned hole and
   // declares the settings slots. Ledger → nav-row projection as an observable
   // source (uSES contract: getSnapshot returns the cached rows until the
@@ -152,7 +183,7 @@ export function apply(ctx: ClientContext): void {
   }, SettingsRoot))
 
   ctx.slots.inject('settings.trigger', () =>
-    ctx.slots.register({ name: 'settings.trigger', locale: NS }, TriggerContent))
+    ctx.slots.register({ name: 'settings.trigger', locale: NS, inject: triggerInjected }, TriggerContent))
   ctx.slots.inject('settings.header', () =>
     ctx.slots.register({ name: 'settings.header', locale: NS }, HeaderContent))
   if (documentInjected !== undefined) {
@@ -174,4 +205,14 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
+  // The About section: installation identity plus the update controls. Last
+  // in the ledger so it sits at the bottom of the settings nav.
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'about',
+    order: 20,
+    label: () => t('about.nav'),
+    locale: NS,
+    inject: aboutInjected,
+  }, AboutSection))
 }

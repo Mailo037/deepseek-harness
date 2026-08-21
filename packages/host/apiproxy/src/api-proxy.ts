@@ -109,6 +109,11 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import { readInstallationVersion } from './host-version.ts'
+// Value edge: the wire boundary narrows the git layer's typed failure; the
+// import also resolves `ctx.get('selfUpdate')`.
+import { GitError } from '@deepseek-ai/dsh-host-self-update'
+import type { ApplyUpdateOutcome, HostRepository, UpdateCheck } from './api/index.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -297,6 +302,7 @@ async function buildModelCatalog(ctx: Context): Promise<{
           id: model.id,
           name: model.name,
           ...model.description === undefined ? {} : { description: model.description },
+          ...resolved.inputModalities === undefined ? {} : { inputModalities: [...resolved.inputModalities] },
           ...reasoning === undefined ? {} : { reasoning },
         }
       }))
@@ -576,6 +582,25 @@ function directoryError(error: unknown): RpcError {
   }
   return { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} }
 }
+
+/** Map the git layer's typed failure onto the self-update wire codes (unknown throws stay internal). */
+function selfUpdateError(error: unknown): RpcError {
+  if (error instanceof GitError) {
+    const code = error.code === 'no-upstream' ? 'self-update-no-upstream'
+      : error.code === 'not-fast-forward' ? 'self-update-not-fast-forward'
+        : error.code === 'git-failed' ? 'self-update-git-failed'
+          : 'self-update-unavailable'
+    return { code, message: error.message, details: {} }
+  }
+  return { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} }
+}
+
+/**
+ * Delay before a successful apply replaces the process: long enough for the
+ * ok response to flush to the browser, short enough that the user sees the
+ * restart as immediate.
+ */
+const RESTART_FLUSH_DELAY_MS = 500
 
 /** Resolved Agent model and project-directory defaults consumed by the API implementation. */
 export interface ApiProxyDefaults {
@@ -1074,6 +1099,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const sessionCreations = new Map<SessionId, Promise<Agent>>()
   /** Serializes path ownership and explicit title checks with Workspace mutations. */
   let workspaceCreationChain = Promise.resolve()
+  /**
+   * Serializes `host.applyUpdate`: the flow ends the process, so a second
+   * concurrent gesture must fold behind the first rather than quiesce and
+   * pull twice. A failed apply leaves the chain usable.
+   */
+  let applyChain: Promise<unknown> = Promise.resolve()
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
@@ -2891,10 +2922,23 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     host: {
       describe(request) {
-        // TODO: version should read apps/cli's package.json; placeholder for now.
         const selection = defaults.defaultModelSelection()
-        return Promise.resolve(ok(request, {
-          version: '0.0.1',
+        // The git identity is an optional capability: a built installation
+        // (or any composition without the provider) reports null instead of
+        // failing the snapshot.
+        const selfUpdate = ctx.get('selfUpdate')
+        const repository: Promise<HostRepository | null> = selfUpdate === undefined
+          ? Promise.resolve(null)
+          : selfUpdate.describe().then((identity) => {
+            if (identity === null) return null
+            return {
+              branch: identity.branch,
+              commit: identity.commit,
+              remoteUrl: identity.remoteUrl,
+            }
+          }).catch(() => null)
+        return repository.then(value => ok(request, {
+          version: readInstallationVersion(),
           // Same source as session.create's fallback: the UI's default project
           // must match where an unspecified-cwd session actually lands.
           cwd: defaults.cwd,
@@ -2905,7 +2949,73 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           attachedSessions: ctx.agents.list().length,
           home: homedir(),
           canOpenPath: canOpenPaths(),
+          repository: value,
+          canRestart: ctx.get('appRestart') !== undefined,
+          // The Electron main process is the only surface where this field of
+          // process.versions exists; every plain Node host is the web CLI.
+          surface: process.versions.electron !== undefined ? 'electron' : 'web',
         }))
+      },
+
+      async checkUpdate(request) {
+        const selfUpdate = ctx.get('selfUpdate')
+        if (selfUpdate === undefined) {
+          return err(request, {
+            code: 'self-update-unavailable',
+            message: 'this deployment composes no self-update provider',
+            details: {},
+          })
+        }
+        try {
+          const check = await selfUpdate.check({ force: request.payload.force === true })
+          return ok(request, check satisfies UpdateCheck)
+        } catch (error: unknown) {
+          if (error instanceof GitError) return err(request, selfUpdateError(error))
+          throw error
+        }
+      },
+
+      async applyUpdate(request) {
+        const restart = ctx.get('appRestart')
+        if (restart === undefined) {
+          return err(request, {
+            code: 'restart-unavailable',
+            message: 'this launcher cannot replace its own process',
+            details: {},
+          })
+        }
+        const selfUpdate = ctx.get('selfUpdate')
+        if (selfUpdate === undefined) {
+          return err(request, {
+            code: 'self-update-unavailable',
+            message: 'this deployment composes no self-update provider',
+            details: {},
+          })
+        }
+        // One apply at a time; a second concurrent gesture folds behind the first.
+        const applied = applyChain.then(async (): Promise<RpcResponse<ApplyUpdateOutcome>> => {
+          // Safe end/pause: abort every live turn now, keep queued inbox work
+          // for the resumed sessions, and wait for quiescence so no agent is
+          // mid-write when the tree disposes.
+          await selfUpdate.quiesceAgents()
+          let outcome
+          try {
+            outcome = await selfUpdate.pull()
+          } catch (error: unknown) {
+            if (error instanceof GitError) return err(request, selfUpdateError(error))
+            throw error
+          }
+          // The response flushes inside this window, then the launcher
+          // disposes the tree and respawns this exact invocation.
+          setTimeout(restart, RESTART_FLUSH_DELAY_MS)
+          return ok(request, {
+            advanced: outcome.advanced,
+            previousCommit: outcome.previousCommit,
+            commit: outcome.commit,
+          })
+        })
+        applyChain = applied.catch(() => undefined)
+        return applied
       },
 
       async pickDirectory(request, signal) {

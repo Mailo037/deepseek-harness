@@ -485,6 +485,18 @@ export const IconWarningOutline16 = ({ size = 14, className }: IconProps) => (
   </svg>
 )
 
+/** ic_ds_warning_triangle_16 — warning triangle with rounded corners and cutout exclamation mark. */
+export const IconWarningTriangle16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M7.134 2.2a1 1 0 0 1 1.732 0l5.774 10A1 1 0 0 1 13.774 13.7H2.226a1 1 0 0 1-.866-1.5l5.774-10zM7.25 5.5h1.5v4h-1.5v-4zm0 5.25h1.5v1.5h-1.5v-1.5z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /** ic_ds_user_outline_16 */
 export const IconUserOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -880,5 +892,29 @@ export const IconArchiveOutline20 = ({ size = 20, className }: IconProps) => (
       fill="currentColor"
     />
     <path d="M12.7962 12.5661V11.0832H7.20548V12.5661L12.7962 12.5661Z" fill="currentColor" />
+  </svg>
+)
+
+/** ic_ds_image_outline_14 */
+export const IconImageOutline14 = ({ size = 14, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M2 2a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 2 12h10a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 12 2H2zm0 1.2h10c.166 0 .3.134.3.3v4.614l-2.45-2.45a.75.75 0 0 0-1.06 0L6.75 7.704 4.86 5.814a.75.75 0 0 0-1.06 0L1.7 7.914V3.5c0-.166.134-.3.3-.3zm-.3 6.328 2.65-2.65 1.89 1.89a.75.75 0 0 0 1.06 0l2.04-2.04 2.96 2.96V10.5a.3.3 0 0 1-.3.3H2a.3.3 0 0 1-.3-.3V9.528zM4.25 4.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
+/** ic_ds_video_outline_14 */
+export const IconVideoOutline14 = ({ size = 14, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M1.5 3.5A1.5 1.5 0 0 1 3 2h5.5A1.5 1.5 0 0 1 10 3.5v1.638l2.276-1.517A.75.75 0 0 1 13.5 4.25v5.5a.75.75 0 0 1-1.224.629L10 8.862v1.638A1.5 1.5 0 0 1 8.5 12H3a1.5 1.5 0 0 1-1.5-1.5v-7zM3 3.2a.3.3 0 0 0-.3.3v7c0 .166.134.3.3.3h5.5a.3.3 0 0 0 .3-.3v-7a.3.3 0 0 0-.3-.3H3zm7 2.612v2.376l2.3 1.533V4.28L10 5.812z"
+      fill="currentColor"
+    />
   </svg>
 )

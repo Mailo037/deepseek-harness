@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14,
+  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconWarningTriangle16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './AttachmentRail.module.css'
 
@@ -18,6 +18,8 @@ export interface AttachmentRailItem {
   alt: string
   /** Accessible label of the item's remove control. */
   removeLabel: string
+  /** Warning tooltip text when the active model does not support this attachment. */
+  warning?: string | undefined
 }
 
 /** Rail-level strings the owner resolves from its own locale namespace. */
@@ -166,6 +168,16 @@ export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, on
       >
         {items.map(item => (
           <div key={item.id} className={css.item}>
+            {item.warning !== undefined && (
+              <Tooltip label={item.warning} side="top" delayMs={100}>
+                <div
+                  className={css.warningBadge}
+                  aria-label={item.warning}
+                >
+                  <IconWarningTriangle16 size={18} className={css.warningIcon} />
+                </div>
+              </Tooltip>
+            )}
             <button
               type="button"
               className={css.thumbnail}

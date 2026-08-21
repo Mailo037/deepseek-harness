@@ -52,6 +52,8 @@ interface SearchBlockCommon {
   maxLines?: number | undefined
   /** Extra class merged onto the wrapper. */
   className?: string | undefined
+  /** Localized display copy; omitted fields keep the built-in defaults. */
+  labels?: Partial<SearchBlockLabels> | undefined
 }
 
 /** Props for the grouped-matches (`grep`) shape. */
@@ -66,6 +68,38 @@ export interface SearchPathsBlockProps extends SearchBlockCommon {
   kind: 'paths'
   /** The discovered paths, in the tool's result order (the retained page when `truncated`). */
   paths: string[]
+}
+
+/**
+ * Display copy for the search surface; the owner passes localized labels (this
+ * package is cordis-free, so copy arrives via props). Every field defaults to
+ * the current built-in value, so existing consumers render unchanged.
+ */
+export interface SearchBlockLabels {
+  /** Copy-button idle label. */
+  copy: string
+  /** Copy-button label during the post-copy confirmation window. */
+  copied: string
+  /** Placeholder when the search produced no result rows. */
+  empty: string
+  /** Collapse-toggle aria label while expanded. */
+  collapseAria: string
+  /** Collapse-toggle text while expanded. */
+  collapse: string
+  /** Expand-toggle aria label while capped, given the hidden row count. */
+  expandAria: (hidden: number) => string
+  /** Expand-toggle text while capped, given the hidden row count. */
+  expand: (hidden: number) => string
+}
+
+const DEFAULT_LABELS: SearchBlockLabels = {
+  copy: '复制',
+  copied: '复制成功',
+  empty: '无结果',
+  collapseAria: '收起结果',
+  collapse: '收起',
+  expandAria: hidden => `展开其余 ${hidden} 行结果`,
+  expand: hidden => `… 其余 ${hidden} 行`,
 }
 
 /** {@link SearchBlock} props: one card, two `kind`-discriminated shapes. */
@@ -171,7 +205,8 @@ function rowKey(row: SearchRow): string {
  * @returns the search block element.
  */
 export function SearchBlock(props: SearchBlockProps) {
-  const { truncated, total, maxLines = DEFAULT_SEARCH_MAX_LINES, className } = props
+  const { truncated, total, maxLines = DEFAULT_SEARCH_MAX_LINES, className, labels } = props
+  const copy: SearchBlockLabels = { ...DEFAULT_LABELS, ...labels }
   const [expanded, setExpanded] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set())
 
@@ -242,12 +277,12 @@ export function SearchBlock(props: SearchBlockProps) {
         <span className={css.summary}>{summaryText(props, shown, truncated, total)}</span>
         {!empty && (
           <button type="button" className={css.copyButton} onClick={onCopy}>
-            {copied ? '复制成功' : '复制'}
+            {copied ? copy.copied : copy.copy}
           </button>
         )}
       </div>
       {empty
-        ? <div className={css.empty}>无结果</div>
+        ? <div className={css.empty}>{copy.empty}</div>
         : (
           <div className={css.body}>
             {head.map(row => (
@@ -258,10 +293,10 @@ export function SearchBlock(props: SearchBlockProps) {
                 type="button"
                 className={css.expand}
                 aria-expanded={expanded}
-                aria-label={expanded ? '收起结果' : `展开其余 ${hidden} 行结果`}
+                aria-label={expanded ? copy.collapseAria : copy.expandAria(hidden)}
                 onClick={onToggle}
               >
-                {expanded ? '收起' : `… 其余 ${hidden} 行`}
+                {expanded ? copy.collapse : copy.expand(hidden)}
               </button>
             )}
             {tailHeader !== undefined && (

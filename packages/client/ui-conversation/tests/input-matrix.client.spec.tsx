@@ -16,6 +16,7 @@ import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-clie
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
+import type { QueueAction, QueueItemId, QueueRow } from '../src/client/contract/queue.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
@@ -79,11 +80,19 @@ function bench(over?: {
   disabled?: boolean
   submit?: (args: string) => Promise<SubmitOutcome>
   serialize?: (ids: readonly DraftAttachmentId[]) => Promise<readonly SubmitImageAttachment[]>
+  updateQueueItem?: (itemId: QueueItemId, action: QueueAction) => Promise<void>
+  queue?: { getSnapshot: () => readonly QueueRow[]; subscribe: (listener: () => void) => () => void }
 }) {
   const sink = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'success' }))
   const serialize = vi.fn(over?.serialize ?? (() => Promise.resolve<readonly SubmitImageAttachment[]>([])))
   const release = vi.fn()
-  const shell = new SessionInputShell({ actx: SCTX, defaultSink: sink, commandImages: { serialize, release, unsupportedNotice: (token: string) => `${token.trim()} images-unsupported` } })
+  const shell = new SessionInputShell({
+    actx: SCTX,
+    defaultSink: sink,
+    ...(over?.updateQueueItem === undefined ? {} : { updateQueueItem: over.updateQueueItem }),
+    ...(over?.queue === undefined ? {} : { queue: over.queue }),
+    commandImages: { serialize, release, unsupportedNotice: (token: string) => `${token.trim()} images-unsupported` },
+  })
   const wiring = shell
   const view = mountBar(shell, over)
   const textarea = view.container.querySelector('textarea')!
@@ -315,5 +324,90 @@ describe('matrix row: takeover (orthogonal axis)', () => {
     expect(shell.snapshot.phase).toBe('claimed')
     expect(shell.snapshot.claim?.token).toBe('/goal ')
     expect(shell.snapshot.draft).toBe('/goal ')
+  })
+})
+
+describe('matrix row: queue editing (composer-side edit flow)', () => {
+  const queuedRow = (id: string) => ({
+    id: id as never,
+    messageId: `message-${id}` as never,
+    placement: 'queued' as const,
+    content: [{ type: 'text' as const, text: id }],
+    preview: id,
+    text: id,
+  })
+
+  /** Bench with a queue face and the queue-edit mutation wired at construction. */
+  function queueBench(over?: { running?: boolean }) {
+    const updateQueueItem = vi.fn(() => Promise.resolve())
+    const b = bench({
+      ...over,
+      updateQueueItem: updateQueueItem as never,
+      queue: { getSnapshot: () => [queuedRow('q-1'), queuedRow('q-2')], subscribe: () => () => {} },
+    })
+    return { ...b, updateQueueItem }
+  }
+
+  function beginEdit(b: ReturnType<typeof queueBench>, itemId = 'q-1'): void {
+    act(() => {
+      expect(b.shell.beginQueueEdit(itemId as never)).toBe(true)
+    })
+  }
+
+  it('shows the editing banner, relabels the primary button, and Enter saves in place', async () => {
+    const b = queueBench()
+    b.shell.setDraft('my draft')
+    beginEdit(b)
+    expect(b.view.container.querySelector('[data-queue-editing]')?.textContent)
+      .toContain('正在编辑排队消息')
+    expect(b.view.getByLabelText('保存排队消息')).toBeTruthy()
+
+    fireEvent.change(b.textarea, { target: { value: 'edited body' } })
+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
+    await vi.waitFor(() => {
+      expect(b.updateQueueItem).toHaveBeenCalledWith('q-1', {
+        kind: 'edit',
+        content: [{ type: 'text', text: 'edited body' }],
+      })
+    })
+    await vi.waitFor(() => {
+      expect(b.shell.snapshot.draft).toBe('my draft')
+    })
+    expect(b.sink).not.toHaveBeenCalled()
+    expect(b.view.container.querySelector('[data-queue-editing]')).toBeNull()
+  })
+
+  it('Escape cancels the edit and restores the stashed draft', () => {
+    const b = queueBench()
+    b.shell.setDraft('my draft')
+    beginEdit(b)
+    fireEvent.keyDown(b.textarea, { key: 'Escape' })
+    expect(b.shell.snapshot.draft).toBe('my draft')
+    expect(b.shell.snapshot.queueEdit).toBeUndefined()
+    expect(b.view.container.querySelector('[data-queue-editing]')).toBeNull()
+    expect(b.updateQueueItem).not.toHaveBeenCalled()
+  })
+
+  it('suppresses the whole-queue steer gesture while an edit is loaded', () => {
+    const b = queueBench({ running: true })
+    const steer = vi.spyOn(b.shell, 'steerQueue').mockImplementation(() => {})
+    // Baseline: empty draft + running + queued rows steers on accelerated Enter.
+    fireEvent.keyDown(b.textarea, { key: 'Enter', ctrlKey: true })
+    expect(steer).toHaveBeenCalledOnce()
+
+    beginEdit(b)
+    b.shell.setDraft('')
+    fireEvent.keyDown(b.textarea, { key: 'Enter', ctrlKey: true })
+    expect(steer).toHaveBeenCalledOnce()
+    steer.mockRestore()
+  })
+
+  it('the banner cancel button restores the stash without mutating the queue', () => {
+    const b = queueBench()
+    b.shell.setDraft('my draft')
+    beginEdit(b)
+    fireEvent.click(b.view.getByLabelText('取消编辑'))
+    expect(b.shell.snapshot.draft).toBe('my draft')
+    expect(b.updateQueueItem).not.toHaveBeenCalled()
   })
 })

@@ -1,10 +1,9 @@
 // TurnWorkSummary: the completed-turn fold. When a turn closes, its work —
 // tool runs, Think rows, mid-turn narration — folds behind one plain line
 // carrying the run duration. No border box: a hairline underneath separates
-// the fold from what follows and carries the unfold affordance. The leading
-// slot stays empty at rest and shows the chevron on hover/focus. Unfolding
-// restores the rows exactly as they streamed; individual tool rows keep
-// their own collapsed bodies.
+// the fold from what follows, with the chevron at the line's right end.
+// Unfolding restores the rows exactly as they streamed; individual tool rows
+// keep their own collapsed bodies.
 
 import { memo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -33,11 +32,8 @@ export const TurnWorkSummary = memo(function TurnWorkSummary({
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
       >
-        <span className={css.leadingSwap}>
-          <span className={css.idleLead} />
-          <IconChevronDownOutline14 className={css.hoverChevron} />
-        </span>
         <span>{label}</span>
+        <IconChevronDownOutline14 className={css.turnSummaryChevron} />
       </button>
       {open && children}
     </section>

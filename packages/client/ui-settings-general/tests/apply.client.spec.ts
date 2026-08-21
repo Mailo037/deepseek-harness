@@ -9,6 +9,7 @@ import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/d
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
+import { AboutSection } from '../src/client/AboutSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
 
@@ -49,6 +50,10 @@ async function bench(isLoopback = true) {
   ctx.provide('connection', {
     api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
     isLoopback,
+    hostDescription: {
+      getSnapshot: () => undefined,
+      subscribe: () => () => {},
+    },
   } as never)
   new TestRemote(ctx)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
@@ -86,13 +91,23 @@ describe('ui-settings-general apply', () => {
     const before = await bench()
     declare(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
+    // Single-entry seats first (the action's own entry carries id open-document).
     for (const [name, component] of SEATS) {
+      if (name === 'settings.section') continue
+      expect(before.slots.entries(name)).toHaveLength(1)
       expect(before.slots.entries(name)[0]!.component).toBe(component)
     }
+    // Two sections from this package, ordered general → about.
+    const sections = before.slots.entries('settings.section')
+    const byId = new Map(sections.map(e => [String(e.options.id), e]))
+    expect(byId.get('general')!.component).toBe(GeneralSection)
+    expect(byId.get('about')!.component).toBe(AboutSection)
+    expect(Number(byId.get('general')!.options.order)).toBeLessThan(Number(byId.get('about')!.options.order))
     const entry = generalEntry(before.slots)!
     expect(entry.options).toMatchObject({ id: 'general', order: 0 })
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(resolveSlotLabel(entry.options.label)).toBe('通用设置')
+    expect(resolveSlotLabel(byId.get('about')!.options.label)).toBe('关于')
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     expect(before.slots.entries('settings.general.item')).toEqual([])
     // The onboarding hole stays declared for feature-owned steps; this plugin
@@ -103,18 +118,20 @@ describe('ui-settings-general apply', () => {
     expect(actionInjected.controller.store.getSnapshot().status).toBe('idle')
     expect(actionInjected.hooks.snapshot).toBe(actionInjected.controller.store)
     // Copy rides the standard locale seat: every seat declares the namespace.
-    for (const [name] of SEATS) {
+    for (const name of ['settings.trigger', 'settings.header', 'settings.close']) {
       expect(before.slots.entries(name)[0]!.locale).toBe('settings')
     }
+    expect(action.locale).toBe('settings')
+    expect(byId.get('about')!.locale).toBe('settings')
+
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
+    // Nothing is registered until the declaring entry appears.
     for (const [name] of SEATS) expect(after.slots.entries(name)).toHaveLength(0)
     declare(after.slots)
     await Promise.resolve()
-    for (const [name, component] of SEATS) {
-      expect(after.slots.entries(name)[0]!.component).toBe(component)
-      // The self-inflicted ledger notifications hit the duplicate guard.
-      expect(after.slots.entries(name)).toHaveLength(1)
+    for (const [name] of SEATS) {
+      expect(after.slots.entries(name)).toHaveLength(name === 'settings.section' ? 2 : 1)
     }
     await vi.waitFor(() => {
       expect(after.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
@@ -146,7 +163,7 @@ describe('ui-settings-general apply', () => {
     // subscription), not re-registration.
     SEATS.forEach(([name], i) => {
       expect(b.slots.getVersion(name)).toBe(zhVersions[i]!)
-      expect(b.slots.entries(name)).toHaveLength(1)
+      expect(b.slots.entries(name)).toHaveLength(name === 'settings.section' ? 2 : 1)
     })
     expect(resolveSlotLabel(generalEntry(b.slots)!.options.label)).toBe('General')
     b.locale.setLocale('zh')

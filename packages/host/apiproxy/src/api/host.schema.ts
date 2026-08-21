@@ -3,12 +3,19 @@
  */
 
 import { z } from 'zod'
-import type { DirectoryEntry } from './host.ts'
+import type { DirectoryEntry, HostRepository, UpdateLatestCommit } from './host.ts'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 
 /** host.describe request payload (empty object literal). */
 export const hostDescribeRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'host.describe'>>>
+
+/** Repository identity row of the describe value. */
+export const hostRepositorySchema = z.object({
+  branch: z.string(),
+  commit: z.string(),
+  remoteUrl: z.string().nullable(),
+}) satisfies z.ZodType<Wire<HostRepository>>
 
 /** host.describe response value. */
 export const hostDescribeValueSchema = z.object({
@@ -19,7 +26,42 @@ export const hostDescribeValueSchema = z.object({
   attachedSessions: z.number().int().nonnegative(),
   home: z.string(),
   canOpenPath: z.boolean(),
+  repository: hostRepositorySchema.nullable(),
+  canRestart: z.boolean(),
+  surface: z.union([z.literal('web'), z.literal('electron')]),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.describe'>>>
+
+/** host.checkUpdate request payload; `force` bypasses the host's result cache. */
+export const hostCheckUpdateRequestSchema = z.object({
+  force: z.boolean().optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.checkUpdate'>>>
+
+/** Newest upstream commit row of the check value. */
+export const updateLatestCommitSchema = z.object({
+  commit: z.string(),
+  subject: z.string(),
+}) satisfies z.ZodType<Wire<UpdateLatestCommit>>
+
+/** host.checkUpdate response value. */
+export const hostCheckUpdateValueSchema = z.object({
+  available: z.boolean(),
+  branch: z.string(),
+  commit: z.string(),
+  upstream: z.string(),
+  behind: z.number().int().nonnegative(),
+  latest: updateLatestCommitSchema.nullable(),
+  checkedAt: z.number(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.checkUpdate'>>>
+
+/** host.applyUpdate request payload (empty object literal). */
+export const hostApplyUpdateRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'host.applyUpdate'>>>
+
+/** host.applyUpdate response value. */
+export const hostApplyUpdateValueSchema = z.object({
+  advanced: z.boolean(),
+  previousCommit: z.string(),
+  commit: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.applyUpdate'>>>
 
 /** host.pickDirectory request payload (empty object literal). */
 export const hostPickDirectoryRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'host.pickDirectory'>>>

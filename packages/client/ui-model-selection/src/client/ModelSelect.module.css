@@ -72,28 +72,69 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  /* Let the visible pane's rows set the card width, but keep pathological ids
-     and narrow screens inside a bounded card where ellipsis remains. */
-  width: max-content;
-  min-width: min(240px, calc(100vw - 32px));
-  max-width: min(420px, calc(100vw - 32px));
-  max-height: min(360px, calc(100vh - 96px));
-  overflow: hidden;
+  /* Bounded card width with strictly hidden horizontal overflow */
+  width: 320px;
+  max-width: min(400px, calc(100vw - 32px));
+  max-height: min(380px, calc(100vh - 96px));
+  overflow-x: hidden;
+  overflow-y: hidden;
   padding: 4px;
-  /* Surface tokens match the Menu primitive card (ui-primitives
-   * Menu.module.css) so every dropdown reads as the same material. */
+  /* Surface tokens match the Menu primitive card */
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
   background: var(--dsw-specific-menu);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
-  /* Elevated surface: the scrollbar thumb takes the l2 elevation tokens.
-     Declared here rather than on the scrolling `.groups` child so the
-     elevation choice sits with the surface; the custom properties inherit
-     down to whichever descendant actually scrolls (see ui-theme
-     styles/scrollbar.css for the rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.searchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  margin-bottom: 4px;
+}
+
+.searchIcon {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.searchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.searchClear {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.searchClear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .status,
@@ -137,6 +178,7 @@
 
 .groups {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -144,16 +186,63 @@
   margin-top: 4px;
 }
 
-.groupTitle {
+.groupHeaderRow {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 5px 8px 3px;
   background: var(--dsw-specific-menu);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 5px 8px 3px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+}
+
+.groupHeader:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.groupTitle {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupCount {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 14px;
   font-weight: 500;
+}
+
+.groupChevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--dsw-alias-label-caption);
+  transition: transform 120ms ease;
+}
+
+.groupChevronCollapsed {
+  transform: rotate(-90deg);
 }
 
 .option {
@@ -161,8 +250,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: auto;
-  min-width: 100%;
+  width: 100%;
+  max-width: 100%;
   min-height: 38px;
   padding: 6px 8px;
   border: none;
@@ -172,6 +261,7 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .option:hover:not(:disabled),
@@ -179,8 +269,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Selection marker is the trailing check, not a fill — matches the Menu
- * primitive's selected treatment. */
+/* Selection marker is the trailing check, not a fill */
 .selected {
   background: transparent;
 }
@@ -192,15 +281,56 @@
 
 .optionCopy {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.modalityBadges {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.modalityIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l3);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.modalityT {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .modelName {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 20px;
   font-weight: 500;
   text-overflow: ellipsis;

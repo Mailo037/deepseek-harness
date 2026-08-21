@@ -92,6 +92,16 @@ export interface RpcErrorDetailsMap {
   'subagent-not-resumable': { childSessionId: SessionId }
   'subagent-unauthorized': { childSessionId: SessionId }
   'subagent-delivery-unavailable': { childSessionId: SessionId }
+  /** No git working tree, no git executable, or no self-update provider composed. */
+  'self-update-unavailable': {}
+  /** The current branch has no configured upstream to update against. */
+  'self-update-no-upstream': {}
+  /** A git failure during the check the wire could not classify further. */
+  'self-update-git-failed': {}
+  /** The upstream moved with history this checkout cannot fast-forward to. */
+  'self-update-not-fast-forward': {}
+  /** This launcher cannot replace its own process, so apply is refused. */
+  'restart-unavailable': {}
   'internal': {}
 }
 

@@ -461,4 +461,48 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 330])
   })
+
+  it('renders ConnectionLostOverlay when connection state is reconnecting', () => {
+    let state = 'connected' as 'connected' | 'reconnecting'
+    const listeners = new Set<() => void>()
+    const fakeConnection = {
+      state: {
+        getSnapshot: () => state,
+        subscribe: (fn: () => void) => {
+          listeners.add(fn)
+          return () => { listeners.delete(fn) }
+        },
+      },
+    } as never
+    const { frame } = mountFrame()
+    expect(frame.querySelector('[data-connection-lost]')).toBeNull()
+
+    const instance = createLayoutStore().create()
+    const { container } = render(
+      <AppFrame
+        useStore={hookOf(instance)}
+        actions={instance.actions}
+        renderSlot={() => null}
+        useSessions={(() => undefined) as never}
+        useWorkspaces={(() => undefined) as never}
+        SessionProvider={SessionProviderStub}
+        connection={fakeConnection}
+      />,
+    )
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+
+    act(() => {
+      state = 'reconnecting'
+      for (const fn of listeners) fn()
+    })
+    expect(container.querySelector('[data-connection-lost]')).not.toBeNull()
+    expect(container.textContent).toContain('HARNESS')
+    expect(container.textContent).toContain('Connection lost. Trying to connect to server…')
+
+    act(() => {
+      state = 'connected'
+      for (const fn of listeners) fn()
+    })
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+  })
 })

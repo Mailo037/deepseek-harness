@@ -2,27 +2,46 @@
  * Shell chrome content registered into the shell's trigger/header seats: the
  * trigger row icon + label (figma sidebar foot) and the panel title text.
  * The shell renders the surrounding chrome (button, nav heading row) and
- * reads each entry's `label` option for aria text.
+ * reads each entry's `label` option for aria text. The trigger carries the
+ * update badge: a blue dot beside the icon while an update is available or
+ * being applied, so the affordance is visible in both sidebar widths.
  */
 import { IconSettingsOutline14, IconSettingsOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { UpdateStore } from './update-store.ts'
 import css from './chrome.module.css'
 
-/** Trigger content props: the sidebar column state + the standard locale seat. */
-export type TriggerContentProps = PropsRuntime<'settings.trigger'> & PropsLocale<'settings'>
+/** Registrant-owned dependencies of {@link TriggerContent}. */
+export interface TriggerContentInjected {
+  hooks: {
+    /** Shared update-state snapshot bound by the UI renderer as useSnapshot. */
+    snapshot: UpdateStore['store']
+  }
+}
+
+/** Trigger content props: the sidebar column state + locale + update state. */
+export type TriggerContentProps =
+  PropsRuntime<'settings.trigger'> & PropsLocale<'settings'> & InjectFace<TriggerContentInjected>
 
 /** Header content props: the standard locale seat only. */
 export type HeaderContentProps = PropsRuntime<'settings.header'> & PropsLocale<'settings'>
 
+/** Phases that keep the badge drawn (an apply keeps it visible while running). */
+const BADGE_PHASES = new Set(['available', 'applying', 'restarting'])
+
 /**
- * Render the trigger row content (icon; label only in the wide column).
+ * Render the trigger row content (icon; label only in the wide column) with
+ * the update badge when one is available.
  * @param props - composed slot props.
  * @returns the trigger content fragment.
  */
-export function TriggerContent({ wide, t }: TriggerContentProps) {
+export function TriggerContent({ wide, useSnapshot, t }: TriggerContentProps) {
+  const state = useSnapshot(snapshot => snapshot)
+  const badge = BADGE_PHASES.has(state.phase)
   return (
     <>
       {wide ? <IconSettingsOutline16 size={16} /> : <IconSettingsOutline14 size={18} />}
+      {badge && <span className={css.updateBadge} role="status" aria-label={t('about.available.short')} />}
       {wide && <span className={css.triggerLabel}>{t('trigger')}</span>}
     </>
   )

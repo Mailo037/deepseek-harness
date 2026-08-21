@@ -204,7 +204,38 @@ export function catalogProviderTakesApiKey(provider: string): boolean {
 export function catalogModels(provider: string): Map<string, Model<Api>> {
   if (!catalogProviders().has(provider)) return new Map()
   const models = getBuiltinModels(provider as BuiltinProvider) as Model<Api>[]
-  return new Map(models.map(model => [model.id, model]))
+  const map = new Map(models.map(model => [model.id, model]))
+  if (provider === 'openrouter') {
+    if (!map.has('stealth/ox-alpha')) {
+      map.set('stealth/ox-alpha', {
+        id: 'stealth/ox-alpha',
+        name: 'Ox Alpha',
+        provider: 'openrouter',
+        api: 'openai-completions',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        input: ['text', 'image'],
+        reasoning: true,
+        cost: NO_COST,
+      } as Model<Api>)
+    }
+    if (!map.has('deepseek/deepseek-v4-flash-vision-exp')) {
+      map.set('deepseek/deepseek-v4-flash-vision-exp', {
+        id: 'deepseek/deepseek-v4-flash-vision-exp',
+        name: 'DeepSeek: DeepSeek-V4-Flash-Vision (Exp)',
+        provider: 'openrouter',
+        api: 'openai-completions',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        contextWindow: 1000000,
+        maxTokens: 131072,
+        input: ['text', 'image'],
+        reasoning: true,
+        cost: NO_COST,
+      } as Model<Api>)
+    }
+  }
+  return map
 }
 
 /**

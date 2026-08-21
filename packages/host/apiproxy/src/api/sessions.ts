@@ -124,6 +124,8 @@ export interface ModelCatalogModel {
   name: string
   /** Optional provider-supplied description. */
   description?: string
+  /** Accepted input modalities when known (`text`, `image`, `video`). */
+  inputModalities?: string[]
   /** Exact-route reasoning metadata when the adapter exposes it. */
   reasoning?: ModelReasoning
 }

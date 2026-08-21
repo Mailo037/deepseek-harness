@@ -19,10 +19,12 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconWarningOutline16, Toast,
+  IconCloseFill14, IconImageOutline14, IconSearchOutline16, IconVideoOutline14,
+  IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
+import type { ModelKey } from './locales.ts'
 import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
@@ -34,6 +36,53 @@ interface EffortChoice {
   effort: string | undefined
   label: string
   description?: string
+}
+
+/** Render a single compact modality icon with tooltip. */
+function ModalityBadge({ modality, t }: { modality: string; t: (key: ModelKey) => string }) {
+  if (modality === 'image') {
+    return (
+      <Tooltip label={t('modality.image')} side="top" delayMs={100}>
+        <span className={css.modalityIcon} aria-label={t('modality.image')}>
+          <IconImageOutline14 size={12} />
+        </span>
+      </Tooltip>
+    )
+  }
+  if (modality === 'video') {
+    return (
+      <Tooltip label={t('modality.video')} side="top" delayMs={100}>
+        <span className={css.modalityIcon} aria-label={t('modality.video')}>
+          <IconVideoOutline14 size={12} />
+        </span>
+      </Tooltip>
+    )
+  }
+  return (
+    <Tooltip label={t('modality.text')} side="top" delayMs={100}>
+      <span className={clsx(css.modalityIcon, css.modalityT)} aria-label={t('modality.text')}>
+        T
+      </span>
+    </Tooltip>
+  )
+}
+
+const MODALITY_ALIASES: Record<string, readonly string[]> = {
+  image: ['image', 'images', 'img', 'vision', 'bild', 'bilder', 'foto', 'photo', 'picture', 'pic'],
+  video: ['video', 'videos', 'vid', 'film', 'clip'],
+  text: ['text', 'txt'],
+  audio: ['audio', 'sound', 'voice', 'ton', 'sprache', 'speech'],
+}
+
+/** Check whether a model's modalities match a search token. */
+function modelMatchesModality(modalities: readonly string[] | undefined, token: string): boolean {
+  if (!modalities || modalities.length === 0) return false
+  return modalities.some((mod) => {
+    const lower = mod.toLowerCase()
+    if (lower.includes(token) || token.includes(lower)) return true
+    const aliases = MODALITY_ALIASES[lower]
+    return aliases !== undefined && aliases.some(alias => alias === token || alias.includes(token) || token.includes(alias))
+  })
 }
 
 /**
@@ -101,6 +150,49 @@ export function ModelSelect(
       })),
     ], [reasoning, t])
   const busy = state.status === 'selecting'
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set())
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  const toggleGroup = (groupId: string): void => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
+  }
+
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const filteredGroups = useMemo(() => {
+    if (!normalizedQuery) return state.groups
+    const tokens = normalizedQuery.split(/\s+/).filter(Boolean)
+    return state.groups
+      .map((group) => {
+        const groupNameLower = group.name.toLowerCase()
+        const groupIdLower = group.id.toLowerCase()
+        const matchingModels = group.models.filter((m) => {
+          const nameLower = m.name.toLowerCase()
+          const idLower = m.id.toLowerCase()
+          const descLower = m.description?.toLowerCase() ?? ''
+          return tokens.every(token =>
+            groupNameLower.includes(token) ||
+            groupIdLower.includes(token) ||
+            nameLower.includes(token) ||
+            idLower.includes(token) ||
+            descLower.includes(token) ||
+            modelMatchesModality(m.inputModalities, token),
+          )
+        })
+        if (matchingModels.length === 0) return null
+        return {
+          ...group,
+          models: matchingModels,
+        }
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null)
+  }, [state.groups, normalizedQuery])
 
   const reload = (): void => {
     lastActionRef.current = 'load'
@@ -283,13 +375,61 @@ export function ModelSelect(
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               ))}
+              <div className={css.searchBox}>
+                <IconSearchOutline16 size={14} className={css.searchIcon} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  className={css.searchInput}
+                  value={searchQuery}
+                  placeholder={t('search.placeholder')}
+                  aria-label={t('search.placeholder')}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      moveFocus(1)
+                    } else if (e.key === 'Escape' && searchQuery) {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setSearchQuery('')
+                    }
+                  }}
+                />
+                {searchQuery.length > 0 && (
+                  <button
+                    type="button"
+                    className={css.searchClear}
+                    onClick={() => {
+                      setSearchQuery('')
+                      searchInputRef.current?.focus()
+                    }}
+                    aria-label="Clear search"
+                  >
+                    <IconCloseFill14 size={12} />
+                  </button>
+                )}
+              </div>
               <div className={clsx(css.groups, 'scrollable')}>
-                {state.groups.map((group) => {
+                {filteredGroups.map((group) => {
                   const headingId = `${id}-${group.id}`
+                  const isCollapsed = normalizedQuery ? false : collapsedGroups.has(group.id)
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>{group.name}</div>
-                      {group.models.map((model) => {
+                      <div className={css.groupHeaderRow}>
+                        <button
+                          type="button"
+                          className={css.groupHeader}
+                          onClick={() => toggleGroup(group.id)}
+                          aria-expanded={!isCollapsed}
+                          title={group.name}
+                        >
+                          <span className={css.groupTitle} id={headingId}>{group.name}</span>
+                          <span className={css.groupCount}>{group.models.length}</span>
+                          <IconChevronDownOutline14 className={clsx(css.groupChevron, isCollapsed && css.groupChevronCollapsed)} />
+                        </button>
+                      </div>
+                      {!isCollapsed && group.models.map((model) => {
                         const selected = state.current?.provider === group.id && state.current.model === model.id
                         return (
                           <button
@@ -304,7 +444,16 @@ export function ModelSelect(
                             onClick={() => { choose({ provider: group.id, model: model.id }) }}
                           >
                             <span className={css.optionCopy}>
-                              <span className={css.modelName}>{model.name}</span>
+                              <span className={css.nameRow}>
+                                <span className={css.modelName}>{model.name}</span>
+                                {model.inputModalities && model.inputModalities.length > 0 && (
+                                  <span className={css.modalityBadges}>
+                                    {model.inputModalities.map(mod => (
+                                      <ModalityBadge key={mod} modality={mod} t={t} />
+                                    ))}
+                                  </span>
+                                )}
+                              </span>
                               {model.description !== undefined && (
                                 <span className={css.description}>{model.description}</span>
                               )}
@@ -319,8 +468,8 @@ export function ModelSelect(
                   )
                 })}
               </div>
-              {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
+              {state.status === 'ready' && filteredGroups.length === 0 && (
+                <div className={css.empty}>{normalizedQuery ? t('empty.search') : t('empty.models')}</div>
               )}
             </>
           )}

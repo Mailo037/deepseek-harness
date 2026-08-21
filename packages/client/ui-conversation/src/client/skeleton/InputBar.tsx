@@ -665,6 +665,9 @@ export function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
+          warning: promptError?.error.code === 'attachment-error' && promptError.error.details?.reason === 'MODEL_DOES_NOT_SUPPORT_IMAGES'
+            ? t('image.modelUnsupported')
+            : undefined,
           onAddImages: intakeImages,
           onRemoveImage: (id) => { removeImage?.(id) },
           dropLimits: imageLimits === undefined ? undefined : {

@@ -11,6 +11,7 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
+import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -208,6 +209,31 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   const composed = composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
+  // Process replacement (ctx.appRestart): dispose the tree first — the web
+  // server's teardown releases the listen port — then start this exact
+  // invocation again as a detached child and exit. The child binds the freed
+  // port; the browser's reconnect loop brings the page back onto the new
+  // process. One request wins; a repeat call during disposal is a no-op.
+  let restartRequested = false
+  const restart = (): void => {
+    if (restartRequested) return
+    restartRequested = true
+    void shutdown.shutdown(0).then(
+      () => {
+        spawn(process.execPath, process.argv.slice(1), {
+          cwd: process.cwd(),
+          env: process.env,
+          detached: true,
+          stdio: 'inherit',
+        }).on('error', (error) => {
+          console.error(`dsh: restart respawn failed: ${error instanceof Error ? error.message : String(error)}`)
+          process.exit(1)
+        })
+        process.exit(0)
+      },
+      () => { process.exit(1) },
+    )
+  }
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
     signalShutdown.abort()
@@ -250,11 +276,12 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-    // The command line and bounded exit request are launcher facts available
-    // to every app plugin that injects the argument snapshot.
+    // The command line and the bounded exit/restart requests are launcher
+    // facts available to every app plugin that injects the argument snapshot.
     provideCmdline(hostCtx, {
       args: options.args,
       exit: code => void shutdown.shutdown(code),
+      restart,
     })
   })
   app.current = ctx

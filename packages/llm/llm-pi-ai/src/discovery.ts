@@ -59,6 +59,17 @@ interface ListingEntry {
   context_length?: unknown
   max_tokens?: unknown
   max_output_tokens?: unknown
+  top_provider?: {
+    max_completion_tokens?: unknown
+    context_length?: unknown
+  }
+  architecture?: {
+    modality?: unknown
+    input_modalities?: unknown
+    output_modalities?: unknown
+  }
+  input_modalities?: unknown
+  modalities?: unknown
 }
 
 /** A positive integer field of a listing entry, or `undefined` when absent or unusable. */
@@ -130,6 +141,43 @@ async function readBounded(response: Response, url: string): Promise<string> {
   return new TextDecoder().decode(body)
 }
 
+/** Parse input modalities from entry architecture or model conventions. */
+function parseModalities(entry: ListingEntry | null, id: string): string[] | undefined {
+  if (entry === null) return undefined
+  const raw = entry.architecture?.modality
+    ?? entry.architecture?.input_modalities
+    ?? entry.input_modalities
+    ?? entry.modalities
+
+  if (typeof raw === 'string') {
+    const inputPart = raw.split('->')[0] ?? raw
+    const parts = inputPart.split('+').map(p => p.trim().toLowerCase())
+    const res: string[] = []
+    if (parts.includes('text') || parts.length === 0) res.push('text')
+    if (parts.includes('image')) res.push('image')
+    if (parts.includes('video')) res.push('video')
+    return res.length > 0 ? res : undefined
+  }
+  if (Array.isArray(raw)) {
+    const res: string[] = []
+    for (const item of raw) {
+      if (typeof item === 'string') {
+        const lower = item.toLowerCase()
+        if ((lower === 'text' || lower === 'image' || lower === 'video') && !res.includes(lower)) {
+          res.push(lower)
+        }
+      }
+    }
+    return res.length > 0 ? res : undefined
+  }
+  if (id.includes('gemini') || id.includes('vision') || id.includes('vl') || id.includes('ox-alpha')) {
+    const res = ['text', 'image']
+    if (id.includes('gemini') || id.includes('ox-alpha')) res.push('video')
+    return res
+  }
+  return undefined
+}
+
 /**
  * Read one OpenAI-compatible listing reply. Entries without a usable id are
  * skipped rather than failing the whole interrogation: a single malformed row
@@ -149,13 +197,23 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
     const id = label(entry?.id)
     if (id === undefined) continue
     const name = label(entry?.name, entry?.display_name)
-    const contextWindow = capacity(entry?.context_window, entry?.context_length)
-    const maxTokens = capacity(entry?.max_output_tokens, entry?.max_tokens)
+    const contextWindow = capacity(
+      entry?.context_window,
+      entry?.context_length,
+      entry?.top_provider?.context_length,
+    )
+    const maxTokens = capacity(
+      entry?.max_output_tokens,
+      entry?.max_tokens,
+      entry?.top_provider?.max_completion_tokens,
+    )
+    const inputModalities = parseModalities(entry, id)
     models.push({
       id,
       ...name === undefined ? {} : { name },
       ...contextWindow === undefined ? {} : { contextWindow },
       ...maxTokens === undefined ? {} : { maxTokens },
+      ...inputModalities === undefined ? {} : { inputModalities },
     })
   }
   return models
@@ -198,7 +256,8 @@ export async function discoverModels(
 ): Promise<readonly LlmDiscoveredModel[]> {
   // A catalog route already has its answer, and a better one: the installed
   // entries carry context windows and output caps no listing endpoint reports.
-  if (request.provider !== undefined) {
+  // Exception: openrouter maintains 400+ models; probe live endpoint when possible.
+  if (request.provider !== undefined && request.provider !== 'openrouter') {
     const installed = catalogModels(request.provider)
     if (installed.size > 0) {
       return [...installed.values()].map(model => ({
@@ -206,10 +265,24 @@ export async function discoverModels(
         name: model.name,
         contextWindow: model.contextWindow,
         maxTokens: model.maxTokens,
+        inputModalities: (model.input ?? []).slice(),
       }))
     }
   }
-  if (request.baseURL === undefined || request.baseURL.length === 0) {
+  const effectiveBaseUrl = (request.baseURL && request.baseURL.length > 0)
+    ? request.baseURL
+    : (request.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined)
+
+  if (effectiveBaseUrl === undefined) {
+    if (request.provider === 'openrouter') {
+      const installed = catalogModels('openrouter')
+      return [...installed.values()].map(model => ({
+        id: model.id,
+        name: model.name,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+      }))
+    }
     throw new LlmError(
       `pi-ai ships no catalog for provider "${request.provider ?? ''}", so its models can only come from its`
       + " endpoint; set a baseURL, or enter this provider's models by hand",
@@ -229,7 +302,7 @@ export async function discoverModels(
       'DISCOVERY_UNSUPPORTED',
     )
   }
-  const url = listingUrl(request.baseURL)
+  const url = listingUrl(effectiveBaseUrl)
   // A key typed into the form wins: it is the one the user is testing, and it
   // may be the replacement for exactly the stored key that is failing. The
   // stored one is only asked for here, past the catalog short-circuit and the

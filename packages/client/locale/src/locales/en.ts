@@ -26,4 +26,5 @@ export const en = {
   'unknown': 'Unknown',
   'none': 'None',
   'truncated': 'Truncated',
+  'connection.lost': 'Connection lost. Trying to connect to server…',
 } satisfies Record<CommonKey, string>

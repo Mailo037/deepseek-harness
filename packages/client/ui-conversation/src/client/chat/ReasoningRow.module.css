@@ -30,7 +30,11 @@
 }
 
 .leading {
+  /* Solid base disc so the ToolCallGroup connector line passing through the
+     icon column centre does not show through the Think glyph. */
   flex-shrink: 0;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
 }
 
 .chevron {
@@ -66,6 +70,11 @@
 }
 
 .thinkBody {
+  /* Expanded reasoning scrolls inside its own frame instead of stretching the
+     transcript; the collapsed one-liner stays the resting state anyway. */
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 0 4px 22px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 14px;

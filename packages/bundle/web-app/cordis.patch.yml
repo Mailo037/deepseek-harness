@@ -111,6 +111,13 @@
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
 
+    # Git-backed self-update for a host running from a checkout: repository
+    # identity for the About surface, upstream checks, agent quiescence, and
+    # fast-forward pulls. A built installation (or any layout without .git)
+    # degrades to the unavailable capability instead of failing the load.
+    - id: self-update
+      name: '@deepseek-ai/dsh-host-self-update'
+
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
 

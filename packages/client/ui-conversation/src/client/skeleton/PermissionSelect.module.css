@@ -26,6 +26,19 @@
   box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
+/* Full access is the elevated permission: amber text + soft amber fill on
+   the trigger so an active dangerous mode reads at a glance. The icon glyph
+   uses currentColor, so it tints with the rest of the chip. */
+.triggerFullAccess,
+.triggerFullAccess:hover:not(:disabled) {
+  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.triggerFullAccess:disabled {
+  color: var(--dsw-alias-label-dimmed);
+}
+
 .trigger:disabled {
   color: var(--dsw-alias-label-dimmed);
   cursor: default;

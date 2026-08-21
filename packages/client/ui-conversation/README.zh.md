@@ -28,7 +28,9 @@ Think 行默认保持折叠，并在不展开思维链的情况下暴露实时�
 
 `TodoDock` 以 `order: 0` 占用 `'conversation.input.dock'` 列表 slot（位于 Goal 与 Queue 之前），作为计划条读取 host 计算的 `todos` 投影（当前计划：其后没有更晚 `turn/start` 的最近一次 `todo/write`）并渲染 `TodoPanel`。面板接收纯列表，列表为空时自我隐藏；列表非空时默认折叠，表头显示标题及以 `·` 连接的各状态计数（如 `1 已完成 · 2 进行中 · 1 待处理`，省略零计数）。dock adapter 拥有 selection，因此面板保持为 props 的纯函数。输入区 composer 链隐藏的一切也会隐藏整个 dock。`todo_write` 工具行属于 [`ui-tool`](../ui-tool/README.md)。
 
-`QueueDock` 是 `order: 20` 的末端 input-dock 条目。队列为空时隐藏；只有一个待处理项时直接渲染该行；存在两个或更多待处理项时，默认收起为 `"<n> 条排队消息"` 表头，其按钮可展开或收起完整列表。表头暴露 `aria-expanded` 和 `aria-controls`；展开后的列表以 180px 为高度上限，并可滚动。存在进行中的编辑或变更时，列表行会保持可见；队列清空后，下一次出现队列时会恢复默认收起状态。普通会话中的每条可见行仍是单行预览，并提供针对精确单次入队项的编辑、删除和严格 steering 操作；已寻址 subagent 则保留只读行，因为其继续执行传输不提供 Queue 变更。如果严格 steering 输给已关闭的窗口，原单次入队项会留在 Queue 中正常投递；如果驱动器已经认领该项，正常投递就已开始。这两种已收敛的竞态都不显示失败，传输和未知错误仍会显示。
+`QueueDock` 是 `order: 20` 的末端 input-dock 条目。队列为空时隐藏；只有一个待处理项时直接渲染该行；存在两个或更多待处理项时，默认收起为 `"<n> 条排队消息"` 表头，其按钮可展开或收起完整列表。表头暴露 `aria-expanded` 和 `aria-controls`；展开后的列表以 180px 为高度上限，并可滚动。存在进行中的 composer 侧编辑或变更时，列表行会保持可见；队列清空后，下一次出现队列时会恢复默认收起状态。一旦有两行可重排，普通会话中的每条可见行都会在最左侧出现拖拽手柄——将其拖到另一行上（或在聚焦的手柄上按 ArrowUp/ArrowDown）会通过 `session.updateQueue` 提交一次 `move` 操作，由权威快照重绘发送顺序；客户端不做乐观重排。行操作是针对精确单次入队项的编辑、删除和严格 steering。编辑会把该行文本载入 composer（见下文的队列编辑流程），而不是内联编辑器；已寻址 subagent 则保留只读行，因为其继续执行传输不提供 Queue 变更。如果严格 steering 输给已关闭的窗口，原单次入队项会留在 Queue 中正常投递；如果驱动器已经认领该项，正常投递就已开始。这两种已收敛的竞态都不显示失败，传输和未知错误仍会显示。
+
+队列编辑流程位于每会话的 input shell 中：激活编辑会暂存当前草稿与已附加图片，把草稿替换为该行文本，并发布 `InputState.queueEdit`——composer 显示编辑横幅，Enter（或改名的保存按钮）针对该入队项提交一次文本 `edit` 操作并保持其队列位置，成功后恢复暂存的草稿与图片；Escape 或横幅／dock 中的取消会在不改动队列的情况下退出。仅含空白的提交与机器的空草稿守卫一样是无操作。若被编辑的入队项在编辑期间离开待处理队列（被认领、被 steering、被删除），暂存会自动恢复，用户的草稿不会因竞态丢失；被拒绝的编辑在该行仍待处理时保持编辑状态并显示本地化提示。编辑载入期间，整队列加速 Enter steering 手势会被抑制。
 
 Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。QueueDock 会将其过滤掉，ChatView 则把它投影为会话流末尾带复制操作的用户样式气泡；非用户来源的 next-step 项（注入上下文）改以 `context` placement 广播，领取前不在任何界面渲染。与所有用户样式气泡一样，这里不显示 fork。Host 会等携带该 steering 的持久 `user/message` 进入 mux 流之后再退役 steering。客户端运行时接纳该实时事件时，会在发布快照前退役第一个匹配的当前 steering 单次入队项；历史事件无法隐藏后来复用同一 `MessageId` 的单次入队项。气泡交接时因而不会产生空档或重复，会立即从持久节点恢复复制操作与时钟——steering 气泡与 user 气泡一样不带分支操作（[决策](../../../.agents/notes/implemented/simplification/2026-08-06-user-bubbles-drop-the-branch-action.md)）——并能在重连后从同一权威恢复。
 
@@ -63,5 +65,5 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 - **others 工具行的闪光图标是手绘近似版本**：无法在本地导出设计字形的矢量几何；等到存在精确导出后再将其提升到 ui-primitives。
 - **审批面板的「始终允许此类」暂缓**：持久授权需要授权存储设计；今天只能回答允许一次／拒绝。
 - **TodoPanel 将过长条目截成单行省略号**：figma 条没有换行或展开入口，完整文本无法在行内读完。
-- **Queue 编辑仅支持文本**：包含非文本块的行仍显示扁平化预览，但由于内联编辑器无法保留这些块，其编辑控件会被禁用。文本行进入编辑模式后，删除和严格 steering 操作会被保存和取消取代；Enter 保存，Escape 取消。
+- **Queue 编辑仅支持文本**：包含非文本块的行仍显示扁平化预览，但其编辑控件会被禁用，因为 composer 侧编辑提交的是一次文本替换，无法保留这些块。文本行的编辑会载入 composer；Enter 原位保存，Escape 恢复暂存草稿。
 - **Queue 严格 steering 会保留完整消息**：agent 运行期间，steering 操作会以原子方式把所寻址的 Queue 单次入队项转移到当前 next-step 窗口。包含混合内容的行仍可使用此操作，因为它会转发不可变消息，而非文本投影。带 placement 的 Host 快照会在会话流末尾渲染待处理 steering，直到已消费的 `user/message` 折叠进持久 transcript（文本记录），因此立即展示、重连和回放共享同一个线性权威。

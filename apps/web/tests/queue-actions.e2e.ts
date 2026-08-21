@@ -133,12 +133,16 @@ describe('web e2e: queue row actions', () => {
 
     const editRow = page.getByText(EDIT, { exact: true }).locator('..')
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
-    const editor = page.getByRole('textbox', { name: 'Edit queued message' })
-    await editor.fill(EDITED)
+    // The queued text loads into the composer under the editing banner; the
+    // pre-edit draft (empty here) is stashed and returns after the save.
+    await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toBe(EDIT)
+    await page.locator('[data-queue-editing]').waitFor({ timeout: 10_000 })
+    await input.fill(EDITED)
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
-    await page.getByRole('button', { name: 'Save queued message' }).click()
+    await input.press('Enter')
     await page.getByText(EDITED, { exact: true }).waitFor()
+    await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toBe('')
 
     const removeRow = page.getByText(REMOVE, { exact: true }).locator('..')
     await removeRow.getByRole('button', { name: 'Remove queued message' }).click()
@@ -157,6 +161,16 @@ describe('web e2e: queue row actions', () => {
       { timeout: 10_000 },
     ).toBe(2)
 
+    // Reorder through the far-left grip: drop the last row onto the first,
+    // so the preserved queue sends TAIL before EDITED after the stop.
+    await page.getByRole('button', { name: '2 queued messages' }).click()
+    const rows = page.locator('[data-queue-row]')
+    await expect.poll(() => rows.count(), { timeout: 10_000 }).toBe(2)
+    await rows.nth(1).dragTo(rows.nth(0))
+    await expect.poll(() => page.getByText(TAIL, { exact: true }).locator('..')
+      .evaluate(element => [...element.parentElement!.children].indexOf(element)), { timeout: 10_000 })
+      .toBe(0)
+
     await page.getByRole('button', { name: 'Stop generating' }).click()
     await firstSettled
     await expect.poll(() => page.getByRole('button', { name: 'Stop generating' }).count())
@@ -173,9 +187,10 @@ describe('web e2e: queue row actions', () => {
     await settled
     await expect.poll(() => turnEndReasons(sessionEvents), { timeout: 15_000 })
       .toEqual(['aborted', 'completed', 'completed', 'completed'])
+    // The drag reordered the preserved queue: TAIL now sends before EDITED.
     expect(sessionEvents.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
-      : [])).toEqual([ACTIVE_PROMPT, EDITED, TAIL, WAKE])
+      : [])).toEqual([ACTIVE_PROMPT, TAIL, EDITED, WAKE])
     await expect.poll(() => page.locator('[data-queue-dock]').count()).toBe(0)
   }, 120_000)
 

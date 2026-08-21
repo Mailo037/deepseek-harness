@@ -105,7 +105,7 @@ export interface ConvOwnerProps {}
 export interface DetailsOwnerProps {}
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme']
+export const inject = ['slots', 'theme', 'connection']
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
@@ -132,7 +132,9 @@ export function apply(ctx: ClientContext): void {
       // conversation business actions belong to their registrants.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
-        return {}
+        return {
+          connection: ctx.get('connection'),
+        }
       },
     }, AppFrame)
     return () => {
