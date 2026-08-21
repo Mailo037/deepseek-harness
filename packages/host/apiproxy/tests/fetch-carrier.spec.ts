@@ -143,9 +143,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           rpcId: request.rpcId,
           result: {
             ok: true,
-            value: { version: 'v', cwd: '/w', attachedSessions: 0, home: '/h', canOpenPath: true },
+            value: { version: 'v', cwd: '/w', attachedSessions: 0, home: '/h', canOpenPath: true, repository: null, canRestart: false, surface: 'web' },
           },
         }
+      },
+      async checkUpdate(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { available: false, branch: 'master', commit: 'c', upstream: 'origin/master', behind: 0, latest: null, checkedAt: 0 } },
+        }
+      },
+      async applyUpdate(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { advanced: false as const, previousCommit: 'c', commit: 'c' } } }
       },
       async pickDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }

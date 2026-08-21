@@ -119,7 +119,7 @@ describe('WorkspaceBrowser', () => {
           title: 'Project',
         }])),
         useHostDescription: selector => selector({
-          version: '0', cwd: '/tmp', attachedSessions: 0, home: '/home/u', canOpenPath: false,
+          version: '0', cwd: '/tmp', attachedSessions: 0, home: '/home/u', canOpenPath: false, repository: null, canRestart: false, surface: 'web',
         }),
       })
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)

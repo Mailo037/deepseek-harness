@@ -275,7 +275,7 @@ describe('AboutSection', () => {
   })
 
   it('shows the behind count and drives check and apply through the store', async () => {
-    const checkUpdate = vi.fn(() => Promise.resolve({
+    const checkUpdate = vi.fn((_request: { force?: boolean }) => Promise.resolve({
       rpcId: 'about-check' as never,
       result: {
         ok: true as const,
@@ -300,7 +300,7 @@ describe('AboutSection', () => {
     expect(await screen.findByRole('button', { name: 'Update and restart' })).toBeTruthy()
     expect(document.body.textContent).toContain('3 commits behind')
     expect(document.body.textContent).toContain('feat: newer')
-    expect(checkUpdate.mock.calls[0]?.[1]).toBeUndefined()
+    expect(checkUpdate.mock.calls[0]!.length).toBe(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }))
     await waitFor(() => { expect(applyUpdate).toHaveBeenCalledWith({}) })

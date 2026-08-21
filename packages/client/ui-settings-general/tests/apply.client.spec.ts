@@ -118,7 +118,7 @@ describe('ui-settings-general apply', () => {
     expect(actionInjected.controller.store.getSnapshot().status).toBe('idle')
     expect(actionInjected.hooks.snapshot).toBe(actionInjected.controller.store)
     // Copy rides the standard locale seat: every seat declares the namespace.
-    for (const name of ['settings.trigger', 'settings.header', 'settings.close']) {
+    for (const name of ['settings.trigger', 'settings.header', 'settings.close'] as const) {
       expect(before.slots.entries(name)[0]!.locale).toBe('settings')
     }
     expect(action.locale).toBe('settings')

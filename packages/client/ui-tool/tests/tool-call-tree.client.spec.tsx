@@ -85,7 +85,7 @@ describe('ToolCallTree', () => {
   it('abbreviates a POSIX home path in the generic tool summary', () => {
     const block = root('w1', { name: 'read', argsRaw: '{"path":"/h/docs/a.ts"}' })
     const view = render(<ToolCallTree {...props(block, 'w1', {
-      version: '0', cwd: '/tmp', attachedSessions: 0, home: '/h', canOpenPath: false,
+      version: '0', cwd: '/tmp', attachedSessions: 0, home: '/h', canOpenPath: false, repository: null, canRestart: false, surface: 'web',
     })} />)
     expect(view.getByText('~/docs/a.ts')).toBeTruthy()
   })
