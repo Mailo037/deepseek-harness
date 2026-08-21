@@ -750,7 +750,7 @@ export function ChatView({
             <div className={css.historySkeleton} role="status" aria-live="polite">
               <span className={a11yCss.visuallyHidden}>{t('chat.loadingHistory')}</span>
               {[82, 64, 74].map((width, index) => (
-                <div key={index} className={css.skeletonBubble} style={{ width: `${width}%` }} />
+                <div key={index} className={css.skeletonBubble} style={{ width: `${width}%` }} data-skeleton-bubble="" />
               ))}
             </div>
           )}

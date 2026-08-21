@@ -269,7 +269,7 @@ function ListSkeleton() {
   const titleWidths = [58, 74, 46, 66, 52, 62]
   const metaWidths = [34, 28, 40, 30, 38, 26]
   return (
-    <div className={css.listSkeleton} aria-hidden="true">
+    <div className={css.listSkeleton} aria-hidden="true" data-list-skeleton="">
       {titleWidths.map((width, index) => (
         <div key={index} className={css.listSkeletonRow}>
           <span className={css.listSkeletonDot} />

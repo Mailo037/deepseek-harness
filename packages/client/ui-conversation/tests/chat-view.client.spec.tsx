@@ -313,6 +313,11 @@ function readerScroll(element: HTMLElement, top: number): void {
   fireEvent.scroll(element)
 }
 
+/** Settled runs mount tucked; open every group window before seat queries. */
+function openToolGroups(container: HTMLElement): void {
+  container.querySelectorAll('[data-tool-group] > button').forEach(button => fireEvent.click(button))
+}
+
 function installScrollMetrics(element: HTMLElement, initialHeight: number, clientHeight: number) {
   let scrollHeight = initialHeight
   let scrollTop = 0
@@ -389,6 +394,7 @@ describe('ChatView', () => {
       nodes: [{ ...toolResult(3, 'w1'), call: null }],
     })
     const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     expect(view.getByTestId('tool-seat-w1')).toBeTruthy()
     expect(h.toolOwners[0]).toMatchObject({ callId: 'w1', toolName: '' })
   })
@@ -430,6 +436,7 @@ describe('ChatView', () => {
       nodes: [user(1, 'do the thing'), assistant(2, 'running tools'), toolResult(3, 'a'), toolResult(4, 'b')],
     })
     const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     expect(view.getByText('do the thing')).toBeTruthy()
     expect(view.getByText('running tools')).toBeTruthy()
     expect(view.getByTestId('tool-seat-a').textContent).toBe('bash:a')
@@ -764,7 +771,8 @@ describe('ChatView', () => {
     const h = makeHarness({
       nodes: [toolResult(3, 'a')],
     })
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     expect(h.toolOwners[0]?.inspectCall).toBe(h.inspectCall)
   })
 
@@ -986,6 +994,7 @@ describe('ChatView', () => {
       nodes: [user(1, 'q'), assistant(2, 'old answer'), toolResult(3, 'a')],
     })
     const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     const tool = view.getByTestId('tool-seat-a')
     const beforeHtml = tool.innerHTML
     act(() => {
@@ -1013,6 +1022,7 @@ describe('ChatView', () => {
       return <div data-testid="counting-row" />
     })
     const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     expect(view.getByTestId('counting-row')).toBeTruthy()
     const afterMount = rowRenders
     act(() => {
@@ -1026,7 +1036,8 @@ describe('ChatView', () => {
 
   it('updates the selected call id handed to the Tool seat', () => {
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     expect(h.toolOwners.at(-1)?.selectedCallId).toBeUndefined()
     act(() => { h.setSelection({ turnSeq: 3, callId: 'a', toolName: 'bash' }) })
     expect(h.toolOwners.at(-1)?.selectedCallId).toBe('a')
@@ -1120,7 +1131,8 @@ describe('ChatView', () => {
       calls.push({ key, owner, ...(opts?.entryKey !== undefined ? { entryKey: opts.entryKey } : {}) })
       return opts?.fallback ?? null
     })
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       key: 'conversation.chat.node',
@@ -1141,7 +1153,8 @@ describe('ChatView', () => {
       .mockResolvedValueOnce(undefined)
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     await act(async () => { h.toolOwners[0]!.openFile('src/a.ts') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' })).toBeTruthy()
@@ -1161,7 +1174,8 @@ describe('ChatView', () => {
       .mockRejectedValueOnce('permission denied')
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     await act(async () => { h.toolOwners[0]!.openFile('notes.md') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('permission denied')
@@ -1176,7 +1190,8 @@ describe('ChatView', () => {
       .mockRejectedValueOnce(new Error(''))
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     await act(async () => { h.toolOwners[0]!.openFile('empty.ts') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('无法打开此文件')
@@ -1188,7 +1203,8 @@ describe('ChatView', () => {
       .mockRejectedValueOnce(new Error(''))
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
+    const view = render(<h.ChatView {...h.props} />)
+    openToolGroups(view.container)
     await act(async () => { h.toolOwners[0]!.openFile('.') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件夹' }).textContent).toContain('无法打开此文件夹')
@@ -1543,7 +1559,10 @@ describe('ChatView', () => {
     expect(view.getByText(/历史加载失败：boom/)).toBeTruthy()
     const loading = makeHarness({ openState: 'loading' })
     const lv = render(<loading.ChatView {...loading.props} />)
-    expect(lv.getByText('载入历史…')).toBeTruthy()
+    // The replay window renders message-shaped skeleton bones behind the
+    // screen-reader loading status instead of a bare text hint.
+    expect(lv.getByRole('status').textContent).toContain('载入历史…')
+    expect(lv.container.querySelectorAll('[data-skeleton-bubble]')).toHaveLength(3)
   })
 
   it('pending waits leave the flow entirely — questions and approvals both take over the composer', () => {

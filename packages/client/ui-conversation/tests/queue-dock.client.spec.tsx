@@ -250,17 +250,17 @@ describe('QueueDock', () => {
       <QueueDock {...kitFor(snap, { updateQueue })} useSession={liveSession(snap).useSession} />,
     )
     fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
-    const handles = view.getAllByLabelText('拖动调整发送顺序')
 
-    fireEvent.keyDown(handles[1]!, { key: 'ArrowUp' })
+    // Re-query per gesture: each op flips busy and rerenders the row.
+    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'ArrowUp' })
     await waitFor(() => {
       expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 0 })
     })
-    fireEvent.keyDown(handles[1]!, { key: 'ArrowDown' })
+    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'ArrowDown' })
     await waitFor(() => {
       expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 2 })
     })
-    fireEvent.keyDown(handles[1]!, { key: 'Enter' })
+    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[1]!, { key: 'Enter' })
     expect(updateQueue).toHaveBeenCalledTimes(2)
   })
 
@@ -295,7 +295,9 @@ describe('QueueDock', () => {
     const child = render(<QueueDock {...kitFor(snap)} useSession={liveSession(snap).useSession} />)
     fireEvent.click(child.getByRole('button', { name: '2 条排队消息' }))
     expect(child.queryByLabelText('拖动调整发送顺序')).toBeNull()
-    expect(child.getAllByLabelText('删除排队消息')).toHaveLength(2)
+    // Subagent queues render rows read-only: no handle, no actions.
+    expect(child.queryByLabelText('删除排队消息')).toBeNull()
+    expect(child.getByText('child one')).toBeTruthy()
   })
 
   it('defaults a new multi-row queue to collapsed after the prior queue empties', () => {

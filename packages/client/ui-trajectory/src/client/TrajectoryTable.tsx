@@ -2222,7 +2222,7 @@ export function TrajectoryTable({
         {showInitialLoading && (
           <div className={css.historySkeleton} aria-hidden="true">
             {SKELETON_LINE_WIDTHS.map((width, index) => (
-              <div key={index} className={css.skeletonRow}>
+              <div key={index} className={css.skeletonRow} data-skeleton-row="">
                 <span className={css.skeletonGlyph} />
                 <span className={css.skeletonBody}>
                   <span className={css.skeletonLine} style={{ width: `${width}%` }} />

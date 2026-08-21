@@ -152,6 +152,32 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
+  it('pending baselines show list skeleton bones instead of the empty text', () => {
+    const b = mount({
+      useSessions: hook(sessionState([], { phase: 'pending' })),
+      useWorkspaces: hook({
+        ...workspaceState([]),
+        phase: 'pending' as const,
+        state: 'loading' as const,
+        baselinesReady: false,
+      }),
+    })
+    // Grouped mode: bones until both baselines land.
+    expect(b.view.container.querySelector('[data-list-skeleton]')).toBeTruthy()
+
+    // Flat mode drains the same bones while pending.
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    expect(b.view.container.querySelector('[data-list-skeleton]')).toBeTruthy()
+
+    // Ready with no rows falls back to the real empty text.
+    rerender(b, {
+      useSessions: hook(sessionState([])),
+      useWorkspaces: hook(workspaceState([])),
+    })
+    expect(b.view.container.querySelector('[data-list-skeleton]')).toBeNull()
+  })
+
   it('renders the grouped tree by default and switches to the flat list via Group by', () => {
     const sessions = sessionState([summary('alpha-s', 2), summary('beta-s', 1)])
     const b = mount({

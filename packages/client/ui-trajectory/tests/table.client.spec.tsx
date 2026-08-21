@@ -509,10 +509,13 @@ describe('TrajectoryTable', () => {
 
     expect(screen.getByRole('status').textContent).toContain('Loading trajectory…')
     expect(screen.getByRole('table').getAttribute('data-scroll-ready')).toBeNull()
+    // Ledger-row bones stand in for the hidden table until the window settles.
+    expect(view.container.querySelectorAll('[data-skeleton-row]').length).toBeGreaterThan(0)
 
     view.rerender(<TrajectoryTable turns={TURNS} {...FOLD_PROPS} />)
 
     expect(screen.queryByRole('status')).toBeNull()
+    expect(view.container.querySelectorAll('[data-skeleton-row]')).toHaveLength(0)
     expect(screen.getByRole('table').getAttribute('data-scroll-ready')).toBe('true')
   })
 
