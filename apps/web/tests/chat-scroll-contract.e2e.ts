@@ -423,16 +423,24 @@ async function expectMarkerAboveComposer(page: Page, marker: string): Promise<vo
   expect(geometry.rowBottom).toBeLessThanOrEqual(geometry.composerTop + GEOMETRY_TOLERANCE)
 }
 
-async function loadEarlierWithAnchor(page: Page): Promise<void> {
+/**
+ * Scroll to the loaded head to trigger the next page (scroll-up paging),
+ * then verify the reader's visible row stays put once the prepend lands.
+ * @returns false when no further page exists (the head is exhausted).
+ */
+async function loadEarlierWithAnchor(page: Page): Promise<boolean> {
   await wheelToHistoryStart(page)
-  const older = page.getByRole('button', { name: 'Load earlier', exact: true })
-  await older.waitFor({ timeout: 10_000 })
   const anchor = await visibleFlowAnchor(page)
   const before = await loadedFlowRows(page)
-  await older.click()
-  await expect.poll(() => loadedFlowRows(page), { timeout: 30_000 }).toBeGreaterThan(before)
+  let grew = true
+  try {
+    await expect.poll(() => loadedFlowRows(page), { timeout: 30_000 }).toBeGreaterThan(before)
+  } catch {
+    grew = false
+  }
   await nextPaint(page)
-  await expectSameFlowTop(page, anchor)
+  if (grew) await expectSameFlowTop(page, anchor)
+  return grew
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -476,6 +484,14 @@ describe('web e2e: long Chat scroll contract', () => {
         HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns),
       )
       await expectBottom(world.page)
+      // Let the open-time auto-fill settle (the transcript stops growing once
+      // it is scrollable) so the history gate below sees only reader-paged
+      // requests, never the initial fill pages.
+      await expect.poll(async () => {
+        const rows = await loadedFlowRows(world.page)
+        await new Promise(resolve => setTimeout(resolve, 150))
+        return rows === await loadedFlowRows(world.page)
+      }, { timeout: 15_000 }).toBe(true)
 
       let releaseHistory = (): void => {}
       let held = false
@@ -502,7 +518,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await world.page.getByText(LIVE_TEXT_FIRST, { exact: false }).last().waitFor({ timeout: 15_000 })
         await wheelToHistoryStart(world.page)
         const beforeRows = await loadedFlowRows(world.page)
-        await world.page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+        // Scroll-up paging fires the gated history request on reaching the head.
         await expect.poll(() => held, { timeout: 10_000 }).toBe(true)
 
         await wheelTranscript(world.page, 420)
@@ -527,9 +543,8 @@ describe('web e2e: long Chat scroll contract', () => {
       await world.page.unroute('**/api/session.history')
 
       let additionalPages = 0
-      while (additionalPages < 8) {
-        await wheelToHistoryStart(world.page)
-        if (await world.page.getByRole('button', { name: 'Load earlier', exact: true }).count() === 0) break
+      const olderButton = world.page.getByRole('button', { name: 'Load earlier', exact: true })
+      while (additionalPages < 8 && await olderButton.count() > 0) {
         await loadEarlierWithAnchor(world.page)
         additionalPages += 1
       }
@@ -539,7 +554,7 @@ describe('web e2e: long Chat scroll contract', () => {
       // page remains.
       expect(await world.page.locator('[data-conversation-scroll]')
         .getByText(HISTORY_FIXTURE.markers.user(1), { exact: false }).count()).toBe(1)
-      expect(await world.page.getByRole('button', { name: 'Load earlier', exact: true }).count()).toBe(0)
+      expect(await olderButton.count()).toBe(0)
       assertClean(world)
     })
   }, 180_000)

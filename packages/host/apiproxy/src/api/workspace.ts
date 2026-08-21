@@ -33,6 +33,8 @@ export interface WorkspaceView {
   createdAt: string
   /** ISO-8601 last-mutation instant. */
   updatedAt: string
+  /** Project-specific settings dictionary (e.g. permissionPreset). */
+  settings?: Record<string, unknown> | undefined
 }
 
 /** Workspace-domain unary methods (the map keys workspace.* of RpcMethodMap). */
@@ -64,6 +66,18 @@ export interface WorkspaceApi {
    */
   rename(request: RpcRequest<{ workspaceId: WorkspaceId; title: string }>):
   Promise<RpcResponse<{ workspace: WorkspaceView }>>
+
+  /**
+   * Updates durable project-specific settings for a workspace.
+   */
+  updateSettings(request: RpcRequest<{ workspaceId: WorkspaceId; settings: Record<string, unknown> }>):
+  Promise<RpcResponse<{ workspace: WorkspaceView }>>
+
+  /**
+   * Moves a session from its current workspace (or unlinked) into a target workspace.
+   */
+  moveSession(request: RpcRequest<{ sessionId: SessionId; targetWorkspaceId: WorkspaceId }>):
+  Promise<RpcResponse<{ success: true }>>
 
   /**
    * Removes one Workspace registration. The directory, every user file, and

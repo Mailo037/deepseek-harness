@@ -9,8 +9,10 @@
 | 包 | 职责 |
 |---|---|
 | `@deepseek-ai/dsh-web`（本包） | Service Definition：服务、提供方注册表、选择策略、请求／结果词汇、`WebError` 分类体系 |
+| `@deepseek-ai/dsh-web-search-deepseek` | 搜索提供方：DeepSeek 原生搜索 |
 | `@deepseek-ai/dsh-web-search-exa` | 搜索提供方：Exa |
 | `@deepseek-ai/dsh-web-search-perplexity` | 搜索提供方：Perplexity |
+| `@deepseek-ai/dsh-web-search-firecrawl` | 搜索提供方：Firecrawl |
 | `@deepseek-ai/dsh-web-fetch-http` | 抓取提供方：匿名公共 HTTP(S) |
 | `@deepseek-ai/dsh-tool-web` | Consumer：面向模型的 `web_search`／`web_fetch` 工具 schema，构建于 `ctx.web` 之上 |
 
@@ -21,6 +23,7 @@
 | 成员 | 语义 |
 |---|---|
 | `registerSearchProvider(provider)`／`registerFetchProvider(provider)` | 注册后端。同一能力类型下 id 重复时抛出 `WebError` `WEB_DUPLICATE_PROVIDER`。返回 disposer。随调用 fiber 一并 dispose（资源释放）。 |
+| `setSearchProvider(id?)`／`setFetchProvider(id?)` | 运行时重新固定选择；`undefined` 回到自动选择。不针对注册表校验（提供方在 seam 启动后注册）；解析发生在每次搜索时。 |
 | `search(request, signal?)` | 解析搜索提供方并运行一次搜索。在结果上强制执行 `request.maxResults`（截断 `sources[]`，设置 `truncated`）。能力无法运行时抛出 `WebError`。 |
 | `fetch(request, signal?)` | 解析抓取提供方并获取一个 URL。非 2xx 响应是结果，不会抛出异常。无法安全获取或表示资源时抛出 `WebError`。 |
 
@@ -28,7 +31,7 @@
 
 ## 选择
 
-选择绝不依赖注册、配置或 HMR（热模块替换）顺序。能力要么具有显式提供方 id（配置 `searchProvider`／`fetchProvider`，或由环境变量 `$DSH_WEB_SEARCH_PROVIDER`／`$DSH_WEB_FETCH_PROVIDER` 提供相同字段），要么在恰好只注册一个可用提供方时自动选择。`search()`／`fetch()` 会在执行时解析提供方：
+选择绝不依赖注册、配置或 HMR（热模块替换）顺序。能力要么具有显式提供方 id（构造配置 `searchProvider`／`fetchProvider`，环境变量 `$DSH_WEB_SEARCH_PROVIDER`／`$DSH_WEB_FETCH_PROVIDER` 提供相同字段，或持久化的 `web-search` 设置分区），要么在恰好只注册一个可用提供方时自动选择。seam 自身安装 `web-search` 设置命名空间（schema 为 `WebRuntimeConfig`；组合条目加上环境变量覆盖作为其 `base` 层），因此已存储的分区通过 `setSearchProvider`／`setFetchProvider` 在提交后即时重新固定选择——无需重新注册提供方。`search()`／`fetch()` 会在执行时解析提供方：
 
 | 情况 | 执行 |
 |---|---|

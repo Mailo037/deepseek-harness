@@ -404,7 +404,17 @@ export class PermissionPresetService extends Service {
     const approval = effectiveApprovalPolicy(events)
     const seeded = events.some(event => event.type === 'session/end-seed')
     if (selected === undefined && sandbox === undefined && approval === undefined && !seeded) {
-      const name = this.defaultPreset
+      let name = this.defaultPreset
+      const workspaceRegistry = this.ctx.get('workspaceRegistry')
+      if (workspaceRegistry !== undefined) {
+        const sessionCwd = session.header.cwd
+        const workspace = workspaceRegistry.findBySessionId(session.id)
+          ?? (sessionCwd === undefined ? undefined : workspaceRegistry.list().find((w: { path: string }) => w.path === sessionCwd))
+        const presetSetting = workspace?.settings?.permissionPreset
+        if (typeof presetSetting === 'string' && this.names.includes(presetSetting)) {
+          name = presetSetting
+        }
+      }
       const spec = this.resolve(name)
       session.append('permission/preset', { preset: name })
       setSandboxMode(session, spec.sandbox)

@@ -12,9 +12,9 @@
 
 所有调用都互斥，因此模型排序的批次能观察到更早变更及其新 revision。UI 客户端会收到纯通用卡片：`get_goal` 使用 read，变更使用 other。变更卡片选择第一个有意义的 action 值，否则显示 goal id，因此已接受的填充值绝不会产生空输入。
 
-3 个规范值都与已经渲染给 Native 调用方的紧凑 JSON 一致：`{ goal: null }` 或 `{ goal: { id, revision, objective, phase, roundsStarted, maxGoalRounds, blockedReason? }, activation }`。因此，编程消费方无需解析渲染后的 JSON，即可收到相同领域结构。
+3 个规范值都与已经渲染给 Native 调用方的紧凑 JSON 一致：`{ goal: null }` 或 `{ goal: { id, revision, objective, phase, roundsStarted, maxGoalRounds, blockedReason? }, activation }`。因此，编程消费方无需解析渲染后的 JSON，即可收到相同领域结构。整目标 token 用量与耗时从会话日志派生，只出现在收尾提示块中，绝不进入紧凑工具结果。
 
-自主 Goal Round 成功报告 `complete` 或 `blocked` 时，会用 `concludeTurn()` 标记该次工具执行，使物理轮次在该步骤后停止。人类直接变更绝不会导致这种停止：assistant 可以确认变更，循环仍可接收并发的人类 steering（中途引导）。
+自主 Goal Round 成功报告 `complete` 或 `blocked` 时，会额外 defer 一个收尾上下文块，指示模型在轮次结束前向用户写出收尾消息。该收尾会点明整目标耗时，并在 provider 报告 token 记账时点明自 goal 创建以来的总 token 数，并让模型在其收尾消息中把两个数字各复述一次。人类直接变更绝不会产生这种上下文。
 
 ## 权限
 

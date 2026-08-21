@@ -667,6 +667,55 @@ Types: [SessionTitleLlmRequestEventData](subsystems/session-title.md)
 
 Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/session/session-title-llm/src/index.ts)
 
+### `shell/*`
+
+<a id="shelldone--log-only"></a>
+
+#### `shell/done` — log-only
+
+```ts persistence-catalog
+/**
+ * The paired shell command settled. `kind` mirrors the rendered outcome:
+ * `success` for a clean exit, `error` for a non-zero exit, a signal, a
+ * timeout, or a kill. The structured exit fields let a terminal
+ * presentation draw the status pill; `output` carries the bounded merged
+ * stdout/stderr text.
+ */
+'shell/done': {
+  commandId: ShellCommandId
+  kind: 'success' | 'error'
+  exitCode: number | null
+  signal: string | null
+  timedOut: boolean
+  output: ShellCommandOutput
+}
+```
+
+Source: [`packages/shell/shell-command/src/types.ts:71`](../packages/shell/shell-command/src/types.ts)
+
+<a id="shellrun--log-only"></a>
+
+#### `shell/run` — log-only
+
+```ts persistence-catalog
+/**
+ * A resolved `!` shell command entered execution. Log-only (never model
+ * surface); paired with `shell/done` by `commandId`, mirroring the
+ * `command/run`↔`command/done` pairing. The payload is structured —
+ * `command` is the trimmed line after the leading `!`, so a consumer
+ * never re-parses it.
+ */
+'shell/run': {
+  commandId: ShellCommandId
+  command: string
+  /** Working directory the command ran in, when the session carries one. */
+  cwd?: string
+  source: ShellCommandSource
+}
+```
+
+Source: [`packages/shell/shell-command/src/types.ts:57`](../packages/shell/shell-command/src/types.ts)
+
 ### `step/*`
 
 <a id="stepend--log-only"></a>

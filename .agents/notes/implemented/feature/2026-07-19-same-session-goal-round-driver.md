@@ -16,7 +16,7 @@ That bridge has concurrency and durability obligations. Human input, cancellatio
 
 The hierarchy is Goal → Goal Round → Turn → Step. A goal round is the outer continuation policy iteration; it becomes one goal-sourced session turn, and that turn can contain any number of ordinary model/tool steps. Human turns in the same session are not goal rounds and never increment `roundsStarted`.
 
-The plugin has no configuration. `maxGoalRounds` is resolved and persisted by `dsh-goal`, and the same-condition blocking threshold is resolved and prompted by `dsh-tool-goal`. Repeating those tunables in the driver would create multiple owners for one policy.
+The plugin has no configuration. `maxGoalRounds` is resolved and persisted by `dsh-goal`, and the same-condition blocking threshold is resolved and prompted by `dsh-tool-goal`. Repeating those tunables in the driver would create multiple owners for one policy. This part is superseded by [the later continuation-policy note](2026-08-21-goal-round-nudge-and-cost-wrapup.md), which adds `nudgeIntervalMs` and `consecutiveErrorLimit`.
 
 ### Reservation and admission
 
@@ -47,7 +47,7 @@ The driver classifies one closed goal-owned turn as follows:
 | `disposed` or `interrupted` | disarm |
 | plugin-added unknown result | block for inspection |
 
-No abnormal outcome requests an automatic retry. A later human prompt can ask to continue in any language; the model reads the stopped goal and uses the goal tool's resume action, which records a new revision and arms continuation.
+No abnormal outcome requests an automatic retry. A later human prompt can ask to continue in any language; the model reads the stopped goal and uses the goal tool's resume action, which records a new revision and arms continuation. This paragraph is superseded for round-error results by [the later continuation-policy note](2026-08-21-goal-round-nudge-and-cost-wrapup.md), which retries admitted-round errors automatically up to a `consecutiveErrorLimit` and otherwise blocks with `repeated-error`; non-round failures still stop as described here.
 
 ### Durability and cancellation contract
 

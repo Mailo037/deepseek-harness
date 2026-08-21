@@ -191,6 +191,15 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async archiveSession(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [request.payload.sessionId] } } }
       },
+      async updateSettings(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { workspace: { workspaceId: request.payload.workspaceId, path: '/w', title: 'w', sessionIds: [], createdAt: 't', updatedAt: 't', settings: request.payload.settings } } },
+        }
+      },
+      async moveSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { success: true as const } } }
+      },
     },
     agentPresets: {
       list(request: RpcRequest<{}>) {

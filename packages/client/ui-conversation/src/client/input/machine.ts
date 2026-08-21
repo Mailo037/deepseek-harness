@@ -491,7 +491,9 @@ export class InputMachine {
     const trimmed = this.draft.trim()
     if (trimmed === '') return []
     this.paste = undefined
-    if (trimmed.startsWith('/')) {
+    // The two enter-adjudicated trigger families: '/' commands and the
+    // adjudication-only '!' shell-command source (no menu ever opens for '!').
+    if (trimmed.startsWith('/') || trimmed.startsWith('!')) {
       const attempt = this.beginAttempt(mode)
       this.phase = 'adjudicating'
       return [{ type: 'adjudicate', attempt, draft: this.draft }]

@@ -20,6 +20,7 @@ export const workspaceViewSchema = z.object({
   sessionIds: z.array(sessionIdSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
+  settings: z.record(z.string(), z.unknown()).optional(),
 }) satisfies z.ZodType<Wire<WorkspaceView>>
 
 /** workspace.list request payload (empty object literal). */
@@ -55,6 +56,28 @@ export const workspaceRenameRequestSchema = z.object({
 export const workspaceRenameValueSchema = z.object({
   workspace: workspaceViewSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.rename'>>>
+
+/** workspace.updateSettings request payload. */
+export const workspaceUpdateSettingsRequestSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  settings: z.record(z.string(), z.unknown()),
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.updateSettings'>>>
+
+/** workspace.updateSettings response value. */
+export const workspaceUpdateSettingsValueSchema = z.object({
+  workspace: workspaceViewSchema,
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.updateSettings'>>>
+
+/** workspace.moveSession request payload. */
+export const workspaceMoveSessionRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  targetWorkspaceId: workspaceIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.moveSession'>>>
+
+/** workspace.moveSession response value. */
+export const workspaceMoveSessionValueSchema = z.object({
+  success: z.literal(true),
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.moveSession'>>>
 
 /** workspace.delete request payload. */
 export const workspaceDeleteRequestSchema = z.object({

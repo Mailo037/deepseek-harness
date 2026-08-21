@@ -454,6 +454,63 @@
   font-size: 13px;
 }
 
+/* Pending-baseline placeholder: session-row bones pulse until both lists
+   land; reduced motion holds them static. */
+.listSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.listSkeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+}
+
+.listSkeletonDot {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: list-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.listSkeletonLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.listSkeletonLine,
+.listSkeletonMeta {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: list-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.listSkeletonMeta {
+  animation-delay: 140ms;
+}
+
+@keyframes list-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listSkeletonDot,
+  .listSkeletonLine,
+  .listSkeletonMeta {
+    animation: none;
+  }
+}
+
 /* Rename dialog form (same figma dialog family as the create modals). */
 .renameInput {
   box-sizing: border-box;

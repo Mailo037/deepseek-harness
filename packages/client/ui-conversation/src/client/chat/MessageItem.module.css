@@ -99,6 +99,16 @@
   opacity: 1;
 }
 
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .compactionContextIcon {
+    opacity: 0;
+  }
+
+  .compactionDisclosureIcon {
+    opacity: 1;
+  }
+}
+
 .compactionTitle {
   flex: none;
   font-size: 14px;

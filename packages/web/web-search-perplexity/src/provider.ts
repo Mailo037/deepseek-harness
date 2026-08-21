@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-web-search-perplexity/provider
  */
 
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { WebError } from '@deepseek-ai/dsh-web'
 import type {
   WebSearchProvider,
@@ -35,8 +36,12 @@ const USER_AGENT = 'deepseek-harness/0.0.1'
 
 /** Resolved provider options (the plugin's `apply` supplies env-var and constant defaults). */
 export interface PerplexitySearchProviderOptions {
-  /** Perplexity API key. Empty/absent makes the provider unavailable. */
-  apiKey: string
+  /** Literal Perplexity API key; when present it wins over {@link resolveApiKey}. */
+  apiKey?: string
+  /** Resolve the current Perplexity API key for one search operation. */
+  resolveApiKey?: () => Promise<string | undefined>
+  /** Credential reference named by missing-credential diagnostics. */
+  apiKeyEnv?: CredentialRef
   /** Endpoint base; `/chat/completions` is appended. */
   baseURL: string
   /** Search model name. */
@@ -86,40 +91,59 @@ export function mapPerplexityResponse(response: PerplexityResponse): WebSearchRe
 export class PerplexitySearchProvider implements WebSearchProvider {
   readonly id = PERPLEXITY_PROVIDER_ID
 
-  constructor(private readonly options: PerplexitySearchProviderOptions) {}
+  /**
+   * @param resolveOptions - the options for the NEXT operation, snapshotted
+   * once at each operation's entry so one search never mixes two sections. A
+   * thunk rather than a value because the plugin's settings section can change
+   * between searches, and re-registering the provider to carry a new endpoint
+   * would make the seam's selection observable to the user as a flicker. A
+   * plain options object is accepted for compatibility.
+   */
+  constructor(resolveOptions: (() => PerplexitySearchProviderOptions) | PerplexitySearchProviderOptions) {
+    this.resolveOptions = typeof resolveOptions === 'function' ? resolveOptions : () => resolveOptions
+  }
+
+  private readonly resolveOptions: () => PerplexitySearchProviderOptions
 
   // Availability checks stay beside each provider's distinct config contract;
   // a shared base class would obscure which fields make this backend usable.
   /* jscpd:ignore-start */
   available(): boolean {
-    return this.options.apiKey.length > 0
-      && URL.canParse(this.options.baseURL)
-      && isPositiveInteger(this.options.maxTokens)
+    const options = this.resolveOptions()
+    return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined)
+      && URL.canParse(options.baseURL)
+      && isPositiveInteger(options.maxTokens)
   }
   /* jscpd:ignore-end */
 
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
+    // One snapshot for the whole operation: credential resolution awaits, and a
+    // settings write landing inside that await must not send the key resolved
+    // from the old section to the endpoint named by the new one.
+    const options = this.resolveOptions()
+    const apiKey = await this.apiKey(options, signal)
+    throwIfSearchAborted(signal)
     let response: Response
     try {
-      response = await fetch(`${this.options.baseURL}/chat/completions`, {
+      response = await fetch(`${options.baseURL}/chat/completions`, {
         method: 'POST',
         redirect: 'error',
         headers: {
-          'authorization': `Bearer ${this.options.apiKey}`,
+          'authorization': `Bearer ${apiKey}`,
           'content-type': 'application/json',
           'accept': 'application/json',
           'user-agent': USER_AGENT,
         },
         body: JSON.stringify({
-          model: this.options.model,
-          max_tokens: this.options.maxTokens,
+          model: options.model,
+          max_tokens: options.maxTokens,
           messages: [{ role: 'user', content: request.query }],
-          ...this.options.searchRecency !== undefined ? { search_recency_filter: this.options.searchRecency } : {},
+          ...options.searchRecency !== undefined ? { search_recency_filter: options.searchRecency } : {},
         }),
         ...signal !== undefined ? { signal } : {},
       })
     } catch (error: unknown) {
-      if (isAbortError(error)) throw new WebError('Perplexity search aborted', 'WEB_ABORTED', { cause: error })
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       throw new WebError(`Perplexity search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
 
@@ -134,7 +158,7 @@ export class PerplexitySearchProvider implements WebSearchProvider {
         // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
         // into a generic HTTP-error message — cancellation is not a provider
         // error (the seam's cancellation contract).
-        if (isAbortError(error)) throw new WebError('Perplexity search aborted', 'WEB_ABORTED', { cause: error })
+        if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
         // Otherwise: the HTTP status is already captured in `message` above; a
         // malformed/non-JSON error body (normal for gateway 5xx/429s) can only
         // cost a richer provider message, never the real error.
@@ -146,15 +170,56 @@ export class PerplexitySearchProvider implements WebSearchProvider {
       const payload = await response.json() as PerplexityResponse
       return mapPerplexityResponse(payload)
     } catch (error: unknown) {
-      if (isAbortError(error)) throw new WebError('Perplexity search aborted', 'WEB_ABORTED', { cause: error })
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       throw new WebError(`Perplexity returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
+  }
+
+  /**
+   * Resolve one operation's credential without retaining it on the provider.
+   * @param options - the caller's snapshot, so the key and the endpoint it is sent to come from one section.
+   * @param signal - abort signal for the surrounding search.
+   * @returns the resolved key.
+   */
+  private async apiKey(options: PerplexitySearchProviderOptions, signal?: AbortSignal): Promise<string> {
+    throwIfSearchAborted(signal)
+    if (options.apiKey !== undefined && options.apiKey.length > 0) return options.apiKey
+    let resolved: string | undefined
+    try {
+      resolved = await options.resolveApiKey?.() ?? undefined
+    } catch (error: unknown) {
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      throw new WebError(
+        `Perplexity search credential resolution failed: ${String(error)}`,
+        'WEB_PROVIDER_ERROR',
+        { cause: error },
+      )
+    }
+    if (resolved !== undefined && resolved.length > 0) return resolved
+    const ref = options.apiKeyEnv ?? 'PERPLEXITY_API_KEY'
+    throw new WebError(
+      `Perplexity search has no API key for "${ref}"; store it through the credentials service`
+      + ' or export it in the launching environment',
+      'WEB_PROVIDER_CREDENTIAL_MISSING',
+    )
   }
 }
 
 // These two predicates are intentionally local: exporting generic internals
 // from the public web seam would add more API than these pure checks.
 /* jscpd:ignore-start */
+/** Throw the provider's stable cancellation error when the caller already aborted. */
+function throwIfSearchAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw searchAborted(signal)
+}
+
+/** Build the provider's stable cancellation error while retaining the caller's reason. */
+function searchAborted(signal?: AbortSignal, fallback?: unknown): WebError {
+  return new WebError('Perplexity search aborted', 'WEB_ABORTED', {
+    cause: signal?.aborted === true ? signal.reason : fallback,
+  })
+}
+
 /** True for a fetch/`AbortSignal` abort, surfaced as `WEB_ABORTED`. */
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'

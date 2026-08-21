@@ -452,10 +452,10 @@ export type ChatStore = ReturnType<typeof createChatStore>
 /** Business callbacks injected into the conversation slot. */
 export interface ConversationInjected {
   /**
-   * Connect the selected Workspace and open its reusable/new blank session.
+   * Connect the selected Workspace (or omitted for standalone) and open its reusable/new blank session.
    * When a blank session is already current, carry its draft to the target.
    */
-  selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  selectWorkspace: (workspaceId?: WorkspaceId) => Promise<void>
   /**
    * Framework-bound sources. `composerBlock` is this session's block when a
    * plugin raised one; the reason is the blocker's own localized copy, which
@@ -566,7 +566,7 @@ export interface ComposerBarInjected {
     notices: ObservableSnapshot<InputNotice | null>
     /** Hot plain-text reference lexicon for the decoration scan (plain-text-reference decision;
      *  see .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md). */
-    lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>
+    lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@' | '!', readonly string[]>>
     /** Source name opened by the programmatic menu launcher, or null. */
     menuLauncher: ObservableSnapshot<string | null>
   }
@@ -792,6 +792,6 @@ export interface EmptyWorkspaceOwnerProps {
   anchorRef?: RefObject<HTMLElement>
   /** Currently active workspace (renders a trailing check in the picker list). */
   selectedId?: WorkspaceId | undefined
-  onPick: (workspaceId: WorkspaceId) => void
+  onPick: (workspaceId?: WorkspaceId) => void
   onClose: () => void
 }

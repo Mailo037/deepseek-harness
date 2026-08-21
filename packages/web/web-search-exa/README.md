@@ -10,7 +10,8 @@ This is an **implementation** package: it registers a provider into `ctx.web`, i
 
 | Key | Default | Meaning |
 |---|---|---|
-| `apiKey` | `$EXA_API_KEY` | Exa API key. Empty/absent makes the provider unavailable. |
+| `apiKey` | `$EXA_API_KEY` | Literal Exa API key (or resolved through the credentials domain). Empty/absent makes searches fail with `WEB_PROVIDER_CREDENTIAL_MISSING`. |
+| `apiKeyEnv` | `EXA_API_KEY` | Credential reference resolved for each search. |
 | `baseURL` | `https://api.exa.ai` | Endpoint base; `/search` is appended. An unparseable value makes the provider unavailable. |
 | `searchType` | `auto` | Retrieval mode sent as Exa's `type`: `auto` (Exa decides), `keyword`, or `neural`. |
 | `numResults` | (unset) | Default result count when a request carries no `maxResults`. Unset sends no default. Must be a positive integer. |
@@ -23,9 +24,11 @@ This is an **implementation** package: it registers a provider into `ctx.web`, i
     apiKey: !!js process.env.EXA_API_KEY
 ```
 
+The provider owns a `web-search-exa` settings section (endpoint and key reference), so the Web settings card and the credentials domain can manage it like the DeepSeek provider. Registration availability is config-shape-based; the key is resolved per search, so a stored key change reaches the next search without re-registering.
+
 ## Mapping
 
-Exa returns a flat `results[]` and no generated answer, so `content` is omitted. Each result maps to a `WebSearchSource`: `url` ← `url`, `title` ← `title`, `snippet` ← the first non-empty `highlights[]` entry (a result with no highlight has no portable snippet and is dropped), `publishedAt` ← `publishedDate`. A request's `maxResults` wins over the configured `numResults` default and is sent as Exa's `numResults` for a cost/latency optimization; the final bound is enforced by the seam. Provider failures (HTTP errors, network failure, unparseable or wrong-shape bodies) surface as `WebError` `WEB_PROVIDER_ERROR`; an aborted request surfaces as `WEB_ABORTED`. HTTP redirects are rejected before the `Location` target is contacted and surface as `WEB_PROVIDER_ERROR`.
+Exa returns a flat `results[]` and no generated answer, so `content` is omitted. Each result maps to a `WebSearchSource`: `url` ← `url`, `title` ← `title`, `snippet` ← the first non-empty `highlights[]` entry (a result with no highlight has no portable snippet and is dropped), `publishedAt` ← `publishedDate`. A request's `maxResults` wins over the configured `numResults` default and is sent as Exa's `numResults` for a cost/latency optimization; the final bound is enforced by the seam. Provider failures (HTTP errors, network failure, unparseable or wrong-shape bodies) surface as `WebError` `WEB_PROVIDER_ERROR`; a missing key surfaces as `WEB_PROVIDER_CREDENTIAL_MISSING`; an aborted request surfaces as `WEB_ABORTED`. HTTP redirects are rejected before the `Location` target is contacted and surface as `WEB_PROVIDER_ERROR`.
 
 ## Model Experience
 

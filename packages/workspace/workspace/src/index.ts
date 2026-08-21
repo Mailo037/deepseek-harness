@@ -282,6 +282,40 @@ export class WorkspaceRegistry extends Service {
     return undefined
   }
 
+  /**
+   * Look up which workspace accounts a session id.
+   * @param sessionId - Session id.
+   * @returns the owning workspace, or undefined when unlinked/ungrouped.
+   */
+  findBySessionId(sessionId: SessionId): Workspace | undefined {
+    for (const entity of this.entities.values()) {
+      if (entity.sessionIds.includes(sessionId)) return entity
+    }
+    return undefined
+  }
+
+  /**
+   * Move a session to a target workspace. Detaches the session from any
+   * currently accounting workspace, updates the session path in the registry,
+   * and attaches it to the target workspace.
+   * @param sessionId - Session to move.
+   * @param targetWorkspaceId - Target workspace id.
+   */
+  async moveSession(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void> {
+    const target = this.entities.get(targetWorkspaceId)
+    if (target === undefined) {
+      throw new Error(`cannot move session '${sessionId}': target workspace '${targetWorkspaceId}' not found`)
+    }
+    const current = this.findBySessionId(sessionId)
+    if (current?.id === targetWorkspaceId) return
+    if (current !== undefined) {
+      await current.detachSession(sessionId)
+    }
+    this.sessionPaths.set(sessionId, target.path)
+    this.invalidSessionPaths.delete(sessionId)
+    await target.attachSession(sessionId)
+  }
+
   private async createCanonical(canonical: string, title?: string): Promise<WorkspaceEntity> {
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity

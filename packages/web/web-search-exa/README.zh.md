@@ -10,7 +10,8 @@
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `apiKey` | `$EXA_API_KEY` | Exa API 密钥。为空或缺失时提供方不可用。 |
+| `apiKey` | `$EXA_API_KEY` | 字面 Exa API 密钥（或通过凭据域解析）。为空或缺失时搜索以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
+| `apiKeyEnv` | `EXA_API_KEY` | 每次搜索时解析的凭据引用。 |
 | `baseURL` | `https://api.exa.ai` | 端点基址；追加 `/search`。无法解析时提供方不可用。 |
 | `searchType` | `auto` | 以 Exa `type` 发送的检索模式：`auto`（由 Exa 决定）、`keyword` 或 `neural`。 |
 | `numResults` | （未设置） | 请求不含 `maxResults` 时使用的默认结果数。未设置时不发送默认值。必须是正整数。 |
@@ -23,9 +24,11 @@
     apiKey: !!js process.env.EXA_API_KEY
 ```
 
+提供方拥有 `web-search-exa` 设置分区（端点和密钥引用），因此 Web 设置卡片和凭据域可以像管理 DeepSeek 提供方一样管理它。注册可用性基于配置形状；密钥在每次搜索时解析，因此已存储的密钥变更无需重新注册即可在下次搜索生效。
+
 ## 映射
 
-Exa 返回扁平 `results[]`，不返回生成答案，因此省略 `content`。每项结果映射为 `WebSearchSource`：`url` ← `url`、`title` ← `title`、`snippet` ← 第一个非空的 `highlights[]` 条目（没有高亮摘要的结果缺少可移植的 snippet，会被丢弃）、`publishedAt` ← `publishedDate`。请求的 `maxResults` 优先于已配置的默认 `numResults`，并作为 Exa `numResults` 发送，以优化成本和延迟；最终上限由 seam 强制执行。提供方失败（HTTP 错误、网络失败、响应体无法解析或结构不符）以 `WebError` `WEB_PROVIDER_ERROR` 呈现；中止请求以 `WEB_ABORTED` 呈现。HTTP 重定向会在访问 `Location` 指向的目标之前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。
+Exa 返回扁平 `results[]`，不返回生成答案，因此省略 `content`。每项结果映射为 `WebSearchSource`：`url` ← `url`、`title` ← `title`、`snippet` ← 第一个非空的 `highlights[]` 条目（没有高亮摘要的结果缺少可移植的 snippet，会被丢弃）、`publishedAt` ← `publishedDate`。请求的 `maxResults` 优先于已配置的默认 `numResults`，并作为 Exa `numResults` 发送，以优化成本和延迟；最终上限由 seam 强制执行。提供方失败（HTTP 错误、网络失败、响应体无法解析或结构不符）以 `WebError` `WEB_PROVIDER_ERROR` 呈现；缺少密钥以 `WEB_PROVIDER_CREDENTIAL_MISSING` 呈现；中止请求以 `WEB_ABORTED` 呈现。HTTP 重定向会在访问 `Location` 指向的目标之前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。
 
 ## 模型体验
 

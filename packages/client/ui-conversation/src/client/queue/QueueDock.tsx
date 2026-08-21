@@ -1,15 +1,20 @@
 // Queue dock entry: renders the authoritative transient inbox snapshot and
 // addresses per-row mutations through the session-scoped conversation face.
+// Row order edits (drag handle, keyboard arrows) commit as `move` actions;
+// row text edits load the occurrence into the composer (queue-edit flow).
 //
 // The 'conversation.input.dock' SlotMap declaration lives in
 // ../contract/slots.ts beside the other input-region slots.
 import type { Context } from '@deepseek-ai/cordis'
+import type { DragEvent, KeyboardEvent } from 'react'
 import { useEffect, useId, useMemo, useState } from 'react'
+import clsx from 'clsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronUpOutline14, IconCloseOutline16,
-  IconEditOutline16, IconQueueOutline14, IconSendOutline14, IconTrashOutline16, Tooltip,
+  IconCloseOutline16, IconChevronDownOutline14, IconChevronUpOutline14,
+  IconEditOutline16, IconGripOutline14, IconQueueOutline14, IconSendOutline14,
+  IconTrashOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { QueueAction, QueueItemId } from '../contract/queue.ts'
 import { NS } from '../locales.ts'
@@ -19,6 +24,19 @@ import css from './QueueDock.module.css'
 export interface QueueDockInjected {
   updateQueue: (itemId: QueueItemId, action: QueueAction) => Promise<void>
   notify: (level: 'info' | 'error', text: string) => void
+  /** Load one queued row into the composer for editing (stashes the draft). */
+  beginQueueEdit: (itemId: QueueItemId) => boolean
+  /** Leave composer-side editing and restore the stashed draft. */
+  cancelQueueEdit: () => void
+}
+
+/**
+ * Composer-side queue-edit verbs satisfied by the resident input shell
+ * (structural: the dock never sees the shell type).
+ */
+interface QueueEditorFace {
+  beginQueueEdit(itemId: QueueItemId): boolean
+  cancelQueueEdit(): void
 }
 
 /** Full props of a dock entry: InputZone owner share + session standard kit + global seat + the locale seat. */
@@ -26,26 +44,33 @@ export type QueueDockProps = PropsRuntime<'conversation.input.dock'> & QueueDock
 
 /**
  * Queue strip: one item renders directly; multiple items default to a
- * collapsible count header; an empty queue renders nothing.
+ * collapsible count header; an empty queue renders nothing. Rows carry a
+ * drag handle (far left) whenever two or more rows can reorder.
  */
-export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps) {
+export function QueueDock({ useSession, input, updateQueue, notify, beginQueueEdit, cancelQueueEdit, t }: QueueDockProps) {
   const inbox = useSession(s => s.queue)
   const queue = useMemo(() => inbox.filter(row => row.placement === 'queued'), [inbox])
   const running = useSession(s => s.running)
   const queueMutable = useSession(s => s.subagent === null)
-  const [editing, setEditing] = useState<{ id: QueueItemId; text: string } | null>(null)
   const [busy, setBusy] = useState<QueueItemId | null>(null)
   const [collapsed, setCollapsed] = useState(true)
+  const [drag, setDrag] = useState<{ id: QueueItemId; from: number } | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
   const listId = useId()
+  const queueEditId = input.queueEdit?.itemId
+  const canReorder = queueMutable && queue.length > 1 && busy === null
 
   useEffect(() => {
     if (queue.length === 0 && !collapsed) setCollapsed(true)
-    if (editing !== null && (!queueMutable || !queue.some(row => row.id === editing.id))) setEditing(null)
-  }, [collapsed, editing, queue, queueMutable])
+    if (drag !== null && !queue.some(row => row.id === drag.id)) {
+      setDrag(null)
+      setDropIndex(null)
+    }
+  }, [collapsed, drag, queue])
 
   if (queue.length === 0) return null
 
-  const interactionActive = queueMutable && (editing !== null || busy !== null)
+  const interactionActive = queueMutable && (busy !== null || queueEditId !== undefined)
   const expanded = !collapsed || interactionActive
   const listVisible = queue.length === 1 || expanded
 
@@ -66,13 +91,46 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
     }
   }
 
-  const saveEdit = async (): Promise<void> => {
-    if (editing === null || editing.text.trim() === '') return
-    if (await applyAction(
-      editing.id,
-      { kind: 'edit', content: [{ type: 'text', text: editing.text }] },
-      t('queue.editFailed'),
-    )) setEditing(null)
+  /** Commit one drop/keyboard reorder through the authoritative move verb. */
+  const moveRow = (itemId: QueueItemId, from: number, toIndex: number): void => {
+    setDrag(null)
+    setDropIndex(null)
+    if (toIndex === from) return
+    void applyAction(itemId, { kind: 'move', toIndex }, t('queue.moveFailed'))
+  }
+
+  const onDragStart = (row: (typeof queue)[number], index: number) => (event: DragEvent<HTMLLIElement>): void => {
+    if (!canReorder) return
+    // jsdom fires synthetic drag events without a DataTransfer; guard the reads.
+    const transfer = event.dataTransfer as DataTransfer | undefined
+    transfer?.setData('text/plain', String(index))
+    if (transfer !== undefined) transfer.effectAllowed = 'move'
+    setDrag({ id: row.id, from: index })
+  }
+
+  const onDragOver = (row: (typeof queue)[number], index: number) => (event: DragEvent<HTMLLIElement>): void => {
+    if (drag === null || drag.id === row.id) return
+    event.preventDefault()
+    const transfer = event.dataTransfer as DataTransfer | undefined
+    if (transfer !== undefined) transfer.dropEffect = 'move'
+    setDropIndex(index)
+  }
+
+  const onDragEnd = (): void => {
+    setDrag(null)
+    setDropIndex(null)
+  }
+
+  const onHandleKeyDown = (row: (typeof queue)[number], index: number) => (event: KeyboardEvent<HTMLButtonElement>): void => {
+    if (event.key === 'ArrowUp' && index > 0) {
+      event.preventDefault()
+      moveRow(row.id, index, index - 1)
+      return
+    }
+    if (event.key === 'ArrowDown' && index < queue.length - 1) {
+      event.preventDefault()
+      moveRow(row.id, index, index + 1)
+    }
   }
 
   return (
@@ -95,61 +153,61 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
           </button>
         )}
         <ul id={listId} className={css.list} hidden={!listVisible}>
-          {listVisible && queue.map(row => (
-            <li key={row.id} className={css.row}>
-              {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
-              {queue.length === 1 && <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>}
-              {editing?.id === row.id
-                ? (
-                  <input
-                    autoFocus
-                    className={css.editor}
-                    aria-label={t('queue.edit')}
-                    value={editing.text}
-                    onChange={(event) => { setEditing({ id: row.id, text: event.currentTarget.value }) }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') {
-                        setEditing(null)
-                        return
-                      }
-                      if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                        event.preventDefault()
-                        void saveEdit()
-                      }
-                    }}
-                  />
-                )
-                : <span className={css.preview}>{row.preview}</span>}
-              {queueMutable && <div className={css.actions}>
-                {editing?.id === row.id
-                  ? (
-                    <>
-                      <Tooltip label={t('queue.save')} side="bottom" delayMs={500}>
-                        <button
-                          type="button"
-                          className={css.action}
-                          aria-label={t('queue.save')}
-                          disabled={busy !== null || editing.text.trim() === ''}
-                          onClick={() => { void saveEdit() }}
-                        >
-                          <IconCheckOutline16 size={14} />
-                        </button>
-                      </Tooltip>
+          {listVisible && queue.map((row, index) => {
+            const editingThisRow = queueEditId === row.id
+            const dropMark = drag !== null && drag.id !== row.id && dropIndex === index
+            return (
+              <li
+                key={row.id}
+                className={clsx(
+                  css.row,
+                  drag?.id === row.id && css.rowDragging,
+                  dropMark && (index < (drag?.from ?? index) ? css.dropAbove : css.dropBelow),
+                )}
+                data-queue-row=""
+                draggable={canReorder}
+                onDragStart={onDragStart(row, index)}
+                onDragOver={onDragOver(row, index)}
+                onDrop={(event) => {
+                  if (drag === null) return
+                  event.preventDefault()
+                  moveRow(drag.id, drag.from, index)
+                }}
+                onDragEnd={onDragEnd}
+              >
+                {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
+                {queue.length === 1
+                  ? <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>
+                  : queueMutable && (
+                    <Tooltip label={t('queue.reorder')} side="bottom" delayMs={500}>
+                      <button
+                        type="button"
+                        className={css.drag}
+                        aria-label={t('queue.reorder')}
+                        disabled={busy !== null}
+                        onKeyDown={onHandleKeyDown(row, index)}
+                      >
+                        <IconGripOutline14 />
+                      </button>
+                    </Tooltip>
+                  )}
+                <span className={clsx(css.preview, editingThisRow && css.previewEditing)}>{row.preview}</span>
+                {queueMutable && <div className={css.actions}>
+                  {editingThisRow
+                    ? (
                       <Tooltip label={t('queue.cancelEdit')} side="bottom" delayMs={500}>
                         <button
                           type="button"
                           className={css.action}
                           aria-label={t('queue.cancelEdit')}
                           disabled={busy !== null}
-                          onClick={() => { setEditing(null) }}
+                          onClick={() => { cancelQueueEdit() }}
                         >
                           <IconCloseOutline16 size={14} />
                         </button>
                       </Tooltip>
-                    </>
-                  )
-                  : (
-                    <>
+                    )
+                    : (
                       <Tooltip label={t('queue.edit')} side="bottom" delayMs={500} disabled={row.text === null}>
                         <button
                           type="button"
@@ -159,53 +217,51 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                           // unsupported hint stays a native title.
                           title={row.text === null ? t('queue.edit.unsupported') : undefined}
                           disabled={busy !== null || row.text === null}
-                          onClick={() => {
-                            if (row.text !== null) setEditing({ id: row.id, text: row.text })
-                          }}
+                          onClick={() => { beginQueueEdit(row.id) }}
                         >
                           <IconEditOutline16 size={14} />
                         </button>
                       </Tooltip>
-                      <Tooltip label={t('queue.remove')} side="bottom" delayMs={500}>
-                        <button
-                          type="button"
-                          className={css.action}
-                          aria-label={t('queue.remove')}
-                          disabled={busy !== null}
-                          onClick={() => {
-                            void applyAction(
-                              row.id,
-                              { kind: 'remove' },
-                              t('queue.removeFailed'),
-                            )
-                          }}
-                        >
-                          <IconTrashOutline16 size={14} />
-                        </button>
-                      </Tooltip>
-                      <Tooltip label={t('queue.steer')} side="bottom" delayMs={500} disabled={!running}>
-                        <button
-                          type="button"
-                          className={css.action}
-                          aria-label={t('queue.steer')}
-                          title={running ? undefined : t('queue.steer.unavailable')}
-                          disabled={busy !== null || !running}
-                          onClick={() => {
-                            void applyAction(
-                              row.id,
-                              { kind: 'steer' },
-                              t('queue.steerFailed'),
-                            )
-                          }}
-                        >
-                          <IconSendOutline14 />
-                        </button>
-                      </Tooltip>
-                    </>
-                  )}
-              </div>}
-            </li>
-          ))}
+                    )}
+                  <Tooltip label={t('queue.remove')} side="bottom" delayMs={500}>
+                    <button
+                      type="button"
+                      className={css.action}
+                      aria-label={t('queue.remove')}
+                      disabled={busy !== null}
+                      onClick={() => {
+                        void applyAction(
+                          row.id,
+                          { kind: 'remove' },
+                          t('queue.removeFailed'),
+                        )
+                      }}
+                    >
+                      <IconTrashOutline16 size={14} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('queue.steer')} side="bottom" delayMs={500} disabled={!running}>
+                    <button
+                      type="button"
+                      className={css.action}
+                      aria-label={t('queue.steer')}
+                      title={running ? undefined : t('queue.steer.unavailable')}
+                      disabled={busy !== null || !running}
+                      onClick={() => {
+                        void applyAction(
+                          row.id,
+                          { kind: 'steer' },
+                          t('queue.steerFailed'),
+                        )
+                      }}
+                    >
+                      <IconSendOutline14 />
+                    </button>
+                  </Tooltip>
+                </div>}
+              </li>
+            )
+          })}
         </ul>
       </div>
     </div>
@@ -234,9 +290,12 @@ export const queueDockEntry = {
         if (actx === undefined) throw new Error(`queue dock: session "${sessionId}" resolved no scope`)
         const conversation = actx.get('conversation')
         if (conversation === undefined) throw new Error('queue dock: conversation service unavailable')
+        const input = conversation.input.for(actx) as ReturnType<typeof conversation.input.for> & QueueEditorFace
         return {
           updateQueue: (itemId, action) => conversation.updateQueue(itemId, action),
           notify: (level, text) => { conversation.input.for(actx).notify(level, text) },
+          beginQueueEdit: itemId => input.beginQueueEdit(itemId),
+          cancelQueueEdit: () => { input.cancelQueueEdit() },
         }
       },
     }, QueueDock))

@@ -61,6 +61,128 @@
   border-radius: 6px;
 }
 
+/* Bounded tool/think window: a contiguous run of tool seats (and the Think
+   rows woven with them) lives inside one max-height scroll frame. The header
+   bar sits ABOVE the scrollport — it never scrolls with the rows — and shows
+   the run's last action; hovering swaps the action icon for the chevron. */
+.toolGroup {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.toolGroupToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  height: 24px;
+  margin-bottom: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 24px;
+  text-align: left;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toolGroupToggle:hover,
+.toolGroupToggle:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Leading swap slot: the action icon at rest, the chevron on hover/focus —
+   one fixed-width slot so the label never shifts (DisclosureRow pattern). */
+.leadingSwap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.idleLead {
+  display: inline-flex;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.hoverChevron {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.toolGroupToggle:hover .idleLead,
+.toolGroupToggle:focus-visible .idleLead,
+.turnSummary:hover .idleLead,
+.turnSummary:focus-visible .idleLead {
+  opacity: 0;
+}
+
+.toolGroupToggle:hover .hoverChevron,
+.toolGroupToggle:focus-visible .hoverChevron,
+.turnSummary:hover .hoverChevron,
+.turnSummary:focus-visible .hoverChevron {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idleLead,
+  .hoverChevron {
+    transition: none;
+  }
+}
+
+/* Completed-turn fold: one plain duration line over a hairline separator —
+   no border box. The line is the unfold affordance for the turn's whole work. */
+.turnSummaryBlock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.turnSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 24px;
+  text-align: left;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.turnSummary:hover,
+.turnSummary:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolGroupScroll {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(40vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
 /* Selection still sets data-selected for details linkage; no outline —
    tool rows match Think chrome (no selected ring). */
 
@@ -114,10 +236,32 @@
   }
 }
 
-.hint {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+/* History-replay placeholder: message-shaped bones stand in for the flow
+   while the session window replays; the loading text stays for screen
+   readers. Reduced motion holds the bones static. */
+.historySkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.skeletonBubble {
+  height: 52px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonBubble {
+    animation: none;
+  }
 }
 
 .openError {

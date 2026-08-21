@@ -102,8 +102,16 @@ export class WorkspaceEntity implements Workspace {
     return this.record.sessionIds.filter(id => this.host.sessionPath(id) === this.record.path)
   }
 
+  get settings(): Readonly<Record<string, unknown>> | undefined {
+    return this.record.settings
+  }
+
   async setTitle(title: string): Promise<void> {
     await this.mutate(record => ({ ...record, title }))
+  }
+
+  async setSettings(settings: Record<string, unknown>): Promise<void> {
+    await this.mutate(record => ({ ...record, settings }))
   }
 
   async attachSession(sessionId: SessionId): Promise<void> {
@@ -112,36 +120,38 @@ export class WorkspaceEntity implements Workspace {
     // (stored header cwd, workspace path) are immutable. Membership itself is
     // decided on the write chain inside `mutate`, never on this snapshot.
     if (!this.record.sessionIds.includes(sessionId)) {
-      const header = await this.host.readSessionHeader(sessionId)
-      if (header.cwd === undefined) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + 'its stored header carries no cwd to validate against',
-        )
+      if (this.host.sessionPath(sessionId) !== this.record.path) {
+        const header = await this.host.readSessionHeader(sessionId)
+        if (header.cwd === undefined) {
+          throw new Error(
+            `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
+            + 'its stored header carries no cwd to validate against',
+          )
+        }
+        let cwd: string
+        try {
+          cwd = await realpathNormalize(header.cwd)
+        } catch (error) {
+          throw new Error(
+            `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
+            + `its cwd '${header.cwd}' does not resolve, so it cannot be validated`,
+            { cause: error },
+          )
+        }
+        if (!(await stat(cwd)).isDirectory()) {
+          throw new Error(
+            `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
+            + `its cwd '${header.cwd}' is not a directory`,
+          )
+        }
+        if (cwd !== this.record.path) {
+          throw new Error(
+            `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
+            + `its cwd resolves to '${cwd}'`,
+          )
+        }
+        this.host.rememberSessionPath(sessionId, cwd)
       }
-      let cwd: string
-      try {
-        cwd = await realpathNormalize(header.cwd)
-      } catch (error) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + `its cwd '${header.cwd}' does not resolve, so it cannot be validated`,
-          { cause: error },
-        )
-      }
-      if (!(await stat(cwd)).isDirectory()) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + `its cwd '${header.cwd}' is not a directory`,
-        )
-      }
-      if (cwd !== this.record.path) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + `its cwd resolves to '${cwd}'`,
-        )
-      }
-      this.host.rememberSessionPath(sessionId, cwd)
     }
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? record

@@ -11,8 +11,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
-  IconCheckOutline16, IconCloseOutline16, IconEditOutline16, IconGoalOutline16,
-  IconPauseOutline16, IconPlayOutline16, IconTrashOutline16, Tooltip,
+  IconCheckOutline16, IconCloseOutline16, IconEditOutline16, IconFullscreenOutline16,
+  IconGoalOutline16, IconPauseOutline16, IconPlayOutline16, IconTrashOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActionResult, GoalBarActions } from './slots.ts'
@@ -31,19 +31,34 @@ const PHASE_LABELS = {
   blocked: 'phase.blocked',
 } as const satisfies Record<string, GoalKey>
 
+/** Grow a textarea to fit its content up to the CSS max-height; shrinks after edits shorten. */
+function resizeTextarea(el: HTMLTextAreaElement): void {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
 export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [clearedGoalId, setClearedGoalId] = useState<GoalSnapshot['id'] | null>(null)
   const pendingRef = useRef(false)
+  const objectiveRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Size the edit field to its initial objective once it mounts, then whenever
+  // the draft changes the onChange handler re-measures it.
+  useEffect(() => {
+    if (editing && objectiveRef.current !== null) resizeTextarea(objectiveRef.current)
+  }, [editing])
 
   // A new goal identity (cleared/completed/replaced externally) invalidates the local edit
   // state: without the reset a surviving draft's Enter would write over the NEW goal.
   const goalId = goal?.id
   useEffect(() => {
     setEditing(false)
+    setExpanded(false)
     setActionError(null)
     setClearedGoalId(null)
   }, [goalId])
@@ -80,15 +95,22 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   if (editing) {
     return (
       <div className={css.dock} data-goal-bar>
-        <div className={css.bar}>
-          <input
+        <div className={css.editBar}>
+          <textarea
+            ref={objectiveRef}
             className={css.objectiveInput}
-            type="text"
             aria-label={t('objective.aria')}
+            rows={1}
             value={draft}
-            onChange={(e) => { setDraft(e.target.value) }}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              resizeTextarea(e.currentTarget)
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleEdit()
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void handleEdit()
+              }
               if (e.key === 'Escape') setEditing(false)
             }}
             autoFocus
@@ -126,12 +148,24 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
   return (
     <div className={css.dock} data-goal-bar>
-      <div className={css.bar} title={title}>
+      <div className={expanded ? `${css.bar} ${css.barExpanded}` : css.bar} title={expanded ? undefined : title}>
         <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
         <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
-        <span className={css.objective}>{goal.objective}</span>
+        <span className={expanded ? css.objectiveExpanded : css.objective}>{goal.objective}</span>
         {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
         <div className={css.actions}>
+          <Tooltip label={t(expanded ? 'action.collapse' : 'action.expand')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.iconBtn}
+              disabled={pending}
+              onClick={() => { setExpanded(prev => !prev) }}
+              aria-label={t(expanded ? 'action.collapse' : 'action.expand')}
+              aria-expanded={expanded ? 'true' : 'false'}
+            >
+              <IconFullscreenOutline16 size={14} />
+            </button>
+          </Tooltip>
           {goal.phase === 'active' && (
             <Tooltip label={t('action.pause')} side="bottom" delayMs={500}>
               <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onPause) }} aria-label={t('action.pause')}>

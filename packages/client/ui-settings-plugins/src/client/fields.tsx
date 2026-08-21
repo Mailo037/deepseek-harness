@@ -6,6 +6,7 @@
  * card's save is the single point where a draft becomes a document mutation.
  */
 
+import { Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './fields.module.css'
 
 /** What every field control needs regardless of its value type. */
@@ -79,6 +80,53 @@ export function ValueField(props: FieldProps & {
         placeholder={props.placeholder ?? ''}
         disabled={props.disabled}
         onChange={(event) => { props.onEdit(event.target.value) }}
+      />
+      <p className={props.invalid ? css.invalid : css.hint}>
+        {props.invalid ? props.invalidLabel : props.hint}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * A staged choice control. Which drafts a field accepts is decided by its
+ * spec, so the control never silently rewrites what the user picked; the
+ * option labels are the card's copy, the values are the stored ids.
+ * @param props - the field's copy, its staged text, and the choice list.
+ * @returns the labelled control.
+ */
+export function SelectField(props: FieldProps & {
+  /** Choice list: `value` is the stored id, `label` its visible copy. */
+  options: readonly { value: string; label: string }[]
+}) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <span className={css.badge}>{props.overriddenLabel}</span>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={props.disabled}
+                onClick={props.onReset}
+              >
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <Select
+        id={props.id}
+        value={props.text}
+        disabled={props.disabled}
+        invalid={props.invalid}
+        options={props.options}
+        aria-label={props.label}
+        onChange={props.onEdit}
       />
       <p className={props.invalid ? css.invalid : css.hint}>
         {props.invalid ? props.invalidLabel : props.hint}

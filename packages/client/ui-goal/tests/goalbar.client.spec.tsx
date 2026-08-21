@@ -98,6 +98,22 @@ describe('GoalBar', () => {
     await waitFor(() => { expect(screen.getByText('进行中的目标')).toBeTruthy() })
   })
 
+  it('edit is a growing textarea where Shift+Enter inserts a newline and bare Enter saves', async () => {
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ objective: 'One line' })} {...actions} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '编辑目标' }))
+    const box = screen.getByRole('textbox', { name: '目标内容' })
+    expect(box).toHaveProperty('tagName', 'TEXTAREA')
+
+    fireEvent.change(box, { target: { value: 'first line' } })
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })
+    expect(actions.onEdit).not.toHaveBeenCalled()
+
+    fireEvent.change(box, { target: { value: 'first line\nsecond line' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(actions.onEdit).toHaveBeenCalledWith('first line\nsecond line')
+  })
+
   it('Esc cancels the edit without calling onEdit', () => {
     const actions = makeActions()
     render(<GoalBar goal={makeGoal()} {...actions} t={t} />)
@@ -203,5 +219,20 @@ describe('GoalBar', () => {
     expect(screen.getByText('Ship the redesign')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '清除目标' }))
     await waitFor(() => { expect(actions.onClear).toHaveBeenCalledTimes(2) })
+  })
+
+  it('the expand action grows the read view, and toggles back to the collapsed strip', () => {
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ objective: 'A long objective ' + 'that repeats '.repeat(40) })} {...actions} t={t} />)
+    const expand = screen.getByRole<HTMLButtonElement>('button', { name: '展开完整目标' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(expand)
+    const collapse = screen.getByRole('button', { name: '收起目标' })
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(collapse)
+    expect(screen.queryByRole('button', { name: '收起目标' })).toBeNull()
+    expect(screen.getByRole('button', { name: '展开完整目标' }).getAttribute('aria-expanded')).toBe('false')
   })
 })

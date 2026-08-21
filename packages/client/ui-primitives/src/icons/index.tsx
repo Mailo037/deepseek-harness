@@ -765,6 +765,18 @@ export const IconQueueOutline14 = ({ size = 14, className }: IconProps) => (
   </svg>
 )
 
+/** ic_ds_grip_outline_14: two dot columns marking a draggable row handle. */
+export const IconGripOutline14 = ({ size = 14, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M6.2 3A1.2 1.2 0 1 1 3.8 3A1.2 1.2 0 1 1 6.2 3Z" fill="currentColor" />
+    <path d="M10.2 3A1.2 1.2 0 1 1 7.8 3A1.2 1.2 0 1 1 10.2 3Z" fill="currentColor" />
+    <path d="M6.2 7A1.2 1.2 0 1 1 3.8 7A1.2 1.2 0 1 1 6.2 7Z" fill="currentColor" />
+    <path d="M10.2 7A1.2 1.2 0 1 1 7.8 7A1.2 1.2 0 1 1 10.2 7Z" fill="currentColor" />
+    <path d="M6.2 11A1.2 1.2 0 1 1 3.8 11A1.2 1.2 0 1 1 6.2 11Z" fill="currentColor" />
+    <path d="M10.2 11A1.2 1.2 0 1 1 7.8 11A1.2 1.2 0 1 1 10.2 11Z" fill="currentColor" />
+  </svg>
+)
+
 /** ic_checklist_outline_14 (figma extract): two rings + two list bars. */
 export const IconChecklistOutline14 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

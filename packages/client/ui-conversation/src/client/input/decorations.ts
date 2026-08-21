@@ -70,7 +70,7 @@ const FOLDER_REF_RE = /(^|\s)(@(?:"[^"\n]*\/|[^\s"]+\/))/g
  * @returns matched ranges in draft order.
  */
 export function scanTextRefs(
-  draft: string, lexicon: ReadonlyMap<'/' | '@', readonly string[]>,
+  draft: string, lexicon: ReadonlyMap<'/' | '@' | '!', readonly string[]>,
 ): TextRefRange[] {
   if (draft === '') return []
   const out: TextRefRange[] = []
@@ -100,7 +100,7 @@ export function scanTextRefs(
 }
 
 /** The empty lexicon (default: zero text-ref decorations, old call sites unchanged). */
-const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
+const EMPTY_LEXICON: ReadonlyMap<'/' | '@' | '!', readonly string[]> = new Map()
 
 /**
  * Derive the mirror-layer decorations from the input state.
@@ -109,7 +109,7 @@ const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
  * @returns token range, chip instructions, text-ref ranges, and the ghost hint.
  */
 export function deriveDecorations(
-  state: InputState, lexicon: ReadonlyMap<'/' | '@', readonly string[]> = EMPTY_LEXICON,
+  state: InputState, lexicon: ReadonlyMap<'/' | '@' | '!', readonly string[]> = EMPTY_LEXICON,
 ): DraftDecorations {
   const { draft, claim, phase, occurrences } = state
   const claimActive = (phase === 'claimed' || phase === 'submitting')

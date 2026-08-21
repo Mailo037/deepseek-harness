@@ -3,6 +3,8 @@
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
   tab: '插件列表',
+  viewInstalled: '已安装',
+  viewDiscover: '发现',
   loading: '正在读取插件…',
   error: '暂时无法读取插件。',
   retry: '重试',
@@ -20,6 +22,14 @@ export const zh = {
   active: '已挂载',
   failed: '挂载失败',
   unloading: '卸载中',
+  discoverHeading: 'dsh-plugin 主题插件',
+  discoverLoading: '正在从 GitHub 获取插件…',
+  discoverError: '暂时无法从 GitHub 获取插件。',
+  discoverEmpty: 'GitHub 上还没有 dsh-plugin 主题插件。',
+  discoverNoResults: '没有匹配的插件。',
+  discoverStars: '星标',
+  discoverLanguage: '语言',
+  discoverLink: '在 GitHub 上查看',
 } satisfies Record<string, string>
 
 /** Plugin inventory locale key union. */
@@ -28,6 +38,8 @@ export type PluginInventoryLocaleKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   tab: 'Plugin list',
+  viewInstalled: 'Installed',
+  viewDiscover: 'Discover',
   loading: 'Reading plugins…',
   error: 'Plugins are temporarily unavailable.',
   retry: 'Retry',
@@ -45,4 +57,12 @@ export const en = {
   active: 'Mounted',
   failed: 'Mount failed',
   unloading: 'Unloading',
+  discoverHeading: 'dsh-plugin topic plugins',
+  discoverLoading: 'Fetching plugins from GitHub…',
+  discoverError: 'Plugins are temporarily unavailable from GitHub.',
+  discoverEmpty: 'No dsh-plugin topic plugins are on GitHub yet.',
+  discoverNoResults: 'No matching plugins.',
+  discoverStars: 'Stars',
+  discoverLanguage: 'Language',
+  discoverLink: 'View on GitHub',
 } satisfies Record<PluginInventoryLocaleKey, string>

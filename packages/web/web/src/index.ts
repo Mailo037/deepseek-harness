@@ -8,6 +8,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {
   WebFetchProvider,
   WebFetchRequest,
@@ -59,6 +60,9 @@ export interface WebRuntimeConfig {
   readonly fetchProvider?: string
 }
 
+/** Settings namespace carrying the web seam's provider selection. */
+export const WEB_SEARCH_SETTINGS_NAMESPACE = settingsNamespace('web-search')
+
 /**
  * The web access service. Registered as `ctx.web` (one instance per context).
  *
@@ -84,13 +88,57 @@ export class WebRuntime extends Service {
 
   private searchProviders = new Map<string, WebSearchProvider>()
   private fetchProviders = new Map<string, WebFetchProvider>()
-  private readonly searchProviderId: string | undefined
-  private readonly fetchProviderId: string | undefined
+  private searchProviderId: string | undefined
+  private fetchProviderId: string | undefined
 
   constructor(ctx: Context, config: WebRuntimeConfig = {}) {
     super(ctx, 'web')
-    this.searchProviderId = config.searchProvider ?? process.env.DSH_WEB_SEARCH_PROVIDER
-    this.fetchProviderId = config.fetchProvider ?? process.env.DSH_WEB_FETCH_PROVIDER
+    const envSearch = process.env.DSH_WEB_SEARCH_PROVIDER
+    const envFetch = process.env.DSH_WEB_FETCH_PROVIDER
+    this.searchProviderId = config.searchProvider ?? envSearch
+    this.fetchProviderId = config.fetchProvider ?? envFetch
+    // The settings `base` layer is the effective default (entry config plus the
+    // env-var overrides), so a section with no stored override resolves to the
+    // same selection the constructor made and `onChange` cannot undo it.
+    const base: WebRuntimeConfig = {
+      ...config.searchProvider !== undefined
+        ? { searchProvider: config.searchProvider }
+        : envSearch !== undefined ? { searchProvider: envSearch } : {},
+      ...config.fetchProvider !== undefined
+        ? { fetchProvider: config.fetchProvider }
+        : envFetch !== undefined ? { fetchProvider: envFetch } : {},
+    }
+    // The composition entry is the settings `base` layer; a persisted
+    // `web-search` section overrides it live. The seam owns the section so the
+    // selection surface is exactly the seam's config, not a hidden priority
+    // chain beside the env-var overrides.
+    let current: () => WebRuntimeConfig = () => config
+    installSettingsSection(ctx, WEB_SEARCH_SETTINGS_NAMESPACE, WebRuntime.Config, base, {
+      setSource: (source) => { current = source },
+      onChange: () => {
+        const { searchProvider, fetchProvider } = current()
+        this.setSearchProvider(searchProvider)
+        this.setFetchProvider(fetchProvider)
+      },
+    })
+  }
+
+  /**
+   * Pin the search provider selection at runtime. Unlike the constructor
+   * config, this is not validated against the registry: providers register
+   * after the seam boots, and selection resolution happens per search.
+   * @param id - the provider id to select, or `undefined` for auto-selection.
+   */
+  setSearchProvider(id: string | undefined): void {
+    this.searchProviderId = id
+  }
+
+  /**
+   * Pin the fetch provider selection at runtime; see {@link setSearchProvider}.
+   * @param id - the provider id to select, or `undefined` for auto-selection.
+   */
+  setFetchProvider(id: string | undefined): void {
+    this.fetchProviderId = id
   }
 
   /**

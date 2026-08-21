@@ -149,6 +149,38 @@ export class WorkspaceManager {
   }
 
   /**
+   * Update project settings for a Workspace.
+   * @param workspaceId - target workspace.
+   * @param settings - new settings dictionary.
+   * @returns the wire result.
+   */
+  async updateSettings(
+    workspaceId: WorkspaceId,
+    settings: Record<string, unknown>,
+  ): Promise<RpcResult<{ workspace: WorkspaceView }>> {
+    const { result } = await this.api.workspace.updateSettings({ workspaceId, settings })
+    if (result.ok) this.upsert(result.value.workspace)
+    return result
+  }
+
+  /**
+   * Move a session into a target Workspace.
+   * @param sessionId - session to move.
+   * @param targetWorkspaceId - target workspace.
+   * @returns the wire result.
+   */
+  async moveSession(
+    sessionId: SessionId,
+    targetWorkspaceId: WorkspaceId,
+  ): Promise<RpcResult<{ success: true }>> {
+    const { result } = await this.api.workspace.moveSession({ sessionId, targetWorkspaceId })
+    if (result.ok) {
+      await this.refresh()
+    }
+    return result
+  }
+
+  /**
    * Delete a Workspace registration and remove its local projection from the
    * unary response without waiting for the Host frame.
    * @param workspaceId - target workspace.

@@ -16,10 +16,10 @@ export interface IWorkspaces {
   readonly list: ObservableSnapshot<WorkspaceListState>
   /**
    * Connect a Workspace to its reusable or freshly created blank session.
-   * @param workspaceId - target workspace.
+   * @param workspaceId - target workspace, or omitted for a standalone/unlinked session.
    * @returns the connected session id.
    */
-  connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
+  connectWorkspace(workspaceId?: WorkspaceId): Promise<SessionId>
   /**
    * The New Session flow: connect the explicit, current-Session, or recent
    * Workspace and open the resulting session; failures surface on the session
@@ -65,6 +65,19 @@ export interface IWorkspaces {
    * @returns the updated Workspace view.
    */
   rename(workspaceId: WorkspaceId, title: string): Promise<WorkspaceView>
+  /**
+   * Update project-specific settings for a Workspace.
+   * @param workspaceId - target workspace.
+   * @param settings - new settings dictionary.
+   * @returns the updated Workspace view.
+   */
+  updateSettings(workspaceId: WorkspaceId, settings: Record<string, unknown>): Promise<WorkspaceView>
+  /**
+   * Move a session into a target Workspace.
+   * @param sessionId - session to move.
+   * @param targetWorkspaceId - target workspace.
+   */
+  moveSession(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void>
   /**
    * Delete a Workspace (its sessions fall back to the unaccounted group).
    * @param workspaceId - target workspace.

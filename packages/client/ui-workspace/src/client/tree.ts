@@ -110,15 +110,14 @@ function byRecency(a: SessionSummary, b: SessionSummary): number {
 }
 
 /**
- * Ordinary sessions are visible; among blank sessions, only the current one
- * is visible. Subagent children use their parent header catalog; archived
+ * Ordinary sessions are visible once their first message has landed. Subagent children use their parent header catalog; archived
  * sessions are visible nowhere, while their accounting slots remain so
- * unarchiving restores position.
+ * unarchiving restores position. Blank sessions stay hidden until a message is sent.
  */
-function sessionVisible(session: SessionSummary, current: SessionId | undefined, archived: ReadonlySet<SessionId>): boolean {
+function sessionVisible(session: SessionSummary, _current: SessionId | undefined, archived: ReadonlySet<SessionId>): boolean {
   return session.origin !== 'subagent'
     && !archived.has(session.id)
-    && (!session.blank || session.id === current)
+    && !session.blank
 }
 
 /**

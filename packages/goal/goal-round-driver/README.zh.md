@@ -15,9 +15,12 @@
 
 - id: goal-round-driver
   name: '@deepseek-ai/dsh-goal-round-driver'
+  config:
+    nudgeIntervalMs: 30000
+    consecutiveErrorLimit: 5
 ```
 
-该插件没有可调配置。`maxGoalRounds` 属于目标定义，面向模型的阻塞阈值则属于 [`dsh-tool-goal`](../tool-goal/README.md)；在驱动器中重复任一数值都可能产生分歧策略。
+`maxGoalRounds` 属于目标定义，面向模型的阻塞阈值则属于 [`dsh-tool-goal`](../tool-goal/README.md)；在驱动器中重复任一数值都可能产生分歧策略。驱动器本身拥有两个续行策略值：`nudgeIntervalMs`（默认 `30000`）调谐一个 idle、active、armed 的 goal 被自动重新 poke 的频率，`consecutiveErrorLimit`（默认 `5`）决定连续多少次失败的 goal round 会强制触发 `repeated-error` 阻塞。
 
 ## Round 约定
 
@@ -27,13 +30,15 @@
 
 保留的提示词会点明经过 JSON 引用的目标与 `round/maxGoalRounds`，将当前工作区、工具结果和持久会话状态视为权威信息，要求在完成前提供证据，并要求在工作仍未完成时保持目标 active。引用可将多行或形似标签的目标文本保留为数据。goal 生命周期变更仍必须通过 `dsh-tool-goal` 的独立权限检查。
 
-## Idle 检查点
+## Idle 检查点与 nudge
 
-整个 agent 进入 idle 时，持久 goal phase 和 revision 具有权威性。phase 为 active、已启用续行且仍有容量的 goal 会预留下一 Round；完成、暂停、阻塞和编辑都会阻止续行。驱动器不会通过关联 goal 消息与 `turn/end` 来对前一段活动分类，因此提供方错误和 token 上限不属于提示词级 goal 结果。
+整个 agent 进入 idle 时，持久 goal phase 和 revision 具有权威性。phase 为 active、已启用续行且仍有容量的 goal 会预留下一 Round；完成、暂停、阻塞和编辑都会阻止续行。驱动器不会通过关联 goal 消息与 `turn/end` 来对前一段活动分类，因此 token 上限不属于提示词级 goal 结果。
+
+一个周期定时器（`nudgeIntervalMs`）会重新激活一个自上次准入起从未被任何事件驱动路径触碰的 idle、active、armed goal，因此瞬时驱动竞态或外部 prompt 无法让 goal 在没有任何待处理预约的情况下静默停置。
 
 ## 生命周期与持久性
 
-`goal/changed` 会产生持久性义务。排队工作前，驱动器会等待 `ctx.sessions.flush()`，并在等待后重新检查 goal revision 与竞争输入。通过 `agent/error` 到达的 flush 失败会停用续行，避免另一 Round 启动。
+`goal/changed` 会产生持久性义务。排队工作前，驱动器会等待 `ctx.sessions.flush()`，并在等待后重新检查 goal revision 与竞争输入。经 `agent/error` 返回的一次失败 Round 会计入连续错误计数；低于该计数时续行保持启用，以便下一次 idle 检查点或 nudge 重试，而达到 `consecutiveErrorLimit` 次连续失败后则以 `repeated-error` 阻塞目标。不属于已准入 Round 的失败仍会停用续行。
 
 此插件加载到现有 agent 上时绝不会继承续行启用状态。`GoalService.disarm()` 会移除进程本地权限，而不改变持久 phase、revision 或历史；之后由用户明确授权的 resume 会记录重新启用续行。会话 resume 和 fork 后，goal 领域通过 `agent/session-start` 处理应用相同规则。
 
@@ -61,4 +66,4 @@
 - **只在同一会话执行**：此包有意不 spawn 新 agent、不 fork 会话前缀，也不实现 Ralph 风格的独立尝试；该工作流属于单独的插件层。
 - **已接受队列的卸载竞态**：Cordis 插件卸载是异步的。已经被 agent inbox 接受的 goal 提示词可以在卸载开始前启动并消耗其 Round；teardown 随后会取消请求、停用 goal 的续行并等待完全停稳。不会再启动后续 Round。
 - **只有 Round 上限，不是资源预算**：token、货币、时间与提供方配额策略保持独立。对应的会话事件不会归属于 goal 消息，也不会映射为 goal 阻塞代码。
-- **异常情况不自动重试**：暂时性的提供方与持久化失败需要之后由用户授权 resume，而不会采用隐式重试策略。
+- **重试是盲目的**：驱动器从不分类 Round 失败的原因。属于已准入 Round 的每次失败都计入 `consecutiveErrorLimit`，无论它是瞬时 provider 抖动还是会再次发生的持久化失败；它不区分限流、鉴权或配额耗尽。独立的资源策略仍保持暂缓。

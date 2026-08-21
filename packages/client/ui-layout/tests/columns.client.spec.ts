@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CENTER_MIN, clampWidth, computeColumns,
-  DETAILS_DEFAULT, DETAILS_MIN, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
+  DETAILS_DEFAULT, DETAILS_MIN, drawerWidth,
+  SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_MAX, SIDEBAR_DRAWER_MARGIN, SIDEBAR_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
 // Numeric preference form (0 = closed); helpers keep the scenario names readable.
@@ -13,6 +14,23 @@ describe('clampWidth', () => {
     expect(clampWidth(250.4, 240, 420)).toBe(250)
     expect(clampWidth(100, 240, 420)).toBe(240)
     expect(clampWidth(9999, 240, 420)).toBe(420)
+  })
+})
+
+describe('drawerWidth', () => {
+  it('caps at the drawer max on wide-enough viewports', () => {
+    expect(drawerWidth(640)).toBe(SIDEBAR_DRAWER_MAX)
+    expect(drawerWidth(1920)).toBe(SIDEBAR_DRAWER_MAX)
+  })
+
+  it('leaves the viewport margin visible on phone-sized viewports', () => {
+    expect(drawerWidth(360)).toBe(360 - SIDEBAR_DRAWER_MARGIN)
+    expect(drawerWidth(SIDEBAR_DRAWER_MAX + SIDEBAR_DRAWER_MARGIN - 1)).toBe(SIDEBAR_DRAWER_MAX - 1)
+  })
+
+  it('never goes negative on degenerate viewports', () => {
+    expect(drawerWidth(0)).toBe(0)
+    expect(drawerWidth(20)).toBe(0)
   })
 })
 

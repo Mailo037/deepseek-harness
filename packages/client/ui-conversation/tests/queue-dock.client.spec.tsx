@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * QueueDock rendering and operations: authoritative rows, inline editing,
- * collapse state, removal, strict steering, failure notices, and live retirement.
+ * QueueDock rendering and operations: authoritative rows, composer-side
+ * editing handoff, drag/keyboard reordering, collapse state, removal,
+ * strict steering, failure notices, and live retirement.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
@@ -63,13 +64,22 @@ function liveSession(initial: ConversationSnapshot) {
   }
 }
 
-/** InputZone owner stub (the dock reads useSession only; the zone fields satisfy the owner share). */
-const INPUT_STATE: InputState = { draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [] }
+/** InputZone owner stub; `queueEdit` mirrors the shell's published edit state. */
+function inputState(queueEdit?: QueueItemId): InputState {
+  return {
+    draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
+    ...(queueEdit === undefined ? {} : { queueEdit: { itemId: queueEdit } }),
+  }
+}
 
 // Standard locale seat stub mirroring the real ns → common → key chain.
 const t: QueueDockProps['t'] = makeTranslate(zh, commonZh)
 
-function kitFor(snapshot: ConversationSnapshot, injected: Partial<QueueDockInjected> = {}) {
+function kitFor(
+  snapshot: ConversationSnapshot,
+  injected: Partial<QueueDockInjected> = {},
+  input = inputState(),
+) {
   return {
     sessionId: SID,
     t,
@@ -79,12 +89,17 @@ function kitFor(snapshot: ConversationSnapshot, injected: Partial<QueueDockInjec
     useInput: (() => { throw new Error('unused') }) as never,
     inputActions: { setDraft: () => {}, submit: () => {} } as never,
     session: snapshot,
-    input: INPUT_STATE,
+    input,
     updateQueue: vi.fn(() => Promise.resolve()),
+    beginQueueEdit: vi.fn(() => true),
+    cancelQueueEdit: vi.fn(),
     notify: vi.fn(),
     ...injected,
   }
 }
+
+/** Synthetic DataTransfer stand-in: jsdom drag events carry none. */
+const transfer = (): DataTransfer => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' }) as never
 
 describe('QueueDock', () => {
   it('renders null while the queue is empty', () => {
@@ -126,58 +141,161 @@ describe('QueueDock', () => {
     expect(view.queryByText('one')).toBeNull()
   })
 
-  it('keeps an active single-row editor visible when another item arrives', () => {
-    const single = snapshotWith([row('i-edit', 'before')])
-    const source = liveSession(single)
-    const view = render(<QueueDock {...kitFor(single)} useSession={source.useSession} />)
-
-    fireEvent.click(view.getByLabelText('编辑排队消息'))
-    fireEvent.change(view.getByLabelText('编辑排队消息'), { target: { value: 'draft' } })
-    act(() => {
-      source.push(snapshotWith([row('i-edit', 'before'), row('i-2', 'second')]))
-    })
-
+  it('keeps the strip expanded while the composer edits one of its rows', () => {
+    const snap = snapshotWith([row('i-a', 'alpha'), row('i-b', 'beta')])
+    const view = render(
+      <QueueDock {...kitFor(snap, {}, inputState(iid('i-b')))} useSession={liveSession(snap).useSession} />,
+    )
     const header = view.getByRole('button', { name: '2 条排队消息' })
     expect(header).toHaveProperty('disabled', true)
     expect(header.getAttribute('aria-expanded')).toBe('true')
-    expect(view.getByRole('textbox', { name: '编辑排队消息' })).toHaveProperty('value', 'draft')
-    expect(view.getByText('second')).toBeTruthy()
-
-    fireEvent.click(view.getByLabelText('取消编辑'))
-    expect(header).toHaveProperty('disabled', false)
-    expect(header.getAttribute('aria-expanded')).toBe('false')
-    expect(view.queryByText('second')).toBeNull()
+    expect(view.getByText('beta').className).toContain('previewEditing')
+    expect(view.queryByText('alpha')).toBeTruthy()
   })
 
-  it('keeps an in-flight row action visible when another item arrives', async () => {
-    const single = snapshotWith([row('i-remove', 'remove me')])
-    const source = liveSession(single)
-    let finishUpdate: (() => void) | undefined
-    const updateQueue = vi.fn(() => new Promise<void>((resolve) => { finishUpdate = resolve }))
+  it('hands a row edit to the composer instead of an inline editor', () => {
+    const snap = snapshotWith([row('i-edit', 'before')])
+    const beginQueueEdit = vi.fn(() => true)
     const view = render(
-      <QueueDock {...kitFor(single, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { beginQueueEdit })} useSession={liveSession(snap).useSession} />,
     )
 
-    fireEvent.click(view.getByLabelText('删除排队消息'))
-    act(() => {
-      source.push(snapshotWith([row('i-remove', 'remove me'), row('i-2', 'second')]))
-    })
+    fireEvent.click(view.getByLabelText('编辑排队消息'))
+    expect(beginQueueEdit).toHaveBeenCalledWith(iid('i-edit'))
+    // No inline textbox: the composer owns the edited text.
+    expect(view.queryByRole('textbox')).toBeNull()
+  })
 
-    const header = view.getByRole('button', { name: '2 条排队消息' })
-    expect(header).toHaveProperty('disabled', true)
-    expect(header.getAttribute('aria-expanded')).toBe('true')
-    expect(view.getByText('remove me')).toBeTruthy()
-    expect(view.getByText('second')).toBeTruthy()
+  it('offers the cancel exit on the row loaded into the composer', () => {
+    const snap = snapshotWith([row('i-edit', 'before')])
+    const cancelQueueEdit = vi.fn()
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const view = render(
+      <QueueDock {...kitFor(snap, { cancelQueueEdit, updateQueue }, inputState(iid('i-edit')))}
+        useSession={liveSession(snap).useSession}
+      />,
+    )
 
-    expect(updateQueue).toHaveBeenCalledOnce()
-    await act(async () => {
-      finishUpdate?.()
-      await Promise.resolve()
-    })
+    fireEvent.click(view.getByLabelText('取消编辑'))
+    expect(cancelQueueEdit).toHaveBeenCalledOnce()
+    expect(view.queryByLabelText('编辑排队消息')).toBeNull()
+    expect(updateQueue).not.toHaveBeenCalled()
+  })
+
+  it('reorders rows through the drag handle far left of each row', async () => {
+    const snap = snapshotWith([row('i-1', 'one'), row('i-2', 'two'), row('i-3', 'three')])
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={liveSession(snap).useSession} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: '3 条排队消息' }))
+    const rows = view.container.querySelectorAll('li')
+    expect(rows).toHaveLength(3)
+
+    fireEvent.dragStart(rows[0]!, { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[2]!, { dataTransfer: transfer() })
+    expect(rows[2]!.className).toContain('dropBelow')
+    fireEvent.drop(rows[2]!)
     await waitFor(() => {
-      expect(header).toHaveProperty('disabled', false)
-      expect(header.getAttribute('aria-expanded')).toBe('false')
+      expect(updateQueue).toHaveBeenCalledWith(iid('i-1'), { kind: 'move', toIndex: 2 })
     })
+    // The gesture ends with the drop: no lingering indicator.
+    expect(rows[2]!.className).not.toContain('dropBelow')
+  })
+
+  it('moves a row up when dropped above the source and skips same-position drops', async () => {
+    const snap = snapshotWith([row('i-1', 'one'), row('i-2', 'two')])
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={liveSession(snap).useSession} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
+    const rows = view.container.querySelectorAll('li')
+
+    fireEvent.dragStart(rows[1]!, { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[0]!, { dataTransfer: transfer() })
+    expect(rows[0]!.className).toContain('dropAbove')
+    fireEvent.drop(rows[0]!)
+    await waitFor(() => {
+      expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 0 })
+    })
+
+    fireEvent.dragStart(rows[0]!, { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[0]!, { dataTransfer: transfer() })
+    fireEvent.drop(rows[0]!)
+    expect(updateQueue).toHaveBeenCalledOnce()
+  })
+
+  it('clears the drag gesture on dragend without mutating the queue', () => {
+    const snap = snapshotWith([row('i-1', 'one'), row('i-2', 'two')])
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={liveSession(snap).useSession} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
+    const rows = view.container.querySelectorAll('li')
+
+    fireEvent.dragStart(rows[0]!, { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[1]!, { dataTransfer: transfer() })
+    fireEvent.dragEnd(rows[0]!)
+    fireEvent.drop(rows[1]!)
+    expect(updateQueue).not.toHaveBeenCalled()
+    expect(rows[1]!.className).not.toContain('dropBelow')
+  })
+
+  it('reorders with ArrowUp/ArrowDown on the handle', async () => {
+    const snap = snapshotWith([row('i-1', 'one'), row('i-2', 'two')])
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={liveSession(snap).useSession} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
+    const handles = view.getAllByLabelText('拖动调整发送顺序')
+
+    fireEvent.keyDown(handles[1]!, { key: 'ArrowUp' })
+    await waitFor(() => {
+      expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 0 })
+    })
+    fireEvent.keyDown(handles[1]!, { key: 'ArrowDown' })
+    await waitFor(() => {
+      expect(updateQueue).toHaveBeenCalledWith(iid('i-2'), { kind: 'move', toIndex: 2 })
+    })
+    fireEvent.keyDown(handles[1]!, { key: 'Enter' })
+    expect(updateQueue).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a failed reorder and keeps the row', async () => {
+    const snap = snapshotWith([row('i-race', 'pending'), row('i-2', 'two')])
+    const notify = vi.fn()
+    const updateQueue = vi.fn(() => Promise.reject(new Error('claimed')))
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue, notify })} useSession={liveSession(snap).useSession} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
+    fireEvent.keyDown(view.getAllByLabelText('拖动调整发送顺序')[0]!, { key: 'ArrowDown' })
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalledWith('error', '移动失败：这条消息可能已经开始发送。')
+    })
+    expect(view.getByText('pending')).toBeTruthy()
+  })
+
+  it('omits the drag handle for a single row and for subagent queues', () => {
+    const single = snapshotWith([row('i-solo', 'only')])
+    const solo = render(<QueueDock {...kitFor(single)} useSession={liveSession(single).useSession} />)
+    expect(solo.queryByLabelText('拖动调整发送顺序')).toBeNull()
+    expect(solo.getByText('only')).toBeTruthy()
+
+    const snap = {
+      ...snapshotWith([row('i-sub', 'child one'), row('i-sub2', 'child two')]),
+      subagent: {
+        address: { parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' as const },
+        parentAvailable: true,
+      },
+    }
+    const child = render(<QueueDock {...kitFor(snap)} useSession={liveSession(snap).useSession} />)
+    fireEvent.click(child.getByRole('button', { name: '2 条排队消息' }))
+    expect(child.queryByLabelText('拖动调整发送顺序')).toBeNull()
+    expect(child.getAllByLabelText('删除排队消息')).toHaveLength(2)
   })
 
   it('defaults a new multi-row queue to collapsed after the prior queue empties', () => {
@@ -206,9 +324,10 @@ describe('QueueDock', () => {
     const source = liveSession(snap)
     const { container, getByRole } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
     fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
-    expect([...container.querySelectorAll('li')].map(item => item.textContent))
-      .toEqual(['第一条排队消息', 'image [image]'])
-    expect(container.querySelectorAll('button')).toHaveLength(7)
+    expect([...container.querySelectorAll('li')].map(item =>
+      item.textContent?.replace('拖动调整发送顺序', ''),
+    )).toEqual(['第一条排队消息', 'image [image]'])
+    expect(container.querySelectorAll('[aria-label="拖动调整发送顺序"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="编辑排队消息"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="删除排队消息"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="插话发送"]')).toHaveLength(2)
@@ -216,67 +335,6 @@ describe('QueueDock', () => {
     expect((container.querySelectorAll('[aria-label="编辑排队消息"]')[1] as HTMLButtonElement).disabled).toBe(true)
     expect(container.querySelectorAll('[aria-label="编辑排队消息"]')[1]?.getAttribute('title'))
       .toBe('包含非文本内容，暂不支持编辑')
-  })
-
-  it('edits text inline with save and cancel controls, then saves with the same item identity', async () => {
-    const snap = snapshotWith([row('i-edit', 'before')])
-    const source = liveSession(snap)
-    const updateQueue = vi.fn(() => Promise.resolve())
-    const { getByLabelText, queryByLabelText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
-    )
-
-    fireEvent.click(getByLabelText('编辑排队消息'))
-    const editor = getByLabelText('编辑排队消息') as HTMLInputElement
-    expect(getByLabelText('保存排队消息')).toBeTruthy()
-    expect(getByLabelText('取消编辑')).toBeTruthy()
-    expect(queryByLabelText('删除排队消息')).toBeNull()
-    fireEvent.change(editor, { target: { value: 'after' } })
-    fireEvent.keyDown(editor, { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(updateQueue).toHaveBeenCalledWith(iid('i-edit'), {
-        kind: 'edit',
-        content: [{ type: 'text', text: 'after' }],
-      })
-    })
-  })
-
-  it('cancels an edit by button or Escape without mutating the queue', () => {
-    const snap = snapshotWith([row('i-edit', 'before')])
-    const source = liveSession(snap)
-    const updateQueue = vi.fn(() => Promise.resolve())
-    const { getByLabelText, getByText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
-    )
-
-    fireEvent.click(getByLabelText('编辑排队消息'))
-    fireEvent.change(getByLabelText('编辑排队消息'), { target: { value: 'abandoned' } })
-    fireEvent.click(getByLabelText('取消编辑'))
-    expect(getByText('before')).toBeTruthy()
-
-    fireEvent.click(getByLabelText('编辑排队消息'))
-    fireEvent.keyDown(getByLabelText('编辑排队消息'), { key: 'Escape' })
-    expect(getByText('before')).toBeTruthy()
-    expect(updateQueue).not.toHaveBeenCalled()
-  })
-
-  it('keeps editing during IME composition and disables a blank save', () => {
-    const snap = snapshotWith([row('i-edit', 'before')])
-    const source = liveSession(snap)
-    const updateQueue = vi.fn(() => Promise.resolve())
-    const { getByLabelText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
-    )
-
-    fireEvent.click(getByLabelText('编辑排队消息'))
-    const editor = getByLabelText('编辑排队消息')
-    fireEvent.change(editor, { target: { value: '   ' } })
-    expect(getByLabelText('保存排队消息')).toHaveProperty('disabled', true)
-    fireEvent.change(editor, { target: { value: '输入中' } })
-    fireEvent.keyDown(editor, { key: 'Enter', isComposing: true })
-    expect(updateQueue).not.toHaveBeenCalled()
-    expect(getByLabelText('编辑排队消息')).toBeTruthy()
   })
 
   it('removes the addressed row', async () => {
@@ -312,29 +370,6 @@ describe('QueueDock', () => {
     act(() => { source.push({ ...running, running: false }) })
     expect(rendered.getByLabelText('插话发送')).toHaveProperty('disabled', true)
     expect(rendered.getByLabelText('插话发送').getAttribute('title')).toBe('仅运行中可插话发送')
-  })
-
-  it('renders a session-backed subagent Queue without unsupported actions', () => {
-    const snap = {
-      ...snapshotWith([row('i-subagent', 'pending child follow-up')]),
-      subagent: {
-        address: {
-          parentSessionId: 'parent' as SessionId,
-          childSessionId: SID,
-          mode: 'continuable' as const,
-        },
-        parentAvailable: true,
-      },
-    }
-    const source = liveSession(snap)
-    const view = render(
-      <QueueDock {...kitFor(snap)} useSession={source.useSession} />,
-    )
-
-    expect(view.getByText('pending child follow-up')).toBeTruthy()
-    expect(view.queryByLabelText('编辑排队消息')).toBeNull()
-    expect(view.queryByLabelText('删除排队消息')).toBeNull()
-    expect(view.queryByLabelText('插话发送')).toBeNull()
   })
 
   it('keeps the row and reports a genuine steer failure', async () => {

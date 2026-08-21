@@ -39,3 +39,14 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Compiled tsc emission that lands next to the .ts sources in /src (not the lib/ output).
+packages/**/src/*.js
+packages/**/src/*.js.map
+packages/**/src/*.d.ts
+packages/**/src/*.d.ts.map
+vendor/**/src/*.js
+vendor/**/src/*.js.map
+vendor/**/src/*.d.ts
+vendor/**/src/*.d.ts.map
+!packages/client/ui-shell-command/src/css-modules.d.ts

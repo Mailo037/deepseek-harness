@@ -28,8 +28,15 @@ import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
 
-/** Messages requested per history page. */
+/** Messages requested per older-history page (scroll-up paging). */
 export const PAGE_MESSAGES = 50
+
+/**
+ * Tail-page size on open: the last two request/response pairs. The reader
+ * gets a short recent window immediately and older history loads page by
+ * page as they scroll up, instead of the whole log arriving at once.
+ */
+export const INITIAL_PAGE_MESSAGES = 4
 
 /** Manager-owned observers of a Session object's local state edges. */
 export interface SessionOptions {
@@ -620,7 +627,7 @@ export class Session implements SessionFace {
     this.openError = null
     this.notifier.markDirty()
     try {
-      let { result } = await this.history({ maxMessages: PAGE_MESSAGES })
+      let { result } = await this.history({ maxMessages: INITIAL_PAGE_MESSAGES })
       if (generation !== this.openGeneration) return
       if (!result.ok) {
         this.openState = 'error'
@@ -631,7 +638,7 @@ export class Session implements SessionFace {
       // Gap detection: baseline past the window tail and liveBuffer did not cover it -> pull the tail page once more.
       const tailSeq = this.windowTailSeq()
       if (this.subscribedLastSeq !== null && tailSeq !== null && this.subscribedLastSeq > tailSeq) {
-        result = (await this.history({ maxMessages: PAGE_MESSAGES })).result
+        result = (await this.history({ maxMessages: INITIAL_PAGE_MESSAGES })).result
         if (generation !== this.openGeneration) return
         if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
       }

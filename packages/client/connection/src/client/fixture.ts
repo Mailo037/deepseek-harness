@@ -2788,6 +2788,45 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
       },
+      updateSettings: (request) => {
+        const { workspaceId, settings } = request.payload
+        const workspace = workspaces.find(w => w.workspaceId === workspaceId)
+        if (workspace === undefined) {
+          return err(request, {
+            code: 'workspace-not-found',
+            message: `no workspace ${workspaceId}`,
+            details: { workspaceId },
+          })
+        }
+        workspace.settings = { ...settings }
+        workspace.updatedAt = new Date().toISOString()
+        emitHost({ type: 'host/workspace-changed', workspace: { ...workspace } })
+        return ok(request, { workspace: { ...workspace } })
+      },
+      moveSession: (request) => {
+        const { sessionId, targetWorkspaceId } = request.payload
+        const target = workspaces.find(w => w.workspaceId === targetWorkspaceId)
+        if (target === undefined) {
+          return err(request, {
+            code: 'workspace-not-found',
+            message: `no workspace ${targetWorkspaceId}`,
+            details: { workspaceId: targetWorkspaceId },
+          })
+        }
+        for (const w of workspaces) {
+          if (w.sessionIds.includes(sessionId)) {
+            w.sessionIds = w.sessionIds.filter(id => id !== sessionId)
+            w.updatedAt = new Date().toISOString()
+            emitHost({ type: 'host/workspace-changed', workspace: { ...w } })
+          }
+        }
+        if (!target.sessionIds.includes(sessionId)) {
+          target.sessionIds.unshift(sessionId)
+          target.updatedAt = new Date().toISOString()
+          emitHost({ type: 'host/workspace-changed', workspace: { ...target } })
+        }
+        return ok(request, { success: true as const })
+      },
     },
     agentPresets: {
       // Both trusts appear, because a surface must present a locally authored
@@ -3203,6 +3242,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertBefore': return this.api.workspace.insertBefore(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
+      case 'workspace.updateSettings': return this.api.workspace.updateSettings(request)
+      case 'workspace.moveSession': return this.api.workspace.moveSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)

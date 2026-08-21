@@ -77,6 +77,7 @@ export function ProducedFiles({
   const canOpenPath = isLoopback && hostCanOpenPath
   const limit = Math.min(paths.length, SHOWN_LIMIT)
   const [shownCount, setShownCount] = useState(limit)
+  const [expanded, setExpanded] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   const chipProbes = useRef<Array<HTMLButtonElement | null>>([])
   const moreProbe = useRef<HTMLSpanElement>(null)
@@ -109,13 +110,16 @@ export function ProducedFiles({
     return () => { observer.disconnect() }
   }, [limit, paths, t])
 
-  const visibleCount = Math.min(shownCount, limit)
+  const visibleCount = expanded ? paths.length : Math.min(shownCount, limit)
   const shown = paths.slice(0, visibleCount)
   const hidden = paths.length - shown.length
+  // Files the collapsed lane would hide: the expand affordance exists only
+  // when this is positive, so the Hide action reappears exactly there.
+  const collapsedHidden = paths.length - Math.min(shownCount, limit)
   return (
     <div className={css.root}>
       <span className={css.label}>{t('produced.label')}</span>
-      <div ref={rowRef} className={css.row} data-produced-files-row>
+      <div ref={rowRef} className={expanded ? `${css.row} ${css.expanded}` : css.row} data-produced-files-row>
         {shown.map(path => (
           <button
             key={path}
@@ -130,8 +134,22 @@ export function ProducedFiles({
             {basename(path)}
           </button>
         ))}
-        {hidden > 0 && <span className={css.more}>{moreLabel(t, hidden)}</span>}
+        {hidden > 0 && (
+          <button
+            type="button"
+            className={css.more}
+            aria-expanded={false}
+            onClick={() => { setExpanded(true) }}
+          >
+            {moreLabel(t, hidden)}
+          </button>
+        )}
       </div>
+      {expanded && collapsedHidden > 0 && (
+        <button type="button" className={css.hide} aria-expanded={true} onClick={() => { setExpanded(false) }}>
+          {t('produced.hide')}
+        </button>
+      )}
       {hidden > 0 && canOpenPath && (
         <button type="button" className={css.showFolder} onClick={() => { openFile('.') }}>
           {t('produced.showInFolder')}

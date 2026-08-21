@@ -40,6 +40,8 @@ export interface DeepSeekCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link DeepSeekConnectionOptions.maxTokens}. */
   maxTokens?: number
+  /** Model-configured default reasoning effort; omission falls back to profile defaults. */
+  reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Accepted request modalities; omission is text-only. */
   inputModalities?: ModelModality[]
 }
@@ -213,11 +215,11 @@ export class DeepSeekAdapter extends LlmAdapter {
         : {
           reasoning: {
             efforts: REASONING_EFFORTS,
-            defaultEffort: connection.defaults.reasoningEffort === 'off'
+            defaultEffort: (configured?.reasoningEffort ?? connection.defaults.reasoningEffort) === 'off'
               ? OFF_REASONING_EFFORT
-              : connection.defaults.reasoningEffort === 'low'
+              : (configured?.reasoningEffort ?? connection.defaults.reasoningEffort) === 'low'
                 ? LOW_REASONING_EFFORT
-                : connection.defaults.reasoningEffort === 'max'
+                : (configured?.reasoningEffort ?? connection.defaults.reasoningEffort) === 'max'
                   ? MAX_REASONING_EFFORT
                   : HIGH_REASONING_EFFORT,
           },

@@ -7,7 +7,7 @@
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
-  FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
+  FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -38,9 +38,11 @@ export function workspaceLabel(cwd: string): string {
  * @param props.onClick - menu toggle.
  * @returns the chip button element.
  */
-export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }: {
+export function WorkspaceChip({ buttonRef, label, noWorkspace = false, menuOpen = false, onClick, t }: {
   buttonRef?: RefObject<HTMLButtonElement>
   label?: string | undefined
+  /** Standalone session without a workspace: the New-Chat glyph replaces the folder. */
+  noWorkspace?: boolean
   menuOpen?: boolean
   onClick?: () => void
   t: HeroTranslate
@@ -55,9 +57,11 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }
       aria-expanded={menuOpen}
       onClick={onClick}
     >
-      {label === undefined
-        ? <IconFolderClose16 className={css.folder} size={16} />
-        : <IconFolderOpen16 className={css.folder} size={16} />}
+      {noWorkspace
+        ? <IconNewChatOutline16 className={css.folder} size={16} />
+        : label === undefined
+          ? <IconFolderClose16 className={css.folder} size={16} />
+          : <IconFolderOpen16 className={css.folder} size={16} />}
       <span className={css.workspaceLabel}>{label ?? t('hero.chooseWorkspace')}</span>
       <IconChevronDownOutline14 className={css.chevron} size={12} />
     </button>

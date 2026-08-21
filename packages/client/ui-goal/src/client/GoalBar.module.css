@@ -33,7 +33,11 @@
 
 .goalGlyph {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  width: 14px;
+  height: 24px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -41,6 +45,7 @@
    composer-stack cards read as one family. */
 .label {
   flex: none;
+  height: 24px;
   font-size: 13px;
   line-height: 24px;
   font-weight: 500;
@@ -58,6 +63,27 @@
   white-space: nowrap;
 }
 
+/* Expanded (read) mode: the bar grows in height up to a cap and the objective
+   wraps onto multiple lines; overflow scrolls instead of truncating. */
+.barExpanded {
+  align-items: flex-start;
+  height: auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.objectiveExpanded {
+  flex: 1;
+  min-width: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-dimmed);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .error {
   flex: 1;
   min-width: 0;
@@ -71,18 +97,43 @@
 
 /* ---- Inline edit form ---- */
 
+/* Edit mode: same card as the read strip but top-aligned and taller so the
+   multi-line objective editor has room to write; the field grows with its
+   content up to a cap. */
+.editBar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-width: calc(var(--dsh-composer-card-max-width) - 4 * var(--dsh-composer-dock-inset));
+  margin: 0 auto;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-specific-tip);
+}
+
 .objectiveInput {
+  box-sizing: border-box;
   flex: 1;
   min-width: 0;
-  height: 26px;
-  padding: 0 8px;
+  height: auto;
+  min-height: 32px;
+  max-height: 180px;
+  padding: 5px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
+  font-family: inherit;
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-primary);
   outline: none;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .objectiveInput:focus {
@@ -100,6 +151,29 @@
   align-items: center;
   gap: 10px;
   flex: none;
+}
+
+/* On fine-pointer desktop the read-strip goal buttons are hover-revealed (and
+   revealed on keyboard focus) so the strip reads as status-only by default;
+   touch devices without hover always show them. The edit form's save/cancel
+   buttons stay visible because it lives in .editBar, not the read .bar.
+   Opacity keeps the layout stable. */
+@media (hover: hover) and (min-width: 769px) {
+  .bar > .actions {
+    opacity: 0;
+    transition: opacity 100ms ease;
+  }
+
+  .bar:hover > .actions,
+  .bar:focus-within > .actions {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .actions {
+    opacity: 1;
+  }
 }
 
 .iconBtn {

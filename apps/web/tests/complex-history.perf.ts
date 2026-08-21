@@ -42,7 +42,11 @@ const TOOL_TURN_INTERVAL = 10
 const TOOLS_PER_TOOL_TURN = 10
 const EXPECTED_TOOL_CALLS = LONG_HISTORY_TURNS / TOOL_TURN_INTERVAL * TOOLS_PER_TOOL_TURN
 const EXPECTED_TRAJECTORY_ROWS = 2_100
-const DEFAULT_HISTORY_TURNS = 24
+/** Bounds for the initial loaded-window turn count after opening the long
+ * log: the last 2 request/response pairs plus auto-filled pages is a partial
+ * window — it must never be the whole 500-turn log. */
+const INITIAL_HISTORY_TURNS_MIN = 20
+const INITIAL_HISTORY_TURNS_MAX = 60
 const PERF_REPLAY_CONTEXT_WINDOW = 10_000_000
 const STREAM_PACE_MS = 8
 const STREAM_DELTA_COUNT = 120
@@ -1224,7 +1228,8 @@ describe('manual web performance: complex workspace and history', () => {
         await page.getByRole('tab', { name: 'Trajectory', exact: true }).waitFor({ timeout: 30_000 })
         return conversationTurns(page)
       })
-      expect(opened.value).toBe(DEFAULT_HISTORY_TURNS)
+      expect(opened.value).toBeGreaterThanOrEqual(INITIAL_HISTORY_TURNS_MIN)
+      expect(opened.value).toBeLessThanOrEqual(INITIAL_HISTORY_TURNS_MAX)
 
       const trajectoryRows = page.getByRole('row')
       const coldTrajectory = await measure(cdp, async () => {
@@ -1250,7 +1255,8 @@ describe('manual web performance: complex workspace and history', () => {
       while (turns < LONG_HISTORY_TURNS) {
         const previousTurns = turns
         const older = await measure(cdp, async () => {
-          await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+          // Scroll up to the loaded head to trigger the next history page.
+          await page.locator('[data-conversation-scroll]').evaluate((host) => { host.scrollTop = 0 })
           await expect.poll(() => conversationTurns(page), { timeout: 30_000 })
             .toBeGreaterThan(previousTurns)
           return conversationTurns(page)
@@ -1314,9 +1320,10 @@ describe('manual web performance: complex workspace and history', () => {
       const cdp = await world.page.context().newCDPSession(world.page)
       await cdp.send('Performance.enable')
       const opened = await measure(cdp, () => openLongHistory(world.page))
-      expect(opened.value).toBe(DEFAULT_HISTORY_TURNS)
+      expect(opened.value).toBeGreaterThanOrEqual(INITIAL_HISTORY_TURNS_MIN)
+      expect(opened.value).toBeLessThanOrEqual(INITIAL_HISTORY_TURNS_MAX)
       const conversation = await continueConversation(world, cdp, {
-        startingTurns: DEFAULT_HISTORY_TURNS,
+        startingTurns: opened.value,
         turnCount: COMPARISON_TURNS,
         turnSpec: comparisonTurn,
         expectedSessionId: SessionId(LONG_SESSION_ID),
@@ -1346,13 +1353,16 @@ describe('manual web performance: complex workspace and history', () => {
       await openPerformancePage(world, 1)
       const cdp = await world.page.context().newCDPSession(world.page)
       await cdp.send('Performance.enable')
-      expect(await openLongHistory(world.page)).toBe(DEFAULT_HISTORY_TURNS)
+      const initialTurns = await openLongHistory(world.page)
+      expect(initialTurns).toBeGreaterThanOrEqual(INITIAL_HISTORY_TURNS_MIN)
+      expect(initialTurns).toBeLessThanOrEqual(INITIAL_HISTORY_TURNS_MAX)
       const historyPages: { turns: number; measurement: Measurement }[] = []
-      let turns = DEFAULT_HISTORY_TURNS
+      let turns = initialTurns
       while (turns < LONG_HISTORY_TURNS) {
         const previousTurns = turns
         const older = await measure(cdp, async () => {
-          await world.page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+          // Scroll up to the loaded head to trigger the next history page.
+          await world.page.locator('[data-conversation-scroll]').evaluate((host) => { host.scrollTop = 0 })
           await expect.poll(() => conversationTurns(world.page), { timeout: 30_000 })
             .toBeGreaterThan(previousTurns)
           return conversationTurns(world.page)

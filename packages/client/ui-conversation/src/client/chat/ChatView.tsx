@@ -14,15 +14,31 @@
 // lifecycle updates replace only their own row without remounting it.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ReactNode } from 'react'
+import type {
+  ChatConversationViewNode, ConversationTimelineSnapshot, ToolCallBlock,
+} from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  Button, IconChecklistOutline14, IconChevronDownOutline14, IconCodeOutline16, IconEditOutline16,
+  IconGlobeOutline14, IconGoalOutline16, IconSearchOutline16, IconThinkOutline14, Modal,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { ToolCallGroup } from './ToolCallGroup.tsx'
+import { TurnWorkSummary } from './TurnWorkSummary.tsx'
 import { formatRunDuration } from './message-chrome.ts'
+import a11yCss from './accessibility.module.css'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
+
+/**
+ * Scroll-top zone (px) that requests the next older history page. Kept under
+ * the anchor-test setup offsets (50/80) so a reader scrolling to a positioned
+ * anchor does not itself page; only reaching the top zone does.
+ */
+const OLDER_TRIGGER_TOP = 8
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -113,6 +129,140 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
     if (turn.status === 'open' && turn.start !== undefined) latest = turn.start.time
   }
   return latest
+}
+
+/**
+ * Extract a closed turn number from a Node's resolved Location, or undefined
+ * when the turn is still open or the Node has no turn affinity.
+ * @param node - Chat Node with its resolved Location.
+ * @returns the turn number for a closed turn, or undefined when open/session.
+ */
+function closedTurnOf(node: ChatConversationViewNode): number | undefined {
+  const location = node.location
+  if (location.kind !== 'turn' && location.kind !== 'step') return undefined
+  return location.turn.status === 'closed' ? location.turn.turn : undefined
+}
+
+/** Narrowed view of the Assistant chat payload fields the fold decision reads. */
+interface AssistantMeta {
+  readonly finalNode?: { readonly seq: number }
+  readonly blocks?: readonly { readonly kind: string }[]
+}
+
+/**
+ * Whether an assistant Step renders only Think chrome plus tool heads — no
+ * visible text (or image/other content). Such nodes belong inside the tool
+ * window, since their only rendered content is the Think row. A node with just
+ * tool heads (no reasoning/text) renders an empty shell and stays out.
+ * @param node - settled/interrupted Assistant chat node.
+ * @returns true when reasoning is present and nothing visible except it remains.
+ */
+function isThinkOnly(node: ChatConversationViewNode): boolean {
+  if (node.kind !== 'assistant-step') return false
+  const { blocks } = node.data as AssistantMeta
+  if (blocks === undefined || blocks.length === 0 || !blocks.some(block => block.kind === 'reasoning')) return false
+  return blocks.every(block => block.kind === 'reasoning' || block.kind === 'tool-call')
+}
+
+/** Wire tool names whose calls mutate files. */
+const EDIT_TOOL_NAMES = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'str_replace'])
+
+/**
+ * Read a settled or running root call's wire tool name.
+ * @param node - tool-call Chat Node.
+ * @returns the tool name, or undefined when the call head was windowed out.
+ */
+function toolNameOf(node: ChatConversationViewNode): string | undefined {
+  if (node.kind !== 'tool-call') return undefined
+  const root: ToolCallBlock = (node.data as { readonly root: ToolCallBlock }).root
+  return 'kind' in root ? root.call?.name ?? undefined : root.name
+}
+
+/**
+ * Humanize a wire tool name for the group header ("get_goal" → "Get Goal").
+ * @param name - wire tool name.
+ * @returns the display name.
+ */
+function humanizeToolName(name: string): string {
+  return name.split(/[_\-\s]+/u).filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+/**
+ * Pick the header icon for one tool family. Coarse wire-name families only —
+ * the per-row icons stay owned by the tool views.
+ * @param name - wire tool name.
+ * @returns the header icon element.
+ */
+function toolIconOf(name: string): ReactNode {
+  const n = name.toLowerCase()
+  if (EDIT_TOOL_NAMES.has(n)) return <IconEditOutline16 />
+  if (/^(bash|shell|exec|run_code|terminal)/u.test(n)) return <IconCodeOutline16 />
+  if (/(search|grep|glob|find)/u.test(n)) return <IconSearchOutline16 />
+  if (/^(web|fetch)/u.test(n)) return <IconGlobeOutline14 />
+  if (/todo/u.test(n)) return <IconChecklistOutline14 />
+  if (/goal/u.test(n)) return <IconGoalOutline16 />
+  return <IconChecklistOutline14 />
+}
+
+/** Header material for one tool/think run. */
+interface GroupHeader {
+  readonly icon: ReactNode
+  readonly label: string
+}
+
+/**
+ * Derive the run header from its seats: the LAST action names the run, unless
+ * the run edited several files — then the header summarizes the file work.
+ * A run of Think rows alone names itself "Think".
+ * @param keys - the run's node keys, in display order.
+ * @param nodeStore - chat node reader.
+ * @param t - the owning view's locale seat.
+ * @returns icon and label for the run header.
+ */
+function groupHeaderOf(
+  keys: readonly string[],
+  nodeStore: { get(key: string): ChatConversationViewNode | undefined },
+  t: ChatViewSlotProps['t'],
+): GroupHeader {
+  const nodes = keys.map(key => nodeStore.get(key)).filter((node): node is ChatConversationViewNode => node !== undefined)
+  const toolNodes = nodes.filter(node => node.kind === 'tool-call')
+  const edited = toolNodes.filter((node) => {
+    const name = toolNameOf(node)
+    return name !== undefined && EDIT_TOOL_NAMES.has(name.toLowerCase())
+  })
+  if (edited.length >= 2) return { icon: <IconEditOutline16 />, label: t('toolGroup.editedFiles') }
+  const last = toolNodes.at(-1)
+  const lastName = last === undefined ? undefined : toolNameOf(last)
+  if (lastName === undefined) return { icon: <IconThinkOutline14 size={14} />, label: 'Think' }
+  return { icon: toolIconOf(lastName), label: humanizeToolName(lastName) }
+}
+
+/**
+ * Whether a tool block — or any of its nested subcalls — is still running.
+ * @param block - root or child call lifecycle value.
+ * @returns true when the block lacks its final result.
+ */
+function blockActive(block: ToolCallBlock): boolean {
+  return 'kind' in block ? block.subCalls.some(blockActive) : true
+}
+
+/**
+ * Whether any call inside a run is still running (drives the window's
+ * open-while-active / tuck-when-settled behavior).
+ * @param keys - the run's node keys, in display order.
+ * @param nodeStore - chat node reader.
+ * @returns true when at least one member call lacks its result.
+ */
+function runIsActive(
+  keys: readonly string[],
+  nodeStore: { get(key: string): ChatConversationViewNode | undefined },
+): boolean {
+  return keys.some((key) => {
+    const node = nodeStore.get(key)
+    if (node === undefined || node.kind !== 'tool-call') return false
+    return blockActive((node.data as { readonly root: ToolCallBlock }).root)
+  })
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
@@ -345,6 +495,13 @@ export function ChatView({
     // too late); pinned-to-bottom clears so a remount keeps following.
     if (isAtBottom) chatScroll.save(null)
     else if (position !== null) chatScroll.save(position)
+    // Scroll-up paging: a reader scroll that reaches the loaded head with more
+    // older history pulls the next page (anchored, so the prepend keeps the
+    // reading position). The movedByReader check keeps programmatic prepend
+    // adjustments from re-triggering.
+    if (movedByReader && hasMore && !loadingOlder && openState === 'open' && el.scrollTop <= OLDER_TRIGGER_TOP) {
+      loadOlderAnchored()
+    }
     observedTopRef.current = el.scrollTop
   }
 
@@ -396,6 +553,21 @@ export function ChatView({
     if (!loadingOlder) anchorRef.current = null
   }, [loadingOlder])
 
+  // Auto-fill: a window shorter than the scrollport cannot be scrolled up, so
+  // older history would be unreachable — load pages until the flow fills the
+  // scrollport or history ends. Pinned readers stay pinned (prepends grow
+  // above by the follow logic). The clientHeight guard keeps jsdom tests off
+  // this path (no layout exports), leaving scroll-driven paging to drive them.
+  useLayoutEffect(() => {
+    if (openState !== 'open' || !hasMore || loadingOlder) return
+    const local = listRef.current
+    if (local === null) return
+    const el = scrollerOf(local)
+    if (el.clientHeight <= 0) return
+    if (el.scrollHeight - el.clientHeight > 0) return
+    loadOlder()
+  })
+
   const loadOlderAnchored = (): void => {
     const local = listRef.current
     /* v8 ignore next -- ref-null guard: the paging button renders inside the list tree. */
@@ -412,11 +584,176 @@ export function ChatView({
     loadOlder()
   }
 
+  const seat = (nodeKey: string): ReactNode => (
+    <ChatNodeSeat
+      key={nodeKey}
+      nodeKey={nodeKey}
+      useSession={useSession}
+      selectedCallId={selectedCallId}
+      cwd={cwd}
+      openFile={requestOpenFile}
+      inspectCall={inspectCall}
+      forkAt={forkAt}
+      renderMessageImages={renderMessageImages}
+      fileMentions={fileMentions}
+      renderSlot={renderSlot}
+      t={t}
+    />
+  )
+
+  // Flow construction. Live turns render contiguous tool/think runs inside
+  // one bounded scroll window whose header names the run's last action. When a
+  // turn closes, its whole work — those windows, Think rows, model retries,
+  // and mid-turn narration (everything except the closing message and error
+  // notices) — folds behind one plain duration line with a hairline separator;
+  // unfolding restores the rows exactly as they streamed.
+  const runOf = (keys: readonly string[]): ReactNode => {
+    const header = groupHeaderOf(keys, nodeStore, t)
+    return (
+      <ToolCallGroup
+        key={`tool-group:${keys[0]}`}
+        icon={header.icon}
+        label={header.label}
+        active={runIsActive(keys, nodeStore)}
+      >
+        {keys.map(seat)}
+      </ToolCallGroup>
+    )
+  }
+  const isRunMember = (node: ChatConversationViewNode): boolean =>
+    node.kind === 'tool-call' || isThinkOnly(node)
+  const foldableNode = (node: ChatConversationViewNode, closingSeq: number | null): boolean => {
+    if (node.kind === 'tool-call' || node.kind === 'model-retry' || isThinkOnly(node)) return true
+    if (closingSeq === null || node.kind !== 'assistant-step') return false
+    const data = node.data as AssistantMeta
+    return data.blocks?.some(block => block.kind === 'text') === true
+      && data.finalNode !== undefined && data.finalNode.seq !== closingSeq
+  }
+  /** Emit a key range as live-style runs plus inline seats. */
+  const emitRange = (keys: readonly string[], out: ReactNode[]): void => {
+    let at = 0
+    while (at < keys.length) {
+      const nodeKey = keys[at] as string
+      const node = nodeStore.get(nodeKey)
+      if (node === undefined || !isRunMember(node)) {
+        out.push(seat(nodeKey))
+        at++
+        continue
+      }
+      const runKeys: string[] = [nodeKey]
+      let next = at + 1
+      while (next < keys.length) {
+        const candidate = nodeStore.get(keys[next] as string)
+        if (candidate === undefined || !isRunMember(candidate)) break
+        runKeys.push(keys[next] as string)
+        next++
+      }
+      out.push(runOf(runKeys))
+      at = next
+    }
+  }
+
+  const flow: ReactNode[] = []
+  for (let index = 0; index < order.length;) {
+    const nodeKey = order[index] as string
+    const node = nodeStore.get(nodeKey)
+    const closedTurn = node === undefined ? undefined : closedTurnOf(node)
+    if (closedTurn === undefined) {
+      const chunk: string[] = [nodeKey]
+      let next = index + 1
+      while (next < order.length) {
+        const candidate = nodeStore.get(order[next] as string)
+        if (candidate === undefined || closedTurnOf(candidate) !== undefined) break
+        chunk.push(order[next] as string)
+        next++
+      }
+      emitRange(chunk, flow)
+      index = next
+      continue
+    }
+    // Collect the closed turn's complete segment, then fold its work behind
+    // one duration line; the closing message and error notices stay inline.
+    const segKeys: string[] = [nodeKey]
+    let next = index + 1
+    while (next < order.length) {
+      const candidate = nodeStore.get(order[next] as string)
+      if (candidate === undefined || closedTurnOf(candidate) !== closedTurn) break
+      segKeys.push(order[next] as string)
+      next++
+    }
+    const turn = timeline.turns.get(closedTurn)
+    const startTime = turn?.start?.time
+    const endTime = turn?.end?.time
+    const closingSeq = turn?.data.get('turn-tail')?.closing?.finalNode.seq ?? null
+    const hasFoldable = segKeys.some((key) => {
+      const candidate = nodeStore.get(key)
+      return candidate !== undefined && foldableNode(candidate, closingSeq)
+    })
+    if (startTime === undefined || endTime === undefined || !hasFoldable) {
+      emitRange(segKeys, flow)
+      index = next
+      continue
+    }
+    type Element = { readonly el: ReactNode; readonly fold: boolean }
+    const elements: Element[] = []
+    {
+      let at = 0
+      while (at < segKeys.length) {
+        const innerKey = segKeys[at] as string
+        const innerNode = nodeStore.get(innerKey)
+        if (innerNode === undefined) {
+          elements.push({ el: seat(innerKey), fold: false })
+          at++
+          continue
+        }
+        if (!isRunMember(innerNode)) {
+          elements.push({ el: seat(innerKey), fold: foldableNode(innerNode, closingSeq) })
+          at++
+          continue
+        }
+        const runKeys: string[] = [innerKey]
+        let runNext = at + 1
+        while (runNext < segKeys.length) {
+          const candidate = nodeStore.get(segKeys[runNext] as string)
+          if (candidate === undefined || !isRunMember(candidate)) break
+          runKeys.push(segKeys[runNext] as string)
+          runNext++
+        }
+        elements.push({ el: runOf(runKeys), fold: true })
+        at = runNext
+      }
+    }
+    const folded = elements.filter(element => element.fold).map(element => element.el)
+    const summary = (
+      <TurnWorkSummary key={`turn-work:${closedTurn}`} label={t('message.ranFor', { duration: formatRunDuration(endTime - startTime, t) })}>
+        {folded}
+      </TurnWorkSummary>
+    )
+    let inserted = false
+    for (const element of elements) {
+      if (element.fold && !inserted) {
+        flow.push(summary)
+        inserted = true
+      }
+      if (!element.fold) flow.push(element.el)
+    }
+    /* v8 ignore next -- a foldable member is guaranteed by hasFoldable above. */
+    if (!inserted) flow.push(summary)
+    index = next
+  }
+
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
         <div ref={columnRef} className={css.column} data-chat-flow="">
-          {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
+          {openState === 'loading' && (
+            <div className={css.historySkeleton} role="status" aria-live="polite">
+              <span className={a11yCss.visuallyHidden}>{t('chat.loadingHistory')}</span>
+              {[82, 64, 74].map((width, index) => (
+                <div key={index} className={css.skeletonBubble} style={{ width: `${width}%` }} />
+              ))}
+            </div>
+          )}
           {openState === 'error' && openError !== null && (
             <div className={css.openError}>
               {t('chat.loadError', { message: openError.message, code: openError.code })}
@@ -429,22 +766,7 @@ export function ChatView({
               </button>
             </div>
           )}
-          {order.map(nodeKey => (
-            <ChatNodeSeat
-              key={nodeKey}
-              nodeKey={nodeKey}
-              useSession={useSession}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              renderSlot={renderSlot}
-              t={t}
-            />
-          ))}
+          {flow}
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}

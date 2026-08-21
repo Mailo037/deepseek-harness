@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-plugin-inventory-discover-github-topic.md
+2026-08-21-plugin-inventory-discover-github-topic.md: dc85dd1d296763710bb8754b373761acd7cb3623
+2026-08-21-plugin-inventory-discover-github-topic.zh.md: 17cc99d73766fc9076b11112ca1b0b76b2ad3c09

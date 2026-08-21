@@ -88,6 +88,8 @@ function scriptedApi(overrides: {
       insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
+      updateSettings: r => ok(r, { workspace: { workspaceId: r.payload.workspaceId, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0', settings: r.payload.settings } }),
+      moveSession: r => ok(r, { success: true as const }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
     agentPresets: {

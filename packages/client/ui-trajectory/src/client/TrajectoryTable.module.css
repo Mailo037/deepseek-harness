@@ -116,6 +116,62 @@
   }
 }
 
+/* Opening placeholder: ledger-row bones under the sticky loading bar while
+   the history window replays (the table itself stays hidden until its scroll
+   position initializes). Reduced motion holds the bones static. */
+.historySkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 14px;
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.skeletonGlyph {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeletonBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeletonLine {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeletonBody .skeletonLine:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonGlyph,
+  .skeletonLine {
+    animation: none;
+  }
+}
+
 .table {
   --trajectory-turn-accent: color-mix(
     in srgb,

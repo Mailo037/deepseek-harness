@@ -14,13 +14,8 @@
     ]
   },
   "include": [
-    "src",
-    "tests"
+    "src"
   ],
-  // The web e2e lane (scaffold + replay specs) boots the host spine and reads
-  // its Context merges — host-plane programs, checked in tsconfig.host.json;
-  // this client-registered project must not also hold them (one program
-  // cannot see both sides of the cordis Context merges).
   "exclude": [
     "tests/scaffold.ts",
     "tests/scaffold-hermetic.e2e.ts",
@@ -98,6 +93,8 @@
     "tests/composer-tab-geometry.e2e.ts",
     "tests/complex-history.perf.ts",
     "tests/pwsh-terminal.e2e.ts",
+    "tests/sidebar-drawer.e2e.ts",
+    "tests/shell-command.e2e.ts",
     "tests/workflow-run.e2e.ts"
   ],
   "references": [

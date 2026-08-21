@@ -5,7 +5,7 @@ import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import GoalService, { GoalId } from '@deepseek-ai/dsh-goal'
 import type { GoalRef } from '@deepseek-ai/dsh-goal'
-import { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -385,6 +385,31 @@ describe('goal tool state transitions', () => {
     expect(block.text).toContain('<goal_complete>')
     expect(block.text).toContain('"pause cleanly"')
     expect(block.text).toContain("Do not call any more tools in this run; further work waits for the user's next instruction.")
+  })
+
+  it('reports whole-goal token usage and elapsed time in an autonomous wrap-up', async () => {
+    const { ctx, root } = await harness()
+    const humanTurn = openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'report its cost' })
+    root.session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createAssistantMessage({ content: [{ type: 'text', text: 'in-progress work' }], source: { provider: 'mock', model: 'mock' } }),
+      usage: { inputTokens: 120, outputTokens: 80, cacheReadTokens: 40 },
+    }, { surfaceOp: 'append' })
+    closeTurn(root, humanTurn)
+
+    openTurn(root, { kind: 'goal', goalId: created.id, revision: 1, round: 1 })
+    const complete = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: 1, action: 'complete',
+    }, root.agent)
+    expect(resultGoal(complete)).toMatchObject({ phase: 'complete' })
+    const contexts = complete.additionalContexts ?? []
+    const block = contexts[0]?.content[0]
+    if (block?.type !== 'text') throw new Error('expected one text wrap-up block')
+    expect(block.text).toContain('took')
+    expect(block.text).toContain('consumed 240 tokens')
+    expect(block.text).toMatch(/State both numbers once in your closing message\./)
   })
 
   it('completes without a wrap-up instruction under direct human authority', async () => {

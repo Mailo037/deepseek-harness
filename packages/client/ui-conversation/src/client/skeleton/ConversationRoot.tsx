@@ -87,21 +87,28 @@ export function ConversationRoot({
   //   3. the blank session's workspace is in the list → its title;
   //   4. list still loading → cwd folder name bridges so the title does not
   //      flash on refresh (empty cwd → placeholder);
-  //   5. list ready but no owning workspace (deleted from the sidebar) →
-  //      placeholder, never the deleted folder's name via cwd.
+  //   5. list ready but no owning workspace (standalone session or deleted
+  //      from the sidebar) → "No workspace", never the auto-minted
+  //      sessions-root folder name via cwd.
   const chipTitle = pendingWorkspace?.title
     ?? (sessionId === undefined
       ? undefined
       : sessionWorkspace?.title
-        ?? (workspaces.phase === 'ready' || cwd === undefined || cwd === ''
-          ? undefined
-          : workspaceLabel(cwd)))
+        ?? (workspaces.phase !== 'ready' && cwd !== undefined && cwd !== ''
+          ? workspaceLabel(cwd)
+          : t('hero.noWorkspace')))
+  // Standalone session: no owning workspace and no loading bridge left —
+  // the chip shows the New-Chat glyph and "No workspace" instead of a folder.
+  const standalone = sessionId !== undefined
+    && sessionWorkspace === undefined
+    && (workspaces.phase === 'ready' || cwd === undefined || cwd === '')
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
+        noWorkspace={standalone}
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
@@ -128,7 +135,7 @@ export function ConversationRoot({
   // blank session whose workspace vanished (deleted from the sidebar). The
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  const inert = sessionId === undefined
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.

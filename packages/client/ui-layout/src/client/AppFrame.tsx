@@ -13,7 +13,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import {
+  computeColumns, drawerWidth, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_BREAKPOINT,
+} from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
@@ -22,6 +24,13 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+
+/**
+ * How long the drawer column keeps its overlay mode after the drawer closes:
+ * matches SidebarRoot's 150ms wide-content fade-out, so the fading content
+ * (frozen at the drawer width) is not clipped by the 56px rail track mid-fade.
+ */
+const DRAWER_SETTLE_MS = 150
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -132,11 +141,24 @@ export function AppFrame({
   // re-expand override, stores.ts). Collapsed is decided here, so the
   // solver stays breakpoint-free: a narrow re-expand passes the preference
   // (or the default when the wide preference is closed) and the center
-  // absorbs the squeeze.
+  // absorbs the squeeze. Below SIDEBAR_DRAWER_BREAKPOINT that re-expand
+  // renders as an overlay drawer instead, so the center never squeezes on
+  // phone-sized frames (AppFrame.module.css .frame[data-drawer-mode]).
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
-  const sidebarPreference = sidebarCollapsed
+  const drawer = narrow && !sidebarCollapsed && viewport < SIDEBAR_DRAWER_BREAKPOINT
+  // The drawer column keeps its overlay mode through the wide-content fade-out
+  // (DRAWER_SETTLE_MS): the content fades in place at the drawer width, and
+  // dropping to the 56px rail track mid-fade would clip it.
+  const [drawerSettled, setDrawerSettled] = useState(true)
+  useEffect(() => {
+    if (drawer) { setDrawerSettled(false); return }
+    const timer = window.setTimeout(() => { setDrawerSettled(true) }, DRAWER_SETTLE_MS)
+    return () => { window.clearTimeout(timer) }
+  }, [drawer])
+  const drawerMode = drawer || !drawerSettled
+  const sidebarPreference = sidebarCollapsed || drawerMode
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
@@ -169,8 +191,12 @@ export function AppFrame({
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
+      data-drawer-mode={drawerMode || undefined}
     >
-      <div className={css.sidebarCol}>
+      <div
+        className={css.sidebarCol}
+        style={drawerMode ? { width: drawerWidth(viewport) } : undefined}
+      >
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
             component sees its rendered state as owner params decided here
@@ -178,9 +204,14 @@ export function AppFrame({
             renders the rail UI too). */}
         {renderSlot('sidebar', {
           collapsed: sidebarCollapsed,
-          width: cols.sidebar,
+          width: drawerMode ? drawerWidth(viewport) : cols.sidebar,
         })}
       </div>
+      {/* Drawer dismissal: the mask over the still-full-width center closes
+          the drawer (narrow toggle semantics, stores.ts). Rendered only while
+          the drawer is fully open, never during the fade-out. Matches the
+          settings mask pattern: aria-hidden, pointer-only. */}
+      {drawer && <div className={css.drawerBackdrop} aria-hidden="true" onClick={() => { actions.toggleSidebar() }} />}
       <>
         {/* Both column occupants stay at fixed tree positions from first
             paint — no loading gate: a bare status line reads worse than
@@ -193,8 +224,9 @@ export function AppFrame({
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {/* The collapsed rail is fixed-width: no resize handle while closed, and
+          the drawer is a phone overlay, not a resizable column. */}
+      {!sidebarCollapsed && !drawerMode && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
     </div>
   )

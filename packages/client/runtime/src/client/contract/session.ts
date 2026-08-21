@@ -52,7 +52,9 @@ export interface ISession {
     attachmentId: AttachmentIdType,
   ): Promise<RpcResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>>
   /**
-   * Apply one edit, remove, or strict steer action to a still-pending queue occurrence.
+   * Apply one edit, remove, strict steer, or reorder action to a still-pending
+   * queue occurrence. A reorder (`move`) addresses a queued-turn row and
+   * clamps its target index into the current list.
    * @param itemId - agent-owned inbox occurrence identity.
    * @param action - requested queue operation.
    * @returns acceptance, or a business/transport error.

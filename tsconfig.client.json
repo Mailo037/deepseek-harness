@@ -69,6 +69,7 @@
     { "path": "./packages/client/ui-tool" },
     { "path": "./packages/client/ui-deliverables" },
     { "path": "./packages/client/ui-workflow-run" },
+    { "path": "./packages/client/ui-shell-command" },
     { "path": "./packages/client/ui-workspace" },
     { "path": "./packages/client/ui-input-trigger" },
     { "path": "./packages/client/ui-commands" },

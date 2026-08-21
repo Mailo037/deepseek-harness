@@ -29,7 +29,11 @@
   border-right: 1px solid var(--dsw-alias-border-l1);
 }
 
+/* Explicit tracks: when the drawer mode takes the sidebar column out of grid
+   flow (position: absolute), the in-flow columns must stay in their own
+   tracks instead of sliding into the vacated first track. */
 .centerCol {
+  grid-column: 2;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -37,6 +41,7 @@
 }
 
 .detailsCol {
+  grid-column: 3;
   min-width: 0;
   overflow: hidden;
   border-left: 1px solid var(--dsw-alias-border-l2);
@@ -101,6 +106,12 @@
   opacity: 1;
 }
 
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .handle[data-side='details']::after {
+    opacity: 1;
+  }
+}
+
 .handle[data-side='details']:hover::after,
 .handle[data-side='details'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
@@ -116,4 +127,39 @@
 
 .overlayLayer > * {
   pointer-events: auto;
+}
+
+/* Drawer overlay: the sidebar column becomes absolutely positioned above the
+   center so the conversation keeps full width on phone-sized viewports. The
+   width is set inline to respect the drawer max + margin system. */
+.frame[data-drawer-mode] .sidebarCol {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  border-right: 1px solid var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-shadow-lv3);
+  animation: drawer-in 200ms var(--ds-ease-in-out);
+}
+
+@keyframes drawer-in {
+  from { opacity: 0; }
+}
+
+/* Drawer backdrop: centered below the drawer but above the conversation and
+   the overlay layer. Clicking it closes the drawer (narrow toggle semantics). */
+.drawerBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-drawer-mode] .sidebarCol {
+    animation: none;
+  }
 }

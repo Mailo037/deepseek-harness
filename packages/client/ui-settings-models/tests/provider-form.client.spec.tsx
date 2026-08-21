@@ -741,7 +741,7 @@ describe('hand-declared providers', () => {
     // control could only be set to a value some of them reject — which would
     // take the whole provider out of the picker. The composer's model picker
     // owns the choice, and a switch there records provider+model+effort together.
-    const fields = () => [...document.querySelectorAll('input,select')]
+    const fields = () => [...document.querySelectorAll('input,select,button[role="combobox"]')]
       .map(el => el.getAttribute('aria-label')).filter(Boolean)
 
     mountCard()
@@ -869,9 +869,10 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    const protocol = screen.getByLabelText<HTMLSelectElement>(en.customApi)
-    expect(protocol.value).toBe('openai-completions')
-    fireEvent.change(protocol, { target: { value: 'anthropic-messages' } })
+    const protocol = screen.getByRole('combobox', { name: en.customApi })
+    expect(protocol.textContent).toContain('openai-completions')
+    fireEvent.click(protocol)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'anthropic-messages' }))
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -894,7 +895,7 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+    expect(screen.getByRole('combobox', { name: en.customApi }).textContent).toContain(en.customApiUnset)
   })
 
   it('retries only the key after the profile landed, and reports the provider on cancel', async () => {
@@ -1167,7 +1168,9 @@ describe('hand-declared providers', () => {
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
+    const protocol = screen.getByRole('combobox', { name: en.customApi })
+    fireEvent.click(protocol)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'anthropic-messages' }))
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
     fireEvent.click(screen.getByText(en.create))
@@ -1186,7 +1189,7 @@ describe('hand-declared providers', () => {
 
   it('offers no protocol when the namespace declares none', () => {
     mountCard({ protocols: [] })
-    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+    expect(screen.getByRole('combobox', { name: en.customApi }).textContent).toBe('')
   })
 
   it('closes without writing on cancel, and honors a read-only deployment', () => {
@@ -1402,5 +1405,36 @@ describe('API key field', () => {
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
     await waitFor(() => { expect(load).toHaveBeenCalledOnce() })
     expect(screen.queryByText(en.customTitle)).toBeNull()
+  })
+
+  it('can configure provider reasoning and model reasoning efforts for pi-ai', async () => {
+    const { mutate } = await mountSection()
+    openEditor('openai')
+    fireEvent.click(screen.getByText(en.customized))
+
+    // Set provider reasoning
+    const providerReasoning = screen.getByLabelText(en.providerReasoning)
+    fireEvent.change(providerReasoning, { target: { value: 'high' } })
+
+    // Add model and configure reasoning
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'custom-model' } })
+    fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
+    const modelReasoning = screen.getByLabelText(`${en.modelReasoning} 1`)
+    fireEvent.change(modelReasoning, { target: { value: 'disabled' } })
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      ns: 'llm-pi-ai',
+      ops: [
+        { op: 'set', path: ['providers', 'openai', 'reasoning'], value: 'high' },
+        {
+          op: 'set',
+          path: ['providers', 'openai', 'models'],
+          value: [{ id: 'custom-model', reasoningEfforts: false }],
+        },
+      ],
+    })
   })
 })

@@ -4,12 +4,14 @@
 export type PluginsSettingsLocaleKey =
   | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
   | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
-  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
+  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber' | 'invalidChoice'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
   | 'webSearchTitle' | 'webSearchDescription'
-  | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
+  | 'webSearchProvider' | 'webSearchProviderHint'
+  | 'webSearchProviderDeepseekOfficial' | 'webSearchProviderExa' | 'webSearchProviderPerplexity' | 'webSearchProviderFirecrawl'
+  | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeyRefHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
 
 /** English copy. */
@@ -31,6 +33,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: 'Unsaved',
   saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
   invalidNumber: 'Enter a number, or leave blank to use the default.',
+  invalidChoice: 'Choose one of the listed options.',
   bashTitle: 'Shell',
   bashDescription: 'Limits every command the agent runs.',
   bashTimeoutMs: 'Command timeout (ms)',
@@ -42,9 +45,16 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopMaxParallel: 'Parallel tool calls',
   agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
   webSearchTitle: 'Web search',
-  webSearchDescription: 'The DeepSeek search provider.',
+  webSearchDescription: 'Which search provider the agent uses, and its key.',
+  webSearchProvider: 'Search provider',
+  webSearchProviderHint: 'Which backend answers web searches; the agent picks up the change on the next search.',
+  webSearchProviderDeepseekOfficial: 'DeepSeek (native search)',
+  webSearchProviderExa: 'Exa',
+  webSearchProviderPerplexity: 'Perplexity',
+  webSearchProviderFirecrawl: 'Firecrawl',
   webSearchApiKey: 'API key',
   webSearchApiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
+  webSearchApiKeyRefHint: 'Stored as the {ref} credential, outside the settings file. Leave blank to keep the current key.',
   webSearchApiKeySet: 'A key is configured.',
   webSearchApiKeyUnset: 'No key is configured; search is unavailable until one is.',
   webSearchBaseUrl: 'Endpoint',
@@ -72,6 +82,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: '未保存',
   saveFailed: '本部署没有接受这些值，已保留供你修改。',
   invalidNumber: '请填数字；留空表示使用默认值。',
+  invalidChoice: '请选择列表中的一项。',
   bashTitle: '终端',
   bashDescription: '限制 agent 运行的每一条命令。',
   bashTimeoutMs: '命令超时（毫秒）',
@@ -83,9 +94,16 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopMaxParallel: '并行工具调用数',
   agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
   webSearchTitle: '网页搜索',
-  webSearchDescription: 'DeepSeek 搜索提供方。',
+  webSearchDescription: 'Agent 使用哪个搜索提供方，以及它的密钥。',
+  webSearchProvider: '搜索提供方',
+  webSearchProviderHint: '由哪个后端应答网页搜索；agent 会在下一次搜索时生效。',
+  webSearchProviderDeepseekOfficial: 'DeepSeek（原生搜索）',
+  webSearchProviderExa: 'Exa',
+  webSearchProviderPerplexity: 'Perplexity',
+  webSearchProviderFirecrawl: 'Firecrawl',
   webSearchApiKey: 'API Key',
   webSearchApiKeyHint: '不写入设置文件。留空表示保持当前密钥。',
+  webSearchApiKeyRefHint: '以 {ref} 凭据存储，不写入设置文件。留空表示保持当前密钥。',
   webSearchApiKeySet: '已配置密钥。',
   webSearchApiKeyUnset: '未配置密钥；配置之前搜索不可用。',
   webSearchBaseUrl: '接口地址',

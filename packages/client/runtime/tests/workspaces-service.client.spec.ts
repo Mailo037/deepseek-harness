@@ -437,9 +437,9 @@ describe('WorkspaceRuntime', () => {
     const emptyApi = new FakeApiClient()
     const emptySessions = new SessionRuntime(emptyCtx, emptyApi, fakeRemote())
     const emptyWorkspaces = new WorkspaceRuntime(emptyCtx, emptyApi, emptySessions)
-    const clear = vi.spyOn(emptySessions, 'clear')
+    const create = vi.spyOn(emptySessions, 'create').mockReturnValue(Promise.resolve(sid('unlinked-1')))
     emptyWorkspaces.startSession()
-    expect(clear).toHaveBeenCalledOnce()
+    expect(create).toHaveBeenCalledWith({})
   })
 
   it('archives a session, projects the set from the response, list, and frame, and clears only the current one', async () => {

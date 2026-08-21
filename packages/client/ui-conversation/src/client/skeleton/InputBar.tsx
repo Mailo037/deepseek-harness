@@ -10,7 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconCloseOutline16, IconPlusOutline16, IconQueueOutline14, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -61,6 +61,9 @@ export function InputBar({
   // current; the bar renders the same DOM inert instead of a parallel tree.
   const live = input !== undefined && keyboard !== undefined && inputActions !== undefined
   const draft = input?.draft ?? ''
+  // Composer-side queue edit (the queue dock's edit flow): the draft IS the
+  // pending occurrence until submit saves it in place or Escape restores.
+  const queueEditItem = input?.queueEdit?.itemId
   const attachments = useMemo(
     () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
     [draftImages, input?.imageIds],
@@ -140,6 +143,7 @@ export function InputBar({
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const textareaDisabled = removed || (locked && !workspaceTrigger)
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
+    && queueEditItem === undefined
     && input.queue.some(row => row.placement === 'queued')
 
   useEffect(() => {
@@ -317,6 +321,13 @@ export function InputBar({
       return
     }
     if (e.key === 'Escape') {
+      // Queue edit first: Escape leaves the composer-side edit and restores
+      // the stashed draft (the dock row keeps its pending position).
+      if (queueEditItem !== undefined) {
+        e.preventDefault()
+        keyboard.cancelQueueEdit()
+        return
+      }
       // Escape layering: an open overlay closes; claimed without an overlay
       // does NOT release (backspacing the token is the only exit gesture).
       keyboard.dismissPopup()
@@ -492,7 +503,9 @@ export function InputBar({
   // pointer users can queue follow-ups while its current turn is running.
   const primaryStops = running && subagent === null
   const interruptible = running && continuable
-  const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
+  // While a queued message is loaded into the composer, the primary button
+  // saves that occurrence in place (Enter does the same).
+  const primaryLabel = primaryStops ? t('input.stop') : queueEditItem !== undefined ? t('queue.save') : t('input.send')
   const onPrimary = (): void => {
     if (primaryStops) {
       stop?.()
@@ -632,6 +645,23 @@ export function InputBar({
       >
         {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
+        {queueEditItem !== undefined && (
+          <div className={css.queueEdit} data-queue-editing="">
+            <span className={css.queueEditLead} aria-hidden><IconQueueOutline14 /></span>
+            <span className={css.queueEditText} role="status">{t('queue.editing')}</span>
+            <Tooltip label={t('queue.cancelEdit')} side="top" delayMs={500}>
+              <button
+                type="button"
+                className={css.queueEditCancel}
+                aria-label={t('queue.cancelEdit')}
+                onMouseDown={keepFocus}
+                onClick={() => { keyboard?.cancelQueueEdit() }}
+              >
+                <IconCloseOutline16 size={14} />
+              </button>
+            </Tooltip>
+          </div>
+        )}
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,

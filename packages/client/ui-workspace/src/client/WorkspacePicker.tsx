@@ -11,7 +11,7 @@
 import type { ReactNode, RefObject } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Button, IconFolderClose16, IconPlusOutline16, Menu, Modal, type MenuEntry,
+  Button, IconFolderClose16, IconNewChatOutline16, IconPlusOutline16, Menu, Modal, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   WorkspaceId, WorkspaceListState, WorkspaceView,
@@ -21,6 +21,7 @@ import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/s
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
+const NO_WORKSPACE = '::no-workspace'
 
 /** Core flow props: the owner supplies popover control and pick semantics. */
 export interface WorkspacePickFlowProps {
@@ -38,8 +39,8 @@ export interface WorkspacePickFlowProps {
   useDirectoryFlow: SnapshotSelectorHook<boolean>
   /** Render this surface's directory-flow hole with the owner conversation (the entry's narrowed renderSlot). */
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
-  /** A real Workspace was picked or created. */
-  onPick: (workspaceId: WorkspaceId) => void
+  /** A real Workspace was picked, or undefined when standalone / no workspace was chosen. */
+  onPick: (workspaceId: WorkspaceId | undefined) => void
   /** Close the popover (outside click / Escape / post-pick). */
   onClose: () => void
   /** Only offer the add action, hide existing workspaces. */
@@ -101,17 +102,28 @@ export function WorkspacePickFlow({
   const addEntries: MenuEntry[] = flowAvailable
     ? [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
     : []
-  // With workspaces listed, the add action pins below the scroll region
-  // (divider + always visible); otherwise it IS the menu.
-  const pinAdd = !addOnly && workspaces.length > 0
-  const items: MenuEntry[] = pinAdd
-    ? workspaces.map(workspace => ({
-      id: workspace.workspaceId,
-      label: workspace.title,
-      icon: <IconFolderClose16 size={16} />,
-      disabled: flowBusy,
-    }))
-    : addEntries
+  const noWorkspaceEntry: MenuEntry = {
+    id: NO_WORKSPACE,
+    label: t('menu.noWorkspace'),
+    icon: <IconNewChatOutline16 size={16} />,
+    disabled: flowBusy,
+  }
+  const items: MenuEntry[] = addOnly
+    ? addEntries
+    : [
+      noWorkspaceEntry,
+      ...(workspaces.length > 0
+        ? [
+          { type: 'separator', id: 'sep-workspaces' } as const,
+          ...workspaces.map(workspace => ({
+            id: workspace.workspaceId,
+            label: workspace.title,
+            icon: <IconFolderClose16 size={16} />,
+            disabled: flowBusy,
+          })),
+        ]
+        : []),
+    ]
   // Nothing listed and nothing to add with (a composition that mounts this
   // package without any directory-picker): an empty popover would claim a
   // choice that does not exist, so the anchor gesture shows nothing at all.
@@ -148,8 +160,7 @@ export function WorkspacePickFlow({
   // only final once the baseline lands — until then the menu stays up with its
   // loading status instead of jumping into a flow the arriving list would have
   // made unnecessary; the add-only surface lists nothing and never waits.
-  const listSettled = addOnly || workspaceSnapshot.phase === 'ready'
-  const addIsTheOnlyEntry = !pinAdd && listSettled && addEntries.length === 1
+  const addIsTheOnlyEntry = addOnly && addEntries.length === 1
   // `flowBusy` gates this exactly as it disables the equivalent menu entry: a
   // pick still being adopted owns the surface until it settles.
   useEffect(() => {
@@ -177,6 +188,10 @@ export function WorkspacePickFlow({
       openDirectoryFlow()
       return
     }
+    if (id === NO_WORKSPACE) {
+      onPick(undefined)
+      return
+    }
     onPick(id as WorkspaceId)
   }
 
@@ -186,8 +201,8 @@ export function WorkspacePickFlow({
         open={open && !addIsTheOnlyEntry && !menuIsEmpty}
         anchor={null}
         items={items}
-        {...pinAdd ? { footer: addEntries } : {}}
-        selectedId={selectedId}
+        {...!addOnly && addEntries.length > 0 ? { footer: addEntries } : {}}
+        selectedId={selectedId ?? (!addOnly ? NO_WORKSPACE : undefined)}
         onSelect={handleSelect}
         onClose={onClose}
         side={side}

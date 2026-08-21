@@ -74,8 +74,8 @@
   opacity: 1;
 }
 
-/* Touch surfaces have no hover to reveal the control. */
-@media (pointer: coarse) {
+/* Touch surfaces and smaller screens have no hover to reveal the control. */
+@media (pointer: coarse), (hover: none), (max-width: 768px) {
   .remove {
     opacity: 1;
   }

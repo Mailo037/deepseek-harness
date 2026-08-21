@@ -7,6 +7,39 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.views {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 2px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.viewButton {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.viewButton[data-active='true'] {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-lv1);
+}
+
+.viewButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
 .catalogHeading h3,
 .status,
 .failure p {
@@ -264,6 +297,73 @@
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+.repoLink {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.repoLink:hover,
+.repoLink:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.repoLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
+.repoDescription {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.repoMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.starGlyph {
+  flex: none;
+}
+
+.lang {
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.repoLinkHint {
+  margin-left: auto;
+  color: var(--dsw-alias-state-business-primary);
 }
 
 @media (prefers-reduced-motion: no-preference) {

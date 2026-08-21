@@ -27,6 +27,7 @@ The package root exposes the Cordis plugin contract and `DeepSeekAdapter`; wire 
         initialDelayMs: 500
         maxDelayMs: 10000
         jitterRatio: 0.1
+        rateLimitMultiplier: 2 # optional; RATE_LIMIT delays scale by this (default 2)
     defaultContextWindow: 1000000 # optional positive-integer fallback; this is the default
     models:                  # optional; defaults to V4 Flash and V4 Pro
       - id: deepseek-v4-flash

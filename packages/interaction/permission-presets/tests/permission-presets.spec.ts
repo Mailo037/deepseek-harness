@@ -298,4 +298,21 @@ describe('new-session default', () => {
     })).rejects.toThrow()
     expect(ctx.permissionPresets.defaultPreset).toBe('workspace-write')
   })
+
+  it('uses workspace permissionPreset setting when creating a session in that workspace', async () => {
+    const ctx = await mountedStore()
+    ctx.provide('workspaceRegistry', {
+      findBySessionId: () => undefined,
+      list: () => [{
+        path: '/projects/danger-project',
+        settings: { permissionPreset: 'danger-full-access' },
+      }],
+    } as never)
+
+    const session = ctx.sessions.create(SessionId('danger-session'), { meta: { cwd: '/projects/danger-project' } })
+    expect(ctx.permissionPresets.current(session.events)).toBe('danger-full-access')
+    expect(session.events.find(e => e.type === 'permission/preset')?.data).toEqual({ preset: 'danger-full-access' })
+    expect(session.events.find(e => e.type === 'sandbox/mode')?.data).toEqual({ mode: 'danger-full-access' })
+    expect(session.events.find(e => e.type === 'approval/policy')?.data).toEqual({ policy: 'never' })
+  })
 })

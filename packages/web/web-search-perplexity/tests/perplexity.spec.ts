@@ -227,7 +227,7 @@ describe('web-search-perplexity plugin registration', () => {
     }
   })
 
-  it('is unavailable when neither config nor env supplies a key', async () => {
+  it('fails searches with WEB_PROVIDER_CREDENTIAL_MISSING when neither config nor env supplies a key', async () => {
     const prev = process.env.PERPLEXITY_API_KEY
     delete process.env.PERPLEXITY_API_KEY
     try {
@@ -235,7 +235,7 @@ describe('web-search-perplexity plugin registration', () => {
       await ctx.plugin(WebRuntime, { searchProvider: PERPLEXITY_PROVIDER_ID })
       await ctx.plugin(perplexityPlugin, {})
       await expect(ctx.web.search({ query: 'q' }))
-        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' }))
     } finally {
       if (prev !== undefined) process.env.PERPLEXITY_API_KEY = prev
     }

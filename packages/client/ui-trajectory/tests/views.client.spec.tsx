@@ -9,7 +9,7 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -1197,6 +1197,50 @@ describe('TrajectoryView state', () => {
     expect(view.container.querySelector(
       `[data-timeline-record-index="${currentIndex}"][data-current="true"]`,
     )).toBeTruthy()
+  })
+
+  it('drains every remaining history page on open behind the loading bar', async () => {
+    const store = createSnapshotStore({ ...historySnapshot(NODES), hasMore: true })
+    let calls = 0
+    let releaseFirst!: (value: boolean) => void
+    const firstPage = new Promise<boolean>((resolve) => { releaseFirst = resolve })
+    const loadOlder = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) return firstPage
+      return false
+    })
+    render(
+      <TrajectoryView
+        {...standaloneProps(NODES)}
+        {...standaloneDuration()}
+        useSession={bindSnapshotSelector(store)}
+        loadOlder={loadOlder}
+      />,
+    )
+
+    // The loading note paints first; the first page request follows one frame later.
+    await waitFor(() => { expect(screen.getByText('Loading trajectory…')).toBeTruthy() })
+    await waitFor(() => { expect(loadOlder).toHaveBeenCalledTimes(1) })
+
+    act(() => { releaseFirst(true) })
+    // The loop keeps draining until a page reports no further progress, then
+    // the loading bar clears.
+    await waitFor(() => { expect(loadOlder).toHaveBeenCalledTimes(2) })
+    await waitFor(() => { expect(screen.queryByText('Loading trajectory…')).toBeNull() })
+  })
+
+  it('a fully loaded history window opens without probing older pages', () => {
+    const loadOlder = vi.fn(() => Promise.resolve(false))
+    render(
+      <TrajectoryView
+        {...standaloneProps(NODES)}
+        {...standaloneDuration()}
+        useSession={bindSnapshotSelector(createSnapshotStore(historySnapshot(NODES)))}
+        loadOlder={loadOlder}
+      />,
+    )
+    expect(loadOlder).not.toHaveBeenCalled()
+    expect(screen.queryByText('Loading trajectory…')).toBeNull()
   })
 
 })

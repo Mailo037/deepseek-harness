@@ -144,6 +144,34 @@ export function TrajectoryView({
   const historyLoading = useSession(snapshot => snapshot.openState === 'loading')
   const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder)
   const hasOlderHistory = useSession(snapshot => snapshot.hasMore)
+  // Unlike the chat's incremental window, an opened trajectory drains every
+  // remaining history page so the ledger renders the complete run. The loop
+  // ends when a page load reports no further progress; the table's sticky
+  // loading bar covers the drain because it rides the same historyLoading prop.
+  // The drain yields around every page (and waits one frame before starting)
+  // so the tab switch paints immediately with its loading note and each
+  // progressive prepend never holds the main thread across pages.
+  const [loadingAllHistory, setLoadingAllHistory] = useState(false)
+  useEffect(() => {
+    if (historyLoading || !hasOlderHistory) return
+    const drain = { cancelled: false }
+    const nextFrame = () => new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { resolve() })
+      else setTimeout(resolve, 0)
+    })
+    void (async () => {
+      setLoadingAllHistory(true)
+      await nextFrame()
+      try {
+        while (!drain.cancelled && await loadOlder()) {
+          await nextFrame()
+        }
+      } finally {
+        if (!drain.cancelled) setLoadingAllHistory(false)
+      }
+    })()
+    return () => { drain.cancelled = true }
+  }, [historyLoading, hasOlderHistory, loadOlder])
   const nodes = inspection.eventNodes
   const eventLocations = inspection.eventLocations
   const historyBaseSeq = nodes[0]?.seq ?? 0
@@ -487,7 +515,7 @@ export function TrajectoryView({
           onRecordSelect={handleRecordSelect}
           recordSelection={timelineRecordSelection}
           recordFocus={timelineRecordFocus}
-          historyLoading={historyLoading}
+          historyLoading={historyLoading || loadingAllHistory}
           olderHistoryLoading={olderHistoryLoading}
           historyStartSeq={historyBaseSeq}
           hasOlderRecords={hasOlderHistory}

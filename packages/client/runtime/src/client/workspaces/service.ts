@@ -75,18 +75,25 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * Resolve the session a New Session flow lands in once this Workspace is
-   * chosen: reuse the workspace's existing blank session when one is in the
-   * list mirror, else create a fresh one on the host (`session.create` births
-   * the full Session+Agent — the client holds no intermediate state). The
-   * caller owns navigation: take the returned id to `sessions.open`.
-   * Resolution guarantee (both arms): the returned id is already in the list
-   * store and `sessions.binding(id)` resolves synchronously — draft hand-off
+   * Connect a Workspace to its reusable or freshly created blank session.
+   * Guaranteed: the returned id exists in the session list so callers
    * may write the new scope's machine before opening.
-   * @param workspaceId - chosen Workspace (must be in the workspace list).
+   * @param workspaceId - chosen Workspace (must be in the workspace list), or omitted for standalone/unlinked.
    * @returns the reused or newly created session id.
    */
-  async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {
+  async connectWorkspace(workspaceId?: WorkspaceId): Promise<SessionId> {
+    if (workspaceId === undefined) {
+      const archived = this.list.getSnapshot().archivedSessionIds
+      const sessions = this.sessions.list.getSnapshot()
+      for (const id of sessions.ids) {
+        const summary = sessions.byId[id]
+        const inAnyWorkspace = this.list.getSnapshot().items.some(w => w.sessionIds.includes(id))
+        if (summary !== undefined && summary.blank && !inAnyWorkspace && !archived.includes(summary.id)) {
+          return summary.id
+        }
+      }
+      return this.sessions.create({})
+    }
     const workspace = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
     if (workspace === undefined) throw new Error(`workspaces.connectWorkspace: unknown workspace ${workspaceId}`)
     // Coalesce concurrent connects: a create's summary lands without cwd
@@ -182,7 +189,20 @@ export class WorkspaceRuntime implements IWorkspaces {
       : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
     const target = workspaceId ?? currentWorkspaceId ?? workspace.recentWorkspaceId
     if (target === undefined) {
-      this.sessions.clear()
+      const sessions = this.sessions.list.getSnapshot()
+      const accounted = new Set(workspace.items.flatMap(w => w.sessionIds))
+      const blankUngrouped = sessions.ids.find((id) => {
+        const s = sessions.byId[id]
+        return s !== undefined && s.blank && !accounted.has(id)
+      })
+      if (blankUngrouped !== undefined) {
+        this.sessions.open(blankUngrouped)
+        return
+      }
+      void this.sessions.create({}).then(
+        (sessionId) => { this.sessions.open(sessionId) },
+        (reason: unknown) => { console.warn('new session failed:', reason) },
+      )
       return
     }
     void this.connectWorkspace(target).then(
@@ -259,6 +279,28 @@ export class WorkspaceRuntime implements IWorkspaces {
     const result = await this.manager.rename(workspaceId, title)
     if (!result.ok) throw new Error(`workspace rename failed: ${result.error.code}: ${result.error.message}`)
     return result.value.workspace
+  }
+
+  /**
+   * Update project settings for a Workspace.
+   * @param workspaceId - target workspace.
+   * @param settings - new settings dictionary.
+   * @returns the updated Workspace view.
+   */
+  async updateSettings(workspaceId: WorkspaceId, settings: Record<string, unknown>): Promise<WorkspaceView> {
+    const result = await this.manager.updateSettings(workspaceId, settings)
+    if (!result.ok) throw new Error(`workspace update settings failed: ${result.error.code}: ${result.error.message}`)
+    return result.value.workspace
+  }
+
+  /**
+   * Move a session into a target Workspace.
+   * @param sessionId - session to move.
+   * @param targetWorkspaceId - target workspace.
+   */
+  async moveSession(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void> {
+    const result = await this.manager.moveSession(sessionId, targetWorkspaceId)
+    if (!result.ok) throw new Error(`workspace move session failed: ${result.error.code}: ${result.error.message}`)
   }
 
   /**

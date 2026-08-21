@@ -97,7 +97,7 @@ export function ConversationSessionHeader({
                     </span>
                   )
                 })}
-                {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
+                {ancestry.length === 0 && <span className={css.crumbCurrent}>{t('session.blank')}</span>}
               </nav>
               <div className={css.headerActions}>
                 {renderSlot('conversation.session.header.actions', {})}

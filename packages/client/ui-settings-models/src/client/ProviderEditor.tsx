@@ -24,6 +24,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import { Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -439,25 +440,67 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               ? (
                 <div className={styles['field']}>
                   <span className={styles['fieldLabel']}>{t('customApi')}</span>
-                  <select
-                    className={`${styles['input']} ${styles['selectInput']}`}
+                  <Select
+                    className={styles['selectInput']}
                     value={probeApi ?? ''}
                     aria-label={t('customApi')}
                     disabled={disabled}
-                    onChange={(event) => { setField('api', event.target.value) }}
-                  >
-                    {/* A profile naming no protocol — hand-written into
-                        settings.yaml with no model to need one — selects
-                        nothing rather than reading as if it had picked the
-                        first choice. The option is named because a screen
-                        reader announces it either way, and an empty one is
-                        announced as a choice with no identity. */}
-                    {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
-                    {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
-                  </select>
+                    placeholder={probeApi === undefined ? t('customApiUnset') : undefined}
+                    options={[
+                      ...(probeApi === undefined ? [{ value: '', label: t('customApiUnset') }] : []),
+                      ...protocols.map(choice => ({ value: choice, label: choice })),
+                    ]}
+                    onChange={(selectedApi) => { setField('api', selectedApi) }}
+                  />
                 </div>
               )
               : null}
+            {family === 'deepseek'
+              ? (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('providerReasoning')}</span>
+                  <Select
+                    className={styles['selectInput']}
+                    value={stringAt(draft, 'reasoningEffort') ?? ''}
+                    aria-label={t('providerReasoning')}
+                    disabled={disabled}
+                    options={[
+                      { value: '', label: t('reasoningInherit') },
+                      { value: 'off', label: t('reasoningOff') },
+                      { value: 'low', label: t('reasoningLow') },
+                      { value: 'high', label: t('reasoningHigh') },
+                      { value: 'max', label: t('reasoningMax') },
+                    ]}
+                    onChange={(effort) => {
+                      setField('reasoningEffort', effort === '' ? undefined : effort)
+                    }}
+                  />
+                </div>
+              )
+              : (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('providerReasoning')}</span>
+                  <Select
+                    className={styles['selectInput']}
+                    value={stringAt(draft, 'reasoning') ?? ''}
+                    aria-label={t('providerReasoning')}
+                    disabled={disabled}
+                    options={[
+                      { value: '', label: t('reasoningInherit') },
+                      { value: 'off', label: t('reasoningOff') },
+                      { value: 'minimal', label: t('reasoningMinimal') },
+                      { value: 'low', label: t('reasoningLow') },
+                      { value: 'medium', label: t('reasoningMedium') },
+                      { value: 'high', label: t('reasoningHigh') },
+                      { value: 'xhigh', label: t('reasoningXHigh') },
+                      { value: 'max', label: t('reasoningMax') },
+                    ]}
+                    onChange={(reasoning) => {
+                      setField('reasoning', reasoning === '' ? undefined : reasoning)
+                    }}
+                  />
+                </div>
+              )}
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}

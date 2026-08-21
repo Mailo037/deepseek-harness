@@ -34,7 +34,7 @@
 /* Message containers opt in with data-time-hover-root: the time label fades
    in on message hover (or keyboard focus within). Opacity keeps the layout
    stable, and devices without hover keep the label always visible. */
-@media (hover: hover) {
+@media (hover: hover) and (min-width: 769px) {
   [data-time-hover-root] :is(.timeStart, .timeEnd) {
     opacity: 0;
     transition: opacity 80ms ease;
@@ -42,6 +42,12 @@
 
   [data-time-hover-root]:hover :is(.timeStart, .timeEnd),
   [data-time-hover-root]:focus-within :is(.timeStart, .timeEnd) {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  [data-time-hover-root] :is(.timeStart, .timeEnd) {
     opacity: 1;
   }
 }

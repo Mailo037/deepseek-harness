@@ -55,16 +55,30 @@ async function settleDownstream(
   }
 }
 
-function localDelay(config: ResolvedRetryPolicy, retry: number, random: () => number): number {
+function localDelay(
+  config: ResolvedRetryPolicy,
+  retry: number,
+  random: () => number,
+  rateLimitMultiplier: number,
+): number {
   const exponent = Math.min(retry - 1, 1024)
-  const exponential = Math.min(config.initialDelayMs * 2 ** exponent, config.maxDelayMs)
+  const exponential = Math.min(
+    config.initialDelayMs * 2 ** exponent * rateLimitMultiplier,
+    config.maxDelayMs,
+  )
   const jitter = 1 - config.jitterRatio + 2 * config.jitterRatio * random()
   return Math.min(exponential * jitter, config.maxDelayMs)
 }
 
 function retryPolicyKey(policy: ResolvedRetryPolicy): string {
   return policy.mode === 'always'
-    ? JSON.stringify([policy.mode, policy.initialDelayMs, policy.maxDelayMs, policy.jitterRatio])
+    ? JSON.stringify([
+      policy.mode,
+      policy.initialDelayMs,
+      policy.maxDelayMs,
+      policy.jitterRatio,
+      policy.rateLimitMultiplier,
+    ])
     : JSON.stringify([
       policy.mode,
       policy.maxRetries,
@@ -72,6 +86,7 @@ function retryPolicyKey(policy: ResolvedRetryPolicy): string {
       policy.initialDelayMs,
       policy.maxDelayMs,
       policy.jitterRatio,
+      policy.rateLimitMultiplier,
     ])
 }
 
@@ -190,18 +205,23 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
     if (policy.mode === 'normal' && previousRetry >= policy.maxRetries) return next()
     const retry = previousRetry + 1
     const retryId = priorPolicyRetry?.data.retryId ?? RetryId(randomUUID())
+    // A rate-limited request (HTTP 429) needs more room before the next
+    // attempt than a server or transport hiccup, so its local delay scales by
+    // the policy's rate-limit multiplier. A provider Retry-After instruction
+    // stays verbatim: the provider owns that wait.
+    const rateLimitMultiplier = failure.code === 'RATE_LIMIT' ? policy.rateLimitMultiplier : 1
     let delayMs: number
     if (failure.providerRetryAfterMs !== undefined
       && Number.isFinite(failure.providerRetryAfterMs)
       && failure.providerRetryAfterMs > 0) {
       if (failure.providerRetryAfterMs > policy.maxDelayMs) {
         if (policy.mode === 'normal') return next()
-        delayMs = localDelay(policy, retry, random)
+        delayMs = localDelay(policy, retry, random, rateLimitMultiplier)
       } else {
         delayMs = failure.providerRetryAfterMs
       }
     } else {
-      delayMs = localDelay(policy, retry, random)
+      delayMs = localDelay(policy, retry, random, rateLimitMultiplier)
     }
 
     return backoff(agent, turn, step, failure, provider, policy, policyKey, retry, retryId, delayMs, signal)

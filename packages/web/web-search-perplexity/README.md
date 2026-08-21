@@ -10,7 +10,8 @@ This is an **implementation** package: it registers a provider into `ctx.web`, i
 
 | Key | Default | Meaning |
 |---|---|---|
-| `apiKey` | `$PERPLEXITY_API_KEY` | Perplexity API key. Empty/absent makes the provider unavailable. |
+| `apiKey` | `$PERPLEXITY_API_KEY` | Literal Perplexity API key (or resolved through the credentials domain). Empty/absent makes searches fail with `WEB_PROVIDER_CREDENTIAL_MISSING`. |
+| `apiKeyEnv` | `PERPLEXITY_API_KEY` | Credential reference resolved for each search. |
 | `baseURL` | `https://api.perplexity.ai` | Endpoint base; `/chat/completions` is appended. An unparseable value makes the provider unavailable. |
 | `model` | `sonar` | Search model name. |
 | `maxTokens` | `1024` | Upper bound on generated answer tokens (`max_tokens`). Must be a positive integer. |
@@ -23,9 +24,11 @@ This is an **implementation** package: it registers a provider into `ctx.web`, i
     apiKey: !!js process.env.PERPLEXITY_API_KEY
 ```
 
+The provider owns a `web-search-perplexity` settings section (endpoint and key reference), so the Web settings card and the credentials domain can manage it like the DeepSeek provider. Registration availability is config-shape-based; the key is resolved per search, so a stored key change reaches the next search without re-registering.
+
 ## Mapping
 
-`content` ← `choices[0].message.content` (the generated answer). `sources[]` prefers the structured `search_results[]` (`url`, `title`, `snippet`, `publishedAt` ← `date`), falling back to the URL-only `citations[]` array only when `search_results` is absent — those sources carry just a `url`, which is why `title`/`snippet`/`publishedAt` are optional on the seam. Provider failures surface as `WebError` `WEB_PROVIDER_ERROR`; an aborted request surfaces as `WEB_ABORTED`. HTTP redirects are rejected before the `Location` target is contacted and surface as `WEB_PROVIDER_ERROR`. Perplexity has no result-count control, so `maxResults` is enforced by the seam (truncating `sources[]` and setting `truncated`).
+`content` ← `choices[0].message.content` (the generated answer). `sources[]` prefers the structured `search_results[]` (`url`, `title`, `snippet`, `publishedAt` ← `date`), falling back to the URL-only `citations[]` array only when `search_results` is absent — those sources carry just a `url`, which is why `title`/`snippet`/`publishedAt` are optional on the seam. Provider failures surface as `WebError` `WEB_PROVIDER_ERROR`; a missing key surfaces as `WEB_PROVIDER_CREDENTIAL_MISSING`; an aborted request surfaces as `WEB_ABORTED`. HTTP redirects are rejected before the `Location` target is contacted and surface as `WEB_PROVIDER_ERROR`. Perplexity has no result-count control, so `maxResults` is enforced by the seam (truncating `sources[]` and setting `truncated`).
 
 ## Model Experience
 

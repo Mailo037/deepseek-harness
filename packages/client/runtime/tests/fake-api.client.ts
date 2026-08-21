@@ -205,6 +205,12 @@ export class FakeApiClient implements IApiClient {
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
+  onWorkspaceUpdateSettings: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView }>> =
+    () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws') }))
+
+  onWorkspaceMoveSession: (payload: unknown) => Promise<RpcResponse<{ success: true }>> =
+    () => Promise.resolve(ok({ success: true as const }))
+
   readonly workspace: IApiClient['workspace'] = {
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (
       response.result.ok
@@ -220,6 +226,10 @@ export class FakeApiClient implements IApiClient {
       this.record('workspace.insertSessionBefore', payload, this.onWorkspaceInsertSessionBefore(payload)),
     archiveSession: (payload: unknown) =>
       this.record('workspace.archiveSession', payload, this.onWorkspaceArchiveSession(payload)),
+    updateSettings: (payload: unknown) =>
+      this.record('workspace.updateSettings', payload, this.onWorkspaceUpdateSettings(payload)),
+    moveSession: (payload: unknown) =>
+      this.record('workspace.moveSession', payload, this.onWorkspaceMoveSession(payload)),
   }
 
   // Payloads stay `unknown` (lint-lane note above); response rows are the real

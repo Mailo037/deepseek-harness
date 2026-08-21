@@ -79,6 +79,10 @@ export class InputHub implements SessionInputResolver {
       queue: queueReadFaceOf(session),
       defaultSink: (text, imageIds, mode, signal) => this.sink(session, text, imageIds, mode, signal),
       steerQueue: () => { void this.steerQueue(session, shell) },
+      updateQueueItem: async (itemId, action) => {
+        const result = await session.updateQueue(itemId, action)
+        if (!result.ok) throw new Error(this.t('queue.editFailed'))
+      },
       commandImages: {
         serialize: ids => this.conversation().serializeDraftImages(ids),
         // Asymmetric with serialize on purpose: release settles AFTER the

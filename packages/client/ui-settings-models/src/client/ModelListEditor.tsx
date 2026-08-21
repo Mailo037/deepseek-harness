@@ -17,12 +17,25 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import { messageOf } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
+
+/** Determine selected reasoning effort option string for a model draft. */
+function reasoningOptionOf(model: ModelDraft): string {
+  const value = model['reasoningEfforts']
+  if (value === false) return 'disabled'
+  if (typeof value === 'object' && value !== null) {
+    const keys = Object.keys(value)
+    if (keys.length === 1 && keys[0] !== undefined) return keys[0]
+    if (keys.length === 3 && 'low' in value && 'high' in value && 'max' in value) return 'standard'
+    return 'all'
+  }
+  return ''
+}
 
 /**
  * One configured model row. Structurally open, exactly like the DeepSeek
@@ -210,7 +223,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -427,6 +440,53 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     aria-label={`${t('modelMaxTokens')} ${index + 1}`}
                     disabled={disabled}
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
+                  />
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelReasoning')}</span>
+                  <Select
+                    className={styles['selectInput']}
+                    value={reasoningOptionOf(model)}
+                    aria-label={`${t('modelReasoning')} ${index + 1}`}
+                    disabled={disabled}
+                    options={[
+                      { value: '', label: t('reasoningInherit') },
+                      { value: 'disabled', label: t('reasoningDisabled') },
+                      { value: 'low', label: t('reasoningLow') },
+                      { value: 'medium', label: t('reasoningMedium') },
+                      { value: 'high', label: t('reasoningHigh') },
+                      { value: 'max', label: t('reasoningMax') },
+                      { value: 'standard', label: 'Low, High, Max' },
+                      { value: 'all', label: 'Minimal .. Max' },
+                    ]}
+                    onChange={(option) => {
+                      if (option === '') {
+                        patch(index, { reasoningEfforts: undefined })
+                      } else if (option === 'disabled') {
+                        patch(index, { reasoningEfforts: false })
+                      } else if (option === 'low') {
+                        patch(index, { reasoningEfforts: { low: 'low' } })
+                      } else if (option === 'medium') {
+                        patch(index, { reasoningEfforts: { medium: 'medium' } })
+                      } else if (option === 'high') {
+                        patch(index, { reasoningEfforts: { high: 'high' } })
+                      } else if (option === 'max') {
+                        patch(index, { reasoningEfforts: { max: 'max' } })
+                      } else if (option === 'standard') {
+                        patch(index, { reasoningEfforts: { low: 'low', high: 'high', max: 'max' } })
+                      } else if (option === 'all') {
+                        patch(index, {
+                          reasoningEfforts: {
+                            minimal: 'minimal',
+                            low: 'low',
+                            medium: 'medium',
+                            high: 'high',
+                            xhigh: 'xhigh',
+                            max: 'max',
+                          },
+                        })
+                      }
+                    }}
                   />
                 </label>
               </div>

@@ -11,12 +11,14 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
   ReferenceInsert, InputTriggerController, SubmitImageAttachment, SubmitOutcome, TokenSpan,
+  TriggerChar,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {
   DraftAttachmentId, EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
   PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { QueueAction, QueueItemId } from '../contract/queue.ts'
 import { InputMachine, projectClipboard } from './machine.ts'
 
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
@@ -44,6 +46,11 @@ export interface SessionInputDeps {
    * order (the empty-draft accelerated-Enter gesture); absent = unsupported.
    */
   steerQueue?: (() => void) | undefined
+  /**
+   * Apply one queue mutation for the composer-side queue-edit submit
+   * (rejects with a user-facing message); absent = queue editing unsupported.
+   */
+  updateQueueItem?: ((itemId: QueueItemId, action: QueueAction) => Promise<void>) | undefined
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
   defaultSink(
     text: string,
@@ -74,7 +81,7 @@ function guardOf(phase: InputState['phase']): 'plain' | 'claimed' | 'frozen' {
 const EMPTY_QUEUE: readonly QueuedMessage[] = []
 
 /** No-pipeline lexicon: zero text-ref decorations. */
-const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
+const EMPTY_LEXICON: ReadonlyMap<TriggerChar, readonly string[]> = new Map()
 
 /**
  * The per-session input facade: scoped-event application verbs +
@@ -103,12 +110,29 @@ export class SessionInputShell implements SessionInput {
   /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
   private imageSendInFlight = false
   private disposed = false
-  /** Draft persistence mirror (chat store write; receives the clipboard projection, never display-only ranges). */
+  /**
+   * Draft persistence mirror (chat store write; receives the clipboard projection, never display-only ranges).
+   */
   private mirrorFn: ((text: string) => void) | undefined
+  /**
+   * Active composer-side queue edit: the stashed pre-edit draft plus the
+   * addressed occurrence. Null outside the flow; the published InputState
+   * carries only the item identity (the stash never leaves this shell).
+   */
+  private queueEditStash: {
+    readonly itemId: QueueItemId
+    readonly draft: string
+    readonly imageIds: readonly DraftAttachmentId[]
+  } | null = null
+  /** Set while the queue-edit mutation is in flight; further submits are no-ops. */
+  private queueEditInFlight = false
 
   constructor(private readonly deps: SessionInputDeps) {
     this.state = createSnapshotStore<InputState>(this.compose())
-    deps.queue?.subscribe(() => { this.publish() })
+    deps.queue?.subscribe(() => {
+      this.retireQueueEdit()
+      this.publish()
+    })
   }
 
   // ---- SessionInput face ----
@@ -207,6 +231,12 @@ export class SessionInputShell implements SessionInput {
    * dismisses and the menu tracks frozen.
    */
   submit(mode: InputSubmitMode = 'queue'): void {
+    // Queue-edit submit: the draft is destined for the pending occurrence,
+    // not a new turn — no adjudication, no command claim, same position.
+    if (this.queueEditStash !== null) {
+      this.submitQueueEdit()
+      return
+    }
     if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
       if (this.snapshot.phase === 'plain' && !this.imageSendInFlight) {
         const imageIds = [...this.imageIds]
@@ -267,7 +297,93 @@ export class SessionInputShell implements SessionInput {
    * empty-draft no-op.
    */
   steerQueue(): void {
+    if (this.queueEditStash !== null) return
     this.deps.steerQueue?.()
+  }
+
+  /**
+   * Begin composer-side editing of one queued message. Plain phase only; the
+   * row must still be pending with editable text. An already-active edit is
+   * restored first, so exactly one stash exists at a time.
+   * @param itemId - queued occurrence identity.
+   * @returns whether the edit began.
+   */
+  beginQueueEdit(itemId: QueueItemId): boolean {
+    if (this.snapshot.phase !== 'plain') return false
+    const row = this.deps.queue?.getSnapshot().find(
+      candidate => candidate.id === itemId && candidate.placement === 'queued',
+    )
+    if (row === undefined || row.text === null) return false
+    if (this.queueEditStash !== null) this.restoreQueueEdit()
+    const snapshot = this.snapshot
+    this.queueEditStash = { itemId, draft: snapshot.draft, imageIds: snapshot.imageIds }
+    for (const id of snapshot.imageIds) this.removeImage(id)
+    this.setDraft(row.text)
+    return true
+  }
+
+  /** Leave composer-side editing and restore the stashed draft and attachments. */
+  cancelQueueEdit(): void {
+    if (this.queueEditStash === null) return
+    this.restoreQueueEdit()
+  }
+
+  /**
+   * Commit the queue edit: one text edit action against the stashed
+   * occurrence. Success restores the stash (the row keeps its position);
+   * failure keeps the edit open with a notice unless the row retired meanwhile.
+   */
+  private submitQueueEdit(): void {
+    const stash = this.queueEditStash
+    if (stash === null || this.queueEditInFlight) return
+    const text = this.snapshot.draft.trim()
+    if (text === '') return // same no-op as the machine's empty-draft guard
+    const updateQueueItem = this.deps.updateQueueItem
+    if (updateQueueItem === undefined) return // unsupported wiring: keep the edit open
+    this.queueEditInFlight = true
+    updateQueueItem(stash.itemId, { kind: 'edit', content: [{ type: 'text', text }] }).then(
+      () => {
+        this.queueEditInFlight = false
+        if (this.disposed || this.queueEditStash?.itemId !== stash.itemId) return
+        this.restoreQueueEdit()
+      },
+      (error: unknown) => {
+        this.queueEditInFlight = false
+        if (this.disposed || this.queueEditStash?.itemId !== stash.itemId) return
+        if (!this.rowPending(stash.itemId)) {
+          this.restoreQueueEdit()
+          return
+        }
+        this.notify('error', error instanceof Error ? error.message : String(error))
+      },
+    )
+  }
+
+  /** Whether the addressed occurrence is still a pending queued row. */
+  private rowPending(itemId: QueueItemId): boolean {
+    return this.deps.queue?.getSnapshot().some(
+      candidate => candidate.id === itemId && candidate.placement === 'queued',
+    ) ?? false
+  }
+
+  /**
+   * End the queue edit when its occurrence left the pending queue (claimed,
+   * removed, or steered elsewhere): the stash restores so the user never
+   * loses their own draft to a race they did not cause.
+   */
+  private retireQueueEdit(): void {
+    if (this.queueEditStash === null) return
+    if (this.rowPending(this.queueEditStash.itemId)) return
+    this.restoreQueueEdit()
+  }
+
+  /** Restore the stash as one draft transaction and clear the edit state. */
+  private restoreQueueEdit(): void {
+    const stash = this.queueEditStash
+    if (stash === null) return
+    this.queueEditStash = null
+    this.setDraft(stash.draft)
+    if (stash.imageIds.length > 0) this.addImages(stash.imageIds)
   }
 
   /**
@@ -301,7 +417,7 @@ export class SessionInputShell implements SessionInput {
    * identity per shell; without a pipeline the snapshot is the empty Map and
    * subscribers never fire.
    */
-  readonly lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>> = {
+  readonly lexicon: ObservableSnapshot<ReadonlyMap<TriggerChar, readonly string[]>> = {
     getSnapshot: () => this.deps.inputTriggers?.()?.lexicon.getSnapshot() ?? EMPTY_LEXICON,
     subscribe: fn => this.deps.inputTriggers?.()?.lexicon.subscribe(fn) ?? (() => {}),
   }
@@ -590,7 +706,12 @@ export class SessionInputShell implements SessionInput {
 
   private compose(): InputState {
     const core = this.core.state
-    return { ...core, imageIds: this.imageIds, queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE }
+    return {
+      ...core,
+      imageIds: this.imageIds,
+      queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
+      ...(this.queueEditStash === null ? {} : { queueEdit: { itemId: this.queueEditStash.itemId } }),
+    }
   }
 
   private publish(): void {

@@ -112,6 +112,76 @@ describe('Inbox', () => {
     expect(() => { inbox.append('next-step', first) }).toThrow(`message "${first.id}" is already pending`)
   })
 
+  it('moves a pending next-turn message as one silent durable window splice', () => {
+    const session = Session.create(SessionId('move-inbox'))
+    const inserted: UserMessage[] = []
+    const discarded: UserMessage[] = []
+    const inbox = new Inbox(session, {
+      claimed: () => {},
+      inserted: message => void inserted.push(message),
+      discarded: message => void discarded.push(message),
+    })
+    const first = createUserMessage({ content: [{ type: 'text', text: 'first' }], source: { kind: 'user' } })
+    const second = createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } })
+    const third = createUserMessage({ content: [{ type: 'text', text: 'third' }], source: { kind: 'user' } })
+    const step = createUserMessage({ content: [{ type: 'text', text: 'step' }], source: { kind: 'user' } })
+    inbox.append('next-turn', first)
+    inbox.append('next-turn', second)
+    inbox.append('next-turn', third)
+    inbox.append('next-step', step)
+    const beforeMove = session.events.length
+    const insertedBeforeMove = inserted.length
+    const discardedBeforeMove = discarded.length
+
+    expect(inbox.move(second.id, 0)).toBe(true)
+
+    expect(inbox.nextTurn.map(message => message.content[0])).toEqual([
+      { type: 'text', text: 'second' },
+      { type: 'text', text: 'first' },
+      { type: 'text', text: 'third' },
+    ])
+    expect(inbox.nextStep).toEqual([step])
+    // A reorder is not a lifecycle change: no discarded, no inserted.
+    expect(inserted).toHaveLength(insertedBeforeMove)
+    expect(discarded).toHaveLength(discardedBeforeMove)
+    expect(session.events.slice(beforeMove).map(event => event.type === 'agent/inbox/spliced'
+      ? event.data
+      : event.type)).toEqual([
+      { target: 'next-turn', start: 0, removedCount: 2, inserted: [second, first] },
+    ])
+
+    // Moving down reorders the same window shape; replay reconstructs it.
+    expect(inbox.move(second.id, 2)).toBe(true)
+    expect(inbox.nextTurn.map(message => message.content[0])).toEqual([
+      { type: 'text', text: 'first' },
+      { type: 'text', text: 'third' },
+      { type: 'text', text: 'second' },
+    ])
+    const replayed = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    expect(replayed.nextTurn).toEqual(inbox.nextTurn)
+  })
+
+  it('treats no-op, out-of-range, and missing moves without a durable event', () => {
+    const session = Session.create(SessionId('move-inbox-edges'))
+    const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+    const only = createUserMessage({ content: [{ type: 'text', text: 'only' }], source: { kind: 'user' } })
+    const other = createUserMessage({ content: [{ type: 'text', text: 'other' }], source: { kind: 'user' } })
+    inbox.append('next-turn', only)
+    inbox.append('next-turn', other)
+    const beforeMoves = session.events.length
+    const missing = createUserMessage({ content: [{ type: 'text', text: 'x' }], source: { kind: 'user' } })
+
+    expect(inbox.move(only.id, 0)).toBe(true)
+    expect(inbox.move(only.id, Number.NaN)).toBe(true)
+    expect(inbox.nextTurn).toEqual([only, other])
+    expect(session.events).toHaveLength(beforeMoves)
+    // Out-of-range clamps into the current list and still moves.
+    expect(inbox.move(only.id, 99)).toBe(true)
+    expect(inbox.nextTurn).toEqual([other, only])
+    expect(inbox.move(missing.id, 0)).toBe(false)
+    expect(session.events).toHaveLength(beforeMoves + 1)
+  })
+
   it('clears both pending lists as durable cancellations', () => {
     const session = Session.create(SessionId('clear-inbox'))
     const discarded: UserMessage[] = []

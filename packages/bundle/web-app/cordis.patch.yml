@@ -100,6 +100,12 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Human `!` shell commands: host-plane executor over the composed
+    # `ctx.shell` (the base's bash-sandbox/pwsh-sandbox row), serving the
+    # browser's shell-command input source over the Remote gateway.
+    - id: shell-command
+      name: '@deepseek-ai/dsh-shell-command'
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
@@ -244,6 +250,11 @@
 
     - id: ui-commands
       name: '@deepseek-ai/dsh-client-ui-commands'
+
+    # The `!` shell-command source: adjudication-only trigger over the
+    # host shell-command Remote, rendering durable shell-command chat nodes.
+    - id: ui-shell-command
+      name: '@deepseek-ai/dsh-client-ui-shell-command'
 
     - id: ui-skill
       name: '@deepseek-ai/dsh-client-ui-skill'

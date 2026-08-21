@@ -172,6 +172,7 @@ export type QueueAction =
   | { kind: 'edit'; content: ContentBlock[] }
   | { kind: 'remove' }
   | { kind: 'steer' }
+  | { kind: 'move'; toIndex: number }
 
 /** One Session list entry. */
 export interface SessionSummary {
@@ -357,7 +358,9 @@ export interface SessionsApi {
   Promise<RpcResponse<{ attachment: ImageAttachmentRef; data: string }>>
 
   /**
-   * Edits, removes, or strictly steers one pending queued occurrence on an ordinary session.
+   * Edits, removes, strictly steers, or reorders one pending queued occurrence
+   * on an ordinary session. A `move` addresses a `next-turn` row only and
+   * clamps `toIndex` into the current list, preserving send-order semantics.
    * Session-backed subagents reject with `agent-busy`.
    */
   updateQueue(request: RpcRequest<{ sessionId: SessionId; itemId: MessageId; action: QueueAction }>):

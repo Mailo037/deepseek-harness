@@ -28,7 +28,12 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
-const t = (key: keyof typeof en) => en[key]
+/** Mirrors the locale plugin's translate: interpolates `{name}` placeholders. */
+const t = (key: keyof typeof en, params?: Record<string, unknown>): string => {
+  const template = en[key]
+  if (params === undefined) return template
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => name in params ? String(params[name]) : match)
+}
 
 /** A settled form: nothing staged, everything served. */
 const settled: CardShell = {
@@ -353,11 +358,13 @@ describe('WebSearchCard', () => {
   function renderWebSearch(state: Partial<WebSearchCardState> = {}) {
     const store = createSnapshotStore<WebSearchCardState>({
       ...settled,
+      provider: field('deepseek-official'),
       baseURL: field(''),
       maxUses: field('5'),
       apiKey: field(''),
       apiKeyConfigured: false,
       apiKeyWritable: true,
+      apiKeyRef: 'DEEPSEEK_API_KEY',
       ...state,
     })
     const actions = cardActions()
@@ -365,6 +372,37 @@ describe('WebSearchCard', () => {
     render(<WebSearchCard {...props} />)
     return actions
   }
+
+  it('shows the provider selector with every registered search provider', () => {
+    renderWebSearch()
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+
+    const select = screen.getByRole('combobox', { name: en.webSearchProvider })
+    expect(select.textContent).toContain(en.webSearchProviderDeepseekOfficial)
+    fireEvent.click(select)
+    expect(screen.getByRole('menuitem', { name: en.webSearchProviderDeepseekOfficial })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: en.webSearchProviderExa })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: en.webSearchProviderPerplexity })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: en.webSearchProviderFirecrawl })).toBeTruthy()
+  })
+
+  it('stages a provider switch through the selection field', () => {
+    const actions = renderWebSearch()
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+
+    const select = screen.getByRole('combobox', { name: en.webSearchProvider })
+    fireEvent.click(select)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.webSearchProviderExa }))
+
+    expect(actions.edit).toHaveBeenCalledWith('searchProvider', 'exa')
+  })
+
+  it('names the credential reference of the selected provider in the key hint', () => {
+    renderWebSearch({ provider: field('exa'), apiKeyRef: 'EXA_API_KEY' })
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+
+    expect(screen.getByText('Stored as the EXA_API_KEY credential, outside the settings file. Leave blank to keep the current key.')).toBeTruthy()
+  })
 
   it('reports whether a key is configured without ever showing one', () => {
     renderWebSearch({ apiKeyConfigured: true })

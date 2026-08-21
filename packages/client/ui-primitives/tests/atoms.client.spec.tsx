@@ -1,10 +1,49 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Button, ConnectionBanner, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ConnectionBanner, Input, Menu, Modal, Pill, Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)
+
+describe('Select', () => {
+  const options = [
+    { value: 'opt-a', label: 'Option A' },
+    { value: 'opt-b', label: 'Option B' },
+    { value: 'opt-c', label: 'Option C', disabled: true },
+  ]
+
+  it('renders selected value and opens menu on click to select', () => {
+    const onChange = vi.fn()
+    render(<Select value="opt-a" options={options} onChange={onChange} aria-label="Choices" />)
+    const trigger = screen.getByRole('combobox', { name: 'Choices' })
+    expect(trigger.textContent).toContain('Option A')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const optionB = screen.getByRole('menuitem', { name: 'Option B' })
+    fireEvent.click(optionB)
+
+    expect(onChange).toHaveBeenCalledWith('opt-b')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('renders placeholder when value is unselected or empty', () => {
+    render(<Select options={options} placeholder="Select an option..." aria-label="Choices" />)
+    const trigger = screen.getByRole('combobox', { name: 'Choices' })
+    expect(trigger.textContent).toContain('Select an option...')
+  })
+
+  it('handles disabled and invalid states', () => {
+    const { rerender } = render(<Select disabled options={options} value="opt-a" aria-label="Choices" />)
+    const trigger = screen.getByRole('combobox', { name: 'Choices' })
+    expect(trigger).toHaveProperty('disabled', true)
+
+    rerender(<Select invalid options={options} value="opt-a" aria-label="Choices" />)
+    expect(trigger.getAttribute('aria-invalid')).toBe('true')
+  })
+})
 
 describe('Button', () => {
   it('renders children, icon, and forwards clicks', () => {

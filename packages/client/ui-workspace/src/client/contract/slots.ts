@@ -135,6 +135,10 @@ export type WorkspaceBrowserInjected = {
    * the Host response/changed frame; failures leave the order unchanged.
    */
   insertSessionBefore: (workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId) => Promise<void>
+  /** Move a session into a target Workspace. */
+  moveSession: (sessionId: SessionId, targetWorkspaceId: WorkspaceId) => Promise<void>
+  /** Update project-specific settings for a Workspace. */
+  updateWorkspaceSettings: (workspaceId: WorkspaceId, settings: Record<string, unknown>) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

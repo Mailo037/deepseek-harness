@@ -92,6 +92,7 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
+  reasoningEffort: z.union(['off', 'low', 'high', 'max']),
   inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text']),
 })
 
@@ -154,6 +155,15 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
     if (new Set(inputModalities).size !== inputModalities.length) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`)
     }
+    if (model.reasoningEffort !== undefined
+      && model.reasoningEffort !== 'off'
+      && model.reasoningEffort !== 'low'
+      && model.reasoningEffort !== 'high'
+      && model.reasoningEffort !== 'max') {
+      throw new Error(
+        `llm-deepseek: catalog model "${model.id}" reasoningEffort must be "off", "low", "high", or "max"`,
+      )
+    }
     if (seen.has(model.id)) throw new Error(`llm-deepseek: duplicate catalog model "${model.id}"`)
     seen.add(model.id)
     return {
@@ -162,6 +172,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      ...model.reasoningEffort === undefined ? {} : { reasoningEffort: model.reasoningEffort },
       inputModalities: [...inputModalities],
     }
   })

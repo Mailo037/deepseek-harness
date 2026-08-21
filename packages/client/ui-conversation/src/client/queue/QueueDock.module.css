@@ -122,6 +122,20 @@
   box-shadow: inset 0 1px 0 var(--dsw-alias-border-l1);
 }
 
+/* Drag feedback: the lifted row fades; the landing edge shows an insertion
+   line (replacing the separator shadow on that row). */
+.rowDragging {
+  opacity: 0.4;
+}
+
+.dropAbove {
+  box-shadow: inset 0 2px 0 var(--dsw-alias-state-business-primary);
+}
+
+.dropBelow {
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-state-business-primary);
+}
+
 .preview,
 .editor {
   flex: 1 1 auto;
@@ -136,6 +150,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   word-break: break-word;
+}
+
+/* The row currently loaded into the composer reads as active, not dimmed. */
+.previewEditing {
+  color: var(--dsw-alias-label-primary);
 }
 
 .editor {
@@ -158,6 +177,36 @@
   flex: none;
   align-items: center;
   gap: 10px;
+}
+
+/* Drag handle: same hit area as the row actions, with a grab cursor. */
+.drag {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 28px;
+  margin-left: -6px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: grab;
+}
+
+.drag:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.drag:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-tertiary);
+  outline-offset: -2px;
+}
+
+.drag:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .action {

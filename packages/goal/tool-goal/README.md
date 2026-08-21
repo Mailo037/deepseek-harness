@@ -12,9 +12,9 @@ The model-facing control tools for [`ctx.goals`](../goal/README.md): `get_goal`,
 
 All calls are exclusive, so a model-ordered batch observes earlier mutations and their new revisions. UI clients receive pure generic cards: read for `get_goal`, other for mutations. Mutation cards select the first meaningful action value and otherwise show the goal id, so accepted fillers never produce blank input.
 
-All three canonical values match the compact JSON already rendered to Native callers: `{ goal: null }` or `{ goal: { id, revision, objective, phase, roundsStarted, maxGoalRounds, blockedReason? }, activation }`. Programmatic consumers therefore receive the same domain structure without parsing the rendered JSON.
+All three canonical values match the compact JSON already rendered to Native callers: `{ goal: null }` or `{ goal: { id, revision, objective, phase, roundsStarted, maxGoalRounds, blockedReason? }, activation }`. Programmatic consumers therefore receive the same domain structure without parsing the rendered JSON. Whole-goal token usage and elapsed time are derived from the session log and surfaced only inside the closing wrap-up block, never in the compact tool result.
 
-An autonomous goal round that successfully reports `complete` or `blocked` marks that tool execution with `concludeTurn()` so the physical turn stops after the step. Direct-human mutations never contribute this stop: the assistant may acknowledge the change and concurrent human steering remains available to the loop.
+An autonomous goal round that successfully reports `complete` or `blocked` additionally defers one wrap-up context block instructing the model to write the closing message to the user before the turn ends. That wrap-up names the whole-goal elapsed time and, when the provider reported token accounting, the total tokens consumed since the goal was created, and tells the model to report both numbers once in its closing message. Direct-human mutations never contribute this context.
 
 ## Authority
 

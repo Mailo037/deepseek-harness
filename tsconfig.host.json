@@ -49,6 +49,7 @@
     "apps/web/tests/message-actions.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/message-feedback-layout.e2e.ts",
+    "apps/web/tests/sidebar-drawer.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
     "apps/web/tests/reference-composer.e2e.ts",
     "apps/web/tests/math-rendering.e2e.ts",
@@ -88,6 +89,7 @@
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
     "apps/cli/tests/**/*.ts",
+    "apps/electron/tests/**/*.ts",
     "examples/*/src/**/*.ts",
     "examples/*/start.ts",
     "examples/*/tests/**/*.ts",
@@ -201,6 +203,7 @@
     { "path": "./packages/e2b/e2b" },
     { "path": "./packages/e2b/subprocess-e2b" },
     { "path": "./packages/shell/shell" },
+    { "path": "./packages/shell/shell-command" },
     { "path": "./packages/terminal/terminal" },
     { "path": "./packages/terminal/terminal-bash" },
     { "path": "./packages/shell/tool-bash-persistent" },
@@ -239,6 +242,7 @@
     { "path": "./packages/web/web-search-exa" },
     { "path": "./packages/web/web-search-perplexity" },
     { "path": "./packages/web/web-search-deepseek" },
+    { "path": "./packages/web/web-search-firecrawl" },
     { "path": "./packages/web/web-fetch-http" },
     { "path": "./packages/web/tool-web" },
     { "path": "./packages/spill/spill" },
@@ -305,6 +309,7 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
-    { "path": "./apps/cli" }
+    { "path": "./apps/cli" },
+    { "path": "./apps/electron" }
   ]
 }

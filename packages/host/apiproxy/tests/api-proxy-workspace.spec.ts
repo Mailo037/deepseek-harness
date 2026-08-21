@@ -568,4 +568,55 @@ describe('Host Workspace increments', () => {
     })
     abort.abort()
   })
+
+  it('creates an unlinked session with an auto-created project directory under the session storage root', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-unlinked-')))
+    const { api } = await harness(root)
+    const sessionId = SessionId('session-unlinked-1')
+    const createRes = await api.sessions.create(request({ sessionId }))
+    expect(createRes.result.ok).toBe(true)
+    const listRes = expectOk(await api.sessions.list(request({})))
+    const summary = listRes.items.find(item => item.sessionId === sessionId)
+    expect(summary).toBeDefined()
+    expect(summary?.cwd).toBeDefined()
+    expect(existsSync(summary!.cwd!)).toBe(true)
+  })
+
+  it('updates project settings and moves sessions between workspaces', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-move-')))
+    const dirA = join(root, 'project-a')
+    const dirB = join(root, 'project-b')
+    mkdirSync(dirA)
+    mkdirSync(dirB)
+    const { api } = await harness(root)
+
+    const wsA = expectOk(await api.workspace.create(request({ path: dirA }))).workspace
+    const wsB = expectOk(await api.workspace.create(request({ path: dirB }))).workspace
+
+    // Test updateSettings
+    const updatedWsA = expectOk(await api.workspace.updateSettings(request({
+      workspaceId: wsA.workspaceId,
+      settings: { permissionPreset: 'danger-full-access' },
+    }))).workspace
+    expect(updatedWsA.settings).toEqual({ permissionPreset: 'danger-full-access' })
+
+    // Create session in workspace A
+    const sessionId = SessionId('session-move-test')
+    expectOk(await api.sessions.create(request({ workspaceId: wsA.workspaceId, sessionId })))
+
+    let listA = expectOk(await api.workspace.list(request({})))
+    expect(listA.items.find(w => w.workspaceId === wsA.workspaceId)?.sessionIds).toContain(sessionId)
+    expect(listA.items.find(w => w.workspaceId === wsB.workspaceId)?.sessionIds).not.toContain(sessionId)
+
+    // Move session to workspace B
+    expectOk(await api.workspace.moveSession(request({
+      sessionId,
+      targetWorkspaceId: wsB.workspaceId,
+    })))
+
+    let listB = expectOk(await api.workspace.list(request({})))
+    expect(listB.items.find(w => w.workspaceId === wsA.workspaceId)?.sessionIds).not.toContain(sessionId)
+    expect(listB.items.find(w => w.workspaceId === wsB.workspaceId)?.sessionIds).toContain(sessionId)
+  })
 })
+

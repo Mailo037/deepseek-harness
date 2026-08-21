@@ -343,7 +343,7 @@ describe('ProducedFiles row', () => {
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
     // The third probe is 100px: two chips plus the remainder fit, three do not.
-    expect(within(row).getAllByRole('button')).toHaveLength(2)
+    expect(within(row).getAllByRole('button')).toHaveLength(3)
     expect(within(row).getByText('+ 5 个文件')).toBeTruthy()
     const chip = view.getByRole('button', { name: '打开 deep/a.html' })
     expect(chip.textContent).toBe('a.html')
@@ -358,14 +358,14 @@ describe('ProducedFiles row', () => {
 
     available = 150
     act(() => { resize?.([], {} as ResizeObserver) })
-    expect(within(row).getAllByRole('button')).toHaveLength(1)
+    expect(within(row).getAllByRole('button')).toHaveLength(2)
     expect(within(row).getByText('+ 6 个文件')).toBeTruthy()
 
     // A missing/unsupported computed gap falls back to zero rather than NaN.
     vi.stubGlobal('getComputedStyle', () => ({ columnGap: '', gap: '' } as CSSStyleDeclaration))
     available = 165
     act(() => { resize?.([], {} as ResizeObserver) })
-    expect(within(row).getAllByRole('button')).toHaveLength(2)
+    expect(within(row).getAllByRole('button')).toHaveLength(3)
 
     // Ref callbacks leave nulls in the probe arrays when the candidate set
     // shrinks; the replacement observer must skip those stale slots.
@@ -406,6 +406,36 @@ describe('ProducedFiles row', () => {
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
     expect(within(row).getByText('+ 1 file')).toBeTruthy()
+  })
+
+  it('expands to every file on the overflow count and collapses again on Hide', () => {
+    const openFile = vi.fn<(path: string) => void>()
+    const view = render(
+      <ProducedFiles
+        matched={['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']}
+        openFile={openFile}
+        {...capability(true)}
+        t={t}
+      />,
+    )
+    const row = view.container.querySelector('[data-produced-files-row]')
+    if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
+    // Collapsed: the bounded prefix plus the clickable overflow count.
+    const more = within(row).getByRole('button', { name: '+ 1 个文件' })
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    expect(within(row).queryByRole('button', { name: '打开 g.md' })).toBeNull()
+    fireEvent.click(more)
+    // Expanded: every chip is in the lane and the Hide action takes the
+    // overflow count's place.
+    expect(within(row).queryByRole('button', { name: '打开 g.md' })).toBeTruthy()
+    expect(within(row).queryByRole('button', { name: '+ 1 个文件' })).toBeNull()
+    const hide = view.getByRole('button', { name: '收起' })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(hide)
+    // Collapsed again: the overflow count is back and the Hide action is gone.
+    expect(within(row).getByRole('button', { name: '+ 1 个文件' })).toBeTruthy()
+    expect(within(row).queryByRole('button', { name: '打开 g.md' })).toBeNull()
+    expect(view.queryByRole('button', { name: '收起' })).toBeNull()
   })
 })
 

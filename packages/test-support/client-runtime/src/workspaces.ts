@@ -51,14 +51,14 @@ export class TestWorkspaces implements IWorkspaces {
    * Connect a workspace to its reusable/new blank session (recorded). The
    * default resolves the workspace id back as the session id; stub for
    * cross-session flows.
-   * @param workspaceId - target workspace.
+   * @param workspaceId - target workspace, or omitted for standalone/unlinked.
    * @returns the connected session id.
    */
-  async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {
+  async connectWorkspace(workspaceId?: WorkspaceId): Promise<SessionId> {
     this.calls.push({ method: 'connectWorkspace', args: [workspaceId] })
     const stub = this.stubs.get('connectWorkspace')
     if (stub !== undefined) return await (stub(workspaceId) as Promise<SessionId>)
-    return `session-of-${workspaceId}` as SessionId
+    return `session-of-${workspaceId ?? 'none'}` as SessionId
   }
 
   /**
@@ -161,6 +161,29 @@ export class TestWorkspaces implements IWorkspaces {
     const stub = this.stubs.get('rename')
     if (stub !== undefined) return await (stub(workspaceId, title) as Promise<WorkspaceView>)
     return { workspaceId, title, path: `/${title}`, sessionIds: [] } as unknown as WorkspaceView
+  }
+
+  /**
+   * Update project-specific settings for a Workspace.
+   * @param workspaceId - target workspace.
+   * @param settings - new settings.
+   * @returns the updated view.
+   */
+  async updateSettings(workspaceId: WorkspaceId, settings: Record<string, unknown>): Promise<WorkspaceView> {
+    this.calls.push({ method: 'updateSettings', args: [workspaceId, settings] })
+    const stub = this.stubs.get('updateSettings')
+    if (stub !== undefined) return await (stub(workspaceId, settings) as Promise<WorkspaceView>)
+    return { workspaceId, title: '', path: '', sessionIds: [], settings } as unknown as WorkspaceView
+  }
+
+  /**
+   * Move a session into a target Workspace.
+   * @param sessionId - session to move.
+   * @param targetWorkspaceId - target workspace.
+   */
+  async moveSession(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void> {
+    this.calls.push({ method: 'moveSession', args: [sessionId, targetWorkspaceId] })
+    await (this.stubs.get('moveSession')?.(sessionId, targetWorkspaceId) as Promise<void> | undefined)
   }
 
   /**

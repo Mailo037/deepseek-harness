@@ -34,6 +34,8 @@ const HISTORY_LOAD_ROW_HEIGHT_PX = 30
 const VIRTUALIZATION_THRESHOLD = 100
 const VIRTUAL_OVERSCAN_ROWS = 12
 const VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX = 600
+/** Varied first-line widths (%) of the opening skeleton rows, so the placeholder reads as content. */
+const SKELETON_LINE_WIDTHS: readonly number[] = [64, 42, 78, 36, 58, 47, 70, 40]
 
 const KIND_LABEL: Record<TrajectoryCellKind, string> = {
   system: 'SYSTEM',
@@ -2215,6 +2217,19 @@ export function TrajectoryTable({
               <span className={css.historyLoadingSpinner} aria-hidden="true" />
               Loading trajectory…
             </span>
+          </div>
+        )}
+        {showInitialLoading && (
+          <div className={css.historySkeleton} aria-hidden="true">
+            {SKELETON_LINE_WIDTHS.map((width, index) => (
+              <div key={index} className={css.skeletonRow}>
+                <span className={css.skeletonGlyph} />
+                <span className={css.skeletonBody}>
+                  <span className={css.skeletonLine} style={{ width: `${width}%` }} />
+                  <span className={css.skeletonLine} style={{ width: `${Math.round(width * 0.55)}%` }} />
+                </span>
+              </div>
+            ))}
           </div>
         )}
         <table

@@ -9,6 +9,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16,
+  Select,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -17,7 +18,7 @@ import styles from './ModelsSection.module.css'
 export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'reasoningEffort'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -343,6 +344,25 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <label className={styles['modelField']}>
+                        <span className={styles['modelFieldLabel']}>{props.t('modelReasoning')}</span>
+                        <Select
+                          className={styles['selectInput']}
+                          value={typeof model['reasoningEffort'] === 'string' ? model['reasoningEffort'] : ''}
+                          aria-label={`${props.t('modelReasoning')} ${String(index + 1)}`}
+                          disabled={props.disabled}
+                          options={[
+                            { value: '', label: props.t('reasoningInherit') },
+                            { value: 'off', label: props.t('reasoningOff') },
+                            { value: 'low', label: props.t('reasoningLow') },
+                            { value: 'high', label: props.t('reasoningHigh') },
+                            { value: 'max', label: props.t('reasoningMax') },
+                          ]}
+                          onChange={(effort) => {
+                            update(index, 'reasoningEffort', effort === '' ? undefined : effort)
+                          }}
+                        />
+                      </label>
                     </div>
                   )
                   : null}

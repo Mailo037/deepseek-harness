@@ -9,8 +9,10 @@ This package owns the Service Definition role of the web capability. Unlike shel
 | Package | Role |
 |---|---|
 | `@deepseek-ai/dsh-web` (this) | Service Definition: the service, provider registries, selection policy, request/result vocabulary, the `WebError` taxonomy |
+| `@deepseek-ai/dsh-web-search-deepseek` | Search provider: DeepSeek native search |
 | `@deepseek-ai/dsh-web-search-exa` | Search provider: Exa |
 | `@deepseek-ai/dsh-web-search-perplexity` | Search provider: Perplexity |
+| `@deepseek-ai/dsh-web-search-firecrawl` | Search provider: Firecrawl |
 | `@deepseek-ai/dsh-web-fetch-http` | Fetch provider: anonymous public HTTP(S) |
 | `@deepseek-ai/dsh-tool-web` | Consumer: the model-facing `web_search` / `web_fetch` tool schemas over `ctx.web` |
 
@@ -21,6 +23,7 @@ Search and fetch share no request schema and no business logic, but they are del
 | Member | Semantics |
 |---|---|
 | `registerSearchProvider(provider)` / `registerFetchProvider(provider)` | Register a backend. Throws `WebError` `WEB_DUPLICATE_PROVIDER` on a duplicate id within that capability kind. Returns a disposer. Disposed with the calling fiber. |
+| `setSearchProvider(id?)` / `setFetchProvider(id?)` | Re-pin the selection at runtime; `undefined` returns to auto-selection. Not validated against the registry (providers register after the seam boots); resolution happens per search. |
 | `search(request, signal?)` | Resolve the search provider and run one search. Enforces `request.maxResults` on the result (truncates `sources[]`, sets `truncated`). Throws `WebError` when the capability cannot run. |
 | `fetch(request, signal?)` | Resolve the fetch provider and retrieve one URL. A non-2xx response is a result, not a throw. Throws `WebError` for failures to safely retrieve or represent the resource. |
 
@@ -28,7 +31,7 @@ Providers register **capabilities**, not tools. `dsh-tool-web` is the only owner
 
 ## Selection
 
-Selection never depends on registration, config, or HMR order. A capability has an explicit provider id (config `searchProvider`/`fetchProvider`, or env `$DSH_WEB_SEARCH_PROVIDER`/`$DSH_WEB_FETCH_PROVIDER` feeding the same fields), or auto-selects when exactly one usable provider is registered. `search()`/`fetch()` resolve the provider at execution time:
+Selection never depends on registration, config, or HMR order. A capability has an explicit provider id (constructor config `searchProvider`/`fetchProvider`, env `$DSH_WEB_SEARCH_PROVIDER`/`$DSH_WEB_FETCH_PROVIDER` feeding the same fields, or the persisted `web-search` settings section), or auto-selects when exactly one usable provider is registered. The seam installs the `web-search` settings namespace itself (schema = `WebRuntimeConfig`; the composition entry plus env-var overrides are its `base` layer), so a stored section re-pins the selection live on commit through `setSearchProvider`/`setFetchProvider` — no provider re-registration. `search()`/`fetch()` resolve the provider at execution time:
 
 | Situation | Execution |
 |---|---|

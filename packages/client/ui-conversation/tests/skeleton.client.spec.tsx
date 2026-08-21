@@ -86,7 +86,7 @@ function conversationSnapshot(overrides: Partial<ConversationSnapshot> = {}): Co
 function mount(
   snapshot: ConversationSnapshot,
   workspaceRows: WorkspaceView[] = [{ ...workspace('one'), sessionIds: [SID] }],
-  retargetWorkspace = vi.fn(async (_workspaceId: WorkspaceId) => {}),
+  retargetWorkspace = vi.fn(async (_workspaceId?: WorkspaceId) => {}),
   options: {
     /** When true, mimic overlay:true chain siblings (hidden fallback + takeover). */
     overlayTakeover?: boolean

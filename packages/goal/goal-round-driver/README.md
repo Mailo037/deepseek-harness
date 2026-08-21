@@ -15,9 +15,12 @@ Same-session continuation driver for [`ctx.goals`](../goal/README.md). It turns 
 
 - id: goal-round-driver
   name: '@deepseek-ai/dsh-goal-round-driver'
+  config:
+    nudgeIntervalMs: 30000
+    consecutiveErrorLimit: 5
 ```
 
-The plugin has no tunable configuration. `maxGoalRounds` belongs to the goal definition, while the model-facing blocked threshold belongs to [`dsh-tool-goal`](../tool-goal/README.md); duplicating either value in the driver could produce divergent policy.
+`maxGoalRounds` belongs to the goal definition, while the model-facing blocked threshold belongs to [`dsh-tool-goal`](../tool-goal/README.md); duplicating either value in the driver could produce divergent policy. The driver does own two continuation-policy values: `nudgeIntervalMs` (default `30000`) tunes how often an idle, active, armed goal is automatically re-poked, and `consecutiveErrorLimit` (default `5`) decides how many failed goal rounds in a row force a `repeated-error` block.
 
 ## Round contract
 
@@ -27,13 +30,15 @@ When an exact live agent is idle with an active, armed goal and remaining capaci
 
 The retained prompt names the JSON-quoted objective and `round/maxGoalRounds`, treats the current workspace, tool results, and durable session state as authoritative, requires evidence before completion, and tells the model to leave the goal active when work remains. Quoting preserves multiline or tag-like objective text as data. Goal lifecycle mutations still require the independent authority checks in `dsh-tool-goal`.
 
-## Idle checkpoint
+## Idle checkpoint and nudge
 
-At whole-agent idle, durable goal phase and revision are authoritative. An active, armed goal with capacity reserves its next round; completion, pause, blocking, and edits suppress continuation. The driver does not classify the preceding activity by correlating the goal message with `turn/end`, so provider errors and token limits are not prompt-level goal outcomes.
+At whole-agent idle, durable goal phase and revision are authoritative. An active, armed goal with capacity reserves its next round; completion, pause, blocking, and edits suppress continuation. The driver does not classify the preceding activity by correlating the goal message with `turn/end`, so token limits are not prompt-level goal outcomes.
+
+A periodic timer (`nudgeIntervalMs`) re-energizes an idle, active, armed goal that no event-driven path has touched since its last admission, so transient driver races or external prompts cannot leave the goal quiescent with no pending reservation.
 
 ## Lifecycle and durability
 
-`goal/changed` creates a durability obligation. Before queuing work, the driver awaits `ctx.sessions.flush()` and rechecks both the goal revision and competing input after the await. A flush failure arriving through `agent/error` disarms continuation before another round can start.
+`goal/changed` creates a durability obligation. Before queuing work, the driver awaits `ctx.sessions.flush()` and rechecks both the goal revision and competing input after the await. A failed round returning through `agent/error` counts toward the consecutive-error limit and, below that limit, keeps continuation armed so the next idle checkpoint or nudge retries it; after `consecutiveErrorLimit` consecutive failures it blocks the goal with `repeated-error`. A failure not attributable to an admitted round still disarms continuation.
 
 Activation is never inherited when this plugin loads over an existing agent. `GoalService.disarm()` removes process-local authority without changing durable phase, revision, or history; explicit human-authorized resume records the later reactivation. The same rule applies after session resume and fork through the goal domain's `agent/session-start` handling.
 
@@ -61,4 +66,4 @@ Append-only within an epoch: each admitted round extends the existing conversati
 - **Same-session execution only** — this package deliberately does not spawn a fresh agent, fork a session prefix, or implement Ralph-style independent attempts; that workflow belongs to its own plugin layer.
 - **Accepted-queue unload race** — Cordis plugin unload is asynchronous. A goal prompt already accepted by the agent inbox can begin and consume its round before unload starts; teardown then cancels the request, disarms the goal, and awaits quiescence. No later round starts.
 - **Round cap, not resource budget** — token, currency, time, and provider quota policies remain independent. Their session events are not attributed to the goal message or mapped into goal blocker codes.
-- **No abnormal auto-retry** — transient provider and persistence failures require a later human-authorized resume rather than an implicit retry policy.
+- **Retries are blind** — the driver never classifies why a round failed. Every failure of an admitted round counts toward `consecutiveErrorLimit`, whether it is a transient provider blip or a persistence failure that will recur; it does not distinguish rate limits, authentication, or quota exhaustion. An independent resource policy remains deferred.

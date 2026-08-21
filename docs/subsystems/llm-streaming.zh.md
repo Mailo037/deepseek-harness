@@ -242,7 +242,7 @@ interface LlmFailure {
 
 ## `ResolvedRetryPolicy`
 
-重试配置会在路由注册前解析为不可变的可辨识联合。normal mode 携带 `mode: 'normal'`、有限的 `maxRetries`、`retryableCodes`，以及必填的 `initialDelayMs`、`maxDelayMs` 与 `jitterRatio`；always mode 携带 `mode: 'always'` 和相同的必填退避字段，但没有有限上限。省略提供方策略时使用重试五次的 normal 默认值。分层 settings 在切换到 always 模式后可能保留仅属于 normal 的 `maxRetries` 或 `retryableCodes`；解析器会忽略这些未启用字段，并捕获纯 always 策略。`LlmRuntime.providerRetryPolicy(provider)` 返回注册值；调用选定实际提供服务的注册后，`llmRetryPolicyOf(stream)` 返回从中捕获的值，因此之后释放或替换路由都无法改变进行中失败的恢复策略。可选配置输入字段由[生成的配置目录](../config-catalog.md)列出。
+重试配置会在路由注册前解析为不可变的可辨识联合。normal mode 携带 `mode: 'normal'`、有限的 `maxRetries`、`retryableCodes`，以及解析后的退避字段 `initialDelayMs`、`maxDelayMs`、`jitterRatio` 与 `rateLimitMultiplier`；always mode 携带 `mode: 'always'` 和相同的解析后退避字段，但没有有限上限。`RATE_LIMIT` 失败会将其本地计算的延迟按 `rateLimitMultiplier`（默认 2）缩放，因此受速率限制的请求在下次重试前会比服务器或传输故障等待更久；有效的提供方 `Retry-After` 会原样替换本地退避，绝不缩放。省略提供方策略时使用重试五次的 normal 默认值。分层 settings 在切换到 always 模式后可能保留仅属于 normal 的 `maxRetries` 或 `retryableCodes`；解析器会忽略这些未启用字段，并捕获纯 always 策略。`LlmRuntime.providerRetryPolicy(provider)` 返回注册值；调用选定实际提供服务的注册后，`llmRetryPolicyOf(stream)` 返回从中捕获的值，因此之后释放或替换路由都无法改变进行中失败的恢复策略。可选配置输入字段由[生成的配置目录](../config-catalog.md)列出。
 
 ## `AppIdentity`：应用归属
 

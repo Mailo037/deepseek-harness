@@ -165,6 +165,12 @@
   opacity: 1;
 }
 
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .inspectButton {
+    opacity: 1;
+  }
+}
+
 /* Solid hover fill (a translucent token would let content bleed through). */
 .inspectButton:hover {
   background: var(--dsw-alias-interactive-bg-hover-solid);

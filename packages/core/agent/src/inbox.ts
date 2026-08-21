@@ -21,6 +21,14 @@ export interface InboxNotifications {
   claimed(message: UserMessage, turn: number): void
 }
 
+/**
+ * Live-notification policy of one committed mutation. `lifecycle` publishes
+ * removed messages as discarded and inserted messages as inserted;
+ * `silent` publishes nothing (claiming owns its own notifications, and a
+ * reorder inserts exactly what it removed).
+ */
+type MutationNotifications = 'lifecycle' | 'silent'
+
 /** A replay-once projection that incrementally consumes later inbox splices. */
 export class Inbox {
   private readonly state: InboxState = { 'next-turn': [], 'next-step': [] }
@@ -69,9 +77,9 @@ export class Inbox {
    * @internal - The agent loop's step-boundary operation, not a plugin extension point.
    */
   claim(target: InboxTarget, turn: number): UserMessage[] {
-    const claimed = this.mutate('next-step', 0, this.nextStep.length, [], false)
+    const claimed = this.mutate('next-step', 0, this.nextStep.length, [], 'silent')
     if (target === 'next-turn') {
-      claimed.push(...this.mutate('next-turn', 0, 1, [], false))
+      claimed.push(...this.mutate('next-turn', 0, 1, [], 'silent'))
     }
     for (const message of claimed) this.notifications.claimed(message, turn)
     return claimed
@@ -95,6 +103,33 @@ export class Inbox {
    */
   prepend(target: InboxTarget, message: UserMessage): void {
     this.splice(target, 0, 0, [message])
+  }
+
+  /**
+   * Move one pending next-turn message to a new FIFO position without
+   * changing its identity, content, or live notifications. The whole affected
+   * window commits as one durable splice, so synchronous observers see one
+   * atomic reorder. Out-of-range positions clamp into the current list.
+   * @param messageId - identity of the pending message to move.
+   * @param toIndex - desired final position in `next-turn`.
+   * @returns whether the message was still pending (an out-of-range or
+   * current-position request counts as moved).
+   */
+  move(messageId: MessageId, toIndex: number): boolean {
+    const inbox = this.state['next-turn']
+    const from = inbox.findIndex(message => message.id === messageId)
+    if (from < 0) return false
+    const requested = Math.trunc(toIndex)
+    if (!Number.isSafeInteger(requested)) return true
+    const to = Math.min(Math.max(requested, 0), inbox.length - 1)
+    if (to === from) return true
+    const start = Math.min(from, to)
+    const span = Math.abs(to - from) + 1
+    const window = inbox.slice(start, start + span)
+    const reordered = window.toSpliced(from - start, 1)
+    reordered.splice(to - start, 0, window[from - start]!)
+    this.mutate('next-turn', start, span, reordered, 'silent')
+    return true
   }
 
   /**
@@ -142,7 +177,7 @@ export class Inbox {
     deleteCount: number,
     inserted: UserMessage[],
   ): UserMessage[] {
-    return this.mutate(target, start, deleteCount, inserted, true)
+    return this.mutate(target, start, deleteCount, inserted, 'lifecycle')
   }
 
   /** Locate one pending identity across both owned lists. */
@@ -160,7 +195,7 @@ export class Inbox {
     start: number,
     deleteCount: number,
     inserted: UserMessage[],
-    discardRemoved: boolean,
+    notifications: MutationNotifications,
   ): UserMessage[] {
     const inbox = this.state[target]
     const truncatedStart = Math.trunc(start)
@@ -174,7 +209,9 @@ export class Inbox {
       inbox.length - actualStart,
     )
     if (actualDeleteCount === 0 && inserted.length === 0) return []
-    const outcome = discardRemoved && actualDeleteCount > 0 ? 'canceled' as const : undefined
+    const outcome = notifications === 'lifecycle' && actualDeleteCount > 0
+      ? 'canceled' as const
+      : undefined
     const splice = {
       target,
       start: actualStart,
@@ -185,10 +222,10 @@ export class Inbox {
     this.validate(splice)
     const event = this.session.append('agent/inbox/spliced', splice)
     const removed = inbox.splice(actualStart, actualDeleteCount, ...event.data.inserted)
-    if (discardRemoved) {
+    if (notifications === 'lifecycle') {
       for (const message of removed) this.notifications.discarded(message)
+      for (const message of event.data.inserted) this.notifications.inserted(message)
     }
-    for (const message of event.data.inserted) this.notifications.inserted(message)
     return removed
   }
 

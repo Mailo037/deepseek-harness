@@ -198,6 +198,16 @@
   display: none;
 }
 
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .collapsed .toggle .panelIcon {
+    display: inline;
+  }
+
+  .collapsed .toggle .railMark {
+    display: none;
+  }
+}
+
 .railMark {
   display: inline-flex;
   align-items: center;

@@ -17,6 +17,7 @@ describe('provider retry policy', () => {
       initialDelayMs: 500,
       maxDelayMs: 10_000,
       jitterRatio: 0.1,
+      rateLimitMultiplier: 2,
     })
     expect(Object.isFrozen(policy)).toBe(true)
     if (policy.mode !== 'normal') throw new Error('expected normal policy')
@@ -33,6 +34,7 @@ describe('provider retry policy', () => {
         initialDelayMs: 25,
         maxDelayMs: 100,
         jitterRatio: 0,
+        rateLimitMultiplier: 3,
       },
     }
 
@@ -46,6 +48,7 @@ describe('provider retry policy', () => {
       initialDelayMs: 25,
       maxDelayMs: 100,
       jitterRatio: 0,
+      rateLimitMultiplier: 3,
     })
   })
 
@@ -55,6 +58,7 @@ describe('provider retry policy', () => {
       initialDelayMs: 500,
       maxDelayMs: 10_000,
       jitterRatio: 0.1,
+      rateLimitMultiplier: 2,
     })
     expect(RetryPolicySchema).toBeDefined()
   })
@@ -71,6 +75,7 @@ describe('provider retry policy', () => {
       initialDelayMs: 500,
       maxDelayMs: 10_000,
       jitterRatio: 0.1,
+      rateLimitMultiplier: 2,
     })
   })
 
@@ -84,6 +89,9 @@ describe('provider retry policy', () => {
     [{ mode: 'always', backoff: { maxDelayMs: MAX_TIMER_DELAY_MS + 1 } }, /maxDelayMs/],
     [{ mode: 'normal', backoff: { initialDelayMs: 20, maxDelayMs: 10 } }, /less than or equal/],
     [{ mode: 'always', backoff: { jitterRatio: 1.1 } }, /jitterRatio/],
+    [{ mode: 'normal', backoff: { rateLimitMultiplier: 0 } }, /rateLimitMultiplier/],
+    [{ mode: 'always', backoff: { rateLimitMultiplier: 0.5 } }, /rateLimitMultiplier/],
+    [{ mode: 'normal', backoff: { rateLimitMultiplier: Number.POSITIVE_INFINITY } }, /rateLimitMultiplier/],
     [{ mode: 'normal', retryableCodes: [] }, /must not be empty/],
     [{ mode: 'normal', retryableCodes: ['SERVER', 'SERVER'] }, /duplicates/],
     [{ mode: 'normal', retryableCodes: [''] }, /non-empty strings/],

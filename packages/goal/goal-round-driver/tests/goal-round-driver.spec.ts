@@ -85,12 +85,12 @@ afterEach(async () => {
 })
 
 /** Mount a real loop with only its model scripted. */
-async function harness(script: ScriptEntry[]): Promise<Harness> {
+async function harness(script: ScriptEntry[], driverConfig?: import('../src/index.ts').Config): Promise<Harness> {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(GoalService)
-  const driver = await ctx.plugin(goalSession)
+  const driver = await ctx.plugin(goalSession, driverConfig ?? {})
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new ScriptedAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -230,19 +230,30 @@ describe('same-session goal driving', () => {
     expect(adapter.requests).toHaveLength(1)
   })
 
-  it.each([
-    ['rate limit', new LlmError('slow down', 'RATE_LIMIT')],
-    ['request error', new Error('provider broke')],
-    ['max tokens', maxTokensResponse('unfinished')],
-  ] as const)('disarms automatic continuation after a %s', async (_label, response) => {
-    const test = await harness([response])
-    test.ctx.goals.create(test.agent, { objective: 'stop safely', maxGoalRounds: 8 })
+  it('disarms automatic continuation after a max-token stop', async () => {
+    const test = await harness([maxTokensResponse('unfinished')])
+    test.ctx.goals.create(test.agent, { objective: 'stop safely at the budget', maxGoalRounds: 8 })
 
     const goal = await waitForGoal(test.ctx, test.agent, current =>
       current?.phase === 'active' && current.activation === 'disarmed')
 
     expect(goal).toMatchObject({ roundsStarted: 1, activation: 'disarmed' })
     expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('re-pokes after a transient provider error instead of disarming', async () => {
+    const test = await harness([
+      new LlmError('slow down', 'RATE_LIMIT'),
+      new LlmError('slow down', 'RATE_LIMIT'),
+      textResponse('recovered'),
+    ], { consecutiveErrorLimit: 3 })
+    test.ctx.goals.create(test.agent, { objective: 'ride out transient limiting', maxGoalRounds: 3 })
+
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+
+    expect(goal).toMatchObject({ roundsStarted: 3, activation: 'disarmed' })
+    expect(goal?.blockedReason?.code).toBe('round-limit')
+    expect(test.adapter.requests).toHaveLength(3)
   })
 
   it('maps a downstream step rejection to blocked without entering the round', async () => {
@@ -877,39 +888,41 @@ describe('same-session goal driving', () => {
     expect(test.adapter.requests).toHaveLength(1)
   })
 
-  it('disarms when a round turn/end cannot commit', async () => {
-    const test = await harness([textResponse('round ran')])
+  it('blocks the goal after configured consecutive round turn/end failures', async () => {
+    const test = await harness([textResponse('round ran'), textResponse('round ran'), textResponse('round ran')], { consecutiveErrorLimit: 3 })
+    let turned = 0
     test.ctx.on('internal/dispatch', (_mode, name, args) => {
       if (name !== 'session/event') return
       const event = args[1] as { type: string }
-      if (event.type === 'turn/end') throw new Error('turn close permanently rejected')
+      if (event.type === 'turn/end') throw new Error(`turn close permanently rejected #${++turned}`)
     })
     test.ctx.goals.create(test.agent, { objective: 'survive a lost turn end' })
-    await waitForRequests(test.adapter, 1)
+    await waitForRequests(test.adapter, 3)
     await test.agent.whenIdle()
     await new Promise((resolve) => { setImmediate(resolve) })
 
-    expect(test.adapter.requests).toHaveLength(1)
+    expect(test.adapter.requests).toHaveLength(3)
     expect(test.ctx.goals.get(test.agent)).toMatchObject({
-      phase: 'active',
+      phase: 'blocked',
       activation: 'disarmed',
+      roundsStarted: 3,
     })
+    expect(test.ctx.goals.get(test.agent)?.blockedReason).toMatchObject({ code: 'repeated-error' })
   })
 
-  it('disarms instead of continuing when a plugin reports a post-turn persistence failure', async () => {
-    const test = await harness([textResponse('round one')])
-    test.ctx.on('session/event', (session, event) => {
-      if (session === test.agent.session && event.type === 'turn/end') {
-        agentEvents(test.ctx, test.agent).emit('agent/error', { turn: event.data.turn, step: 1, error: new Error('post-turn flush failed') })
-      }
-    })
-    test.ctx.goals.create(test.agent, { objective: 'stop when durability is lost', maxGoalRounds: 8 })
+  it('retries after consecutive round errors and blocks the goal at the configured limit', async () => {
+    const test = await harness(
+      [new Error('round broke'), new Error('round broke'), new Error('round broke')],
+      { consecutiveErrorLimit: 3 },
+    )
+    test.ctx.goals.create(test.agent, { objective: 'retry each failed round', maxGoalRounds: 8 })
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.activation === 'disarmed')
-    await test.agent.whenIdle()
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
 
-    expect(goal).toMatchObject({ phase: 'active', roundsStarted: 1 })
-    expect(test.adapter.requests).toHaveLength(1)
+    expect(goal).toMatchObject({ phase: 'blocked', activation: 'disarmed', roundsStarted: 3 })
+    expect(goal?.blockedReason).toMatchObject({ code: 'repeated-error' })
+    expect(goal?.blockedReason?.message).toContain('3 consecutive times')
+    expect(test.adapter.requests).toHaveLength(3)
   })
 
   it('ignores a post-turn failure reported for a retired agent', async () => {
@@ -931,7 +944,57 @@ describe('same-session goal driving', () => {
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('goal-round-driver'))
   })
 
-  it('keeps terminal agent failure disarmed and defers queued human work until another wakeup', async () => {
+  it('retries a failed round at the next quiescence instead of disarming', async () => {
+    const test = await harness([new Error('round one broke'), textResponse('round two ran')])
+    test.ctx.goals.create(test.agent, { objective: 'recover from a transient failure', maxGoalRounds: 2 })
+
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+
+    expect(goal?.blockedReason?.code).toBe('round-limit')
+    expect(goal?.roundsStarted).toBe(2)
+    expect(test.adapter.requests).toHaveLength(2)
+  })
+
+  it('disarms without retrying when a non-goal turn fails with only a queued round', async () => {
+    const test = await harness([new Error('human turn broke')])
+    test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'human work' }], source: { kind: 'user' } }))
+    test.ctx.goals.create(test.agent, { objective: 'leave round retries to rounds', maxGoalRounds: 8 })
+
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.activation === 'disarmed')
+    await test.agent.whenIdle()
+
+    expect(goal).toMatchObject({ phase: 'active', roundsStarted: 0 })
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('re-nudges an idle armed goal on the configured interval so its rounds keep progressing', async () => {
+    vi.useFakeTimers()
+    try {
+      const test = await harness([textResponse('first response'), textResponse('second response')], { nudgeIntervalMs: 10_000 })
+      const followup = test.agent.followup.bind(test.agent)
+      const queued = vi.fn()
+      vi.spyOn(test.agent, 'followup').mockImplementation((input) => {
+        queued(input.content)
+        followup(input)
+      })
+      test.ctx.goals.create(test.agent, { objective: 'nudge me forward', maxGoalRounds: 2 })
+      // The create's own goal/changed drives round one immediately. Advance the
+      // interval so later nudges keep an idle armed goal progressing until the
+      // round cap settles it.
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(() => {
+        expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'blocked', roundsStarted: 2 })
+      })
+
+      expect(queued).toHaveBeenCalledTimes(2)
+      expect(test.adapter.requests).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('blocks a goal that reaches its round cap after a failed round and defers queued human work', async () => {
     const test = await harness([new Error('round one broke'), textResponse('human answer')])
     let queued = false
     test.ctx.on('session/event', (session, event) => {
@@ -946,7 +1009,7 @@ describe('same-session goal driving', () => {
     test.ctx.goals.create(test.agent, { objective: 'survive a stale failure', maxGoalRounds: 1 })
 
     await waitForGoal(test.ctx, test.agent, current =>
-      current?.phase === 'active' && current.activation === 'disarmed')
+      current?.phase === 'blocked' && current.blockedReason?.code === 'round-limit')
 
     expect(test.adapter.requests).toHaveLength(1)
     expect(test.agent.inbox.nextTurn).toHaveLength(1)

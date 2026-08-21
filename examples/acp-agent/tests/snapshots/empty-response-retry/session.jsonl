@@ -10,7 +10,7 @@
 {"type":"request/context","seq":8,"time":1785730441192,"data":{"provider":"deepseek-official","model":"deepseek-v4-flash"}}
 {"type":"assistant/chunk","seq":9,"time":1785498788105,"data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":0,"outputTokens":0}}}}
 {"type":"assistant/chunk","seq":10,"time":1785730441201,"data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"error","failure":{"message":"model returned a completed response with no content","code":"EMPTY_RESPONSE"}}}}}
-{"type":"llm/retry","seq":11,"time":1785730441201,"data":{"retryId":"dbe1e1b0-a914-48a4-ad9f-407b213a37ae","turn":1,"step":1,"provider":"deepseek-official","mode":"normal","policyKey":"[\"normal\",2,[\"EMPTY_RESPONSE\",\"RATE_LIMIT\",\"SERVER\",\"TIMEOUT\",\"TRANSPORT\"],1,1,0]","retry":1,"maxRetries":2,"delayMs":1,"failure":{"message":"model returned a completed response with no content","code":"EMPTY_RESPONSE"}}}
+{"type":"llm/retry","seq":11,"time":1785730441201,"data":{"retryId":"dbe1e1b0-a914-48a4-ad9f-407b213a37ae","turn":1,"step":1,"provider":"deepseek-official","mode":"normal","policyKey":"[\"normal\",2,[\"EMPTY_RESPONSE\",\"RATE_LIMIT\",\"SERVER\",\"TIMEOUT\",\"TRANSPORT\"],1,1,0,2]","retry":1,"maxRetries":2,"delayMs":1,"failure":{"message":"model returned a completed response with no content","code":"EMPTY_RESPONSE"}}}
 {"type":"llm/retry-started","seq":12,"time":1786238385130,"data":{"retryId":"dbe1e1b0-a914-48a4-ad9f-407b213a37ae","turn":1,"step":1,"retry":1}}
 {"type":"assistant/chunk","seq":13,"time":1785498788113,"data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
 {"type":"assistant/chunk","seq":14,"time":0,"data":{"turn":1,"step":1,"chunk":{"type":"text-delta","index":0,"text":"Recovered."}}}

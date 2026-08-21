@@ -31,6 +31,14 @@ export const SIDEBAR_COLLAPSED = 56
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
 export const SIDEBAR_AUTO_COLLAPSE = 1024
+/** Viewport width below which a re-expanded sidebar renders as an overlay
+ * drawer instead of squeezing the center (mobile portrait); between here and
+ * SIDEBAR_AUTO_COLLAPSE the manual re-expand keeps squeezing the center. */
+export const SIDEBAR_DRAWER_BREAKPOINT = 640
+/** Drawer width before the viewport margin clamps it. */
+export const SIDEBAR_DRAWER_MAX = 320
+/** Viewport margin the drawer always leaves visible beside itself (the conversation's peek). */
+export const SIDEBAR_DRAWER_MARGIN = 48
 /** Details drag clamp floor. */
 export const DETAILS_MIN = 300
 /** Details drag clamp ceiling. */
@@ -47,6 +55,16 @@ export const DETAILS_DEFAULT = 360
  */
 export function clampWidth(px: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(px)))
+}
+
+/**
+ * Resolve the drawer width for a given viewport: the max width clamped by the
+ * margin the drawer must leave visible beside it.
+ * @param viewport - available frame width in px.
+ * @returns the drawer width in px.
+ */
+export function drawerWidth(viewport: number): number {
+  return Math.min(SIDEBAR_DRAWER_MAX, Math.max(0, viewport - SIDEBAR_DRAWER_MARGIN))
 }
 
 /**

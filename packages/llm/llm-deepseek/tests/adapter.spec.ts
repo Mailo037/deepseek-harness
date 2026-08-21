@@ -757,6 +757,7 @@ describe('plugin registration and config', () => {
       initialDelayMs: 25,
       maxDelayMs: 100,
       jitterRatio: 0.2,
+      rateLimitMultiplier: 2,
     })
   })
 
@@ -946,6 +947,30 @@ describe('plugin registration and config', () => {
       models: [],
     })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([])
+  })
+
+  it('resolves model-configured reasoning effort over provider defaults', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      reasoningEffort: 'high',
+      models: [
+        { id: 'inherits-high' },
+        { id: 'custom-low', reasoningEffort: 'low' },
+        { id: 'custom-off', reasoningEffort: 'off' },
+        { id: 'custom-max', reasoningEffort: 'max' },
+      ],
+    })
+
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'inherits-high'))
+      .resolves.toMatchObject({ reasoning: { defaultEffort: 'high' } })
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'custom-low'))
+      .resolves.toMatchObject({ reasoning: { defaultEffort: 'low' } })
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'custom-off'))
+      .resolves.toMatchObject({ reasoning: { defaultEffort: 'off' } })
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'custom-max'))
+      .resolves.toMatchObject({ reasoning: { defaultEffort: 'max' } })
   })
 
   const invalidModels: Array<[LlmDeepSeek.DeepSeekCatalogModel[], RegExp]> = [

@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import {
   IconCheckOutline16, IconCloseOutline16, IconCordisPluginOutline14, IconPlayOutline16,
-  IconStopFill16, IconTrashOutline16, Tooltip, useDismissOnOutsidePointer,
+  IconStopFill16, IconTrashOutline16, Select, Tooltip, useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -249,23 +249,25 @@ export function CordisPanel({
           <span className={css.rowStatus}>{t(STATUS_LABELS[status])}</span>
         </div>
         {listed !== undefined && listed.packages.length > 1 && selectedPackageId !== undefined && (
-          <label className={css.versionPicker}>
-            <span>{t('panel.version')}</span>
-            <select
+          <div className={css.versionPicker}>
+            <span className={css.versionLabel}>{t('panel.version')}</span>
+            <Select
+              size="sm"
               value={selectedPackageId}
               disabled={busy}
-              onChange={(event) => {
+              aria-label={t('panel.version')}
+              options={listed.packages.map(pkg => ({
+                value: pkg.packageId,
+                label: `${pkg.name} · ${pkg.packageId}`,
+              }))}
+              onChange={(pkgId) => {
                 setSelected(currentSelected => ({
                   ...currentSelected,
-                  [pluginId]: event.target.value as CordisDynamicPackageId,
+                  [pluginId]: pkgId as CordisDynamicPackageId,
                 }))
               }}
-            >
-              {listed.packages.map(pkg => (
-                <option key={pkg.packageId} value={pkg.packageId}>{`${pkg.name} · ${pkg.packageId}`}</option>
-              ))}
-            </select>
-          </label>
+            />
+          </div>
         )}
         <div className={css.rowDetail}>
           <span className={css.rowPurpose}>{purpose}</span>

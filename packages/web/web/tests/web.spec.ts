@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { Fiber } from '@deepseek-ai/cordis'
+import { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import WebRuntime, {
+  WEB_SEARCH_SETTINGS_NAMESPACE,
   WebError,
   type WebFetchProvider,
   type WebFetchResult,
@@ -211,5 +215,87 @@ describe('WebError', () => {
     const error = new WebError('boom', 'WEB_INVALID_URL')
     expect(error.code).toBe('WEB_INVALID_URL')
     expect(error.name).toBe('WebError')
+  })
+})
+
+/** The smallest real provider: one in-memory document, always writable. */
+class MemorySettings extends SettingsProvider {
+  doc: Record<string, unknown> = {}
+
+  get writable(): boolean {
+    return true
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.doc))
+  }
+
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc = { ...this.doc, [ns]: structuredClone(section) }
+    return Promise.resolve()
+  }
+}
+
+describe('WebRuntime provider selection', () => {
+  it('re-pins the search provider live via setSearchProvider', async () => {
+    const { web } = await mountWeb({ searchProvider: 'exa' })
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+
+    web.setSearchProvider('perplexity')
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+  })
+
+  it('falls back to auto-selection when the pin is cleared at runtime', async () => {
+    const { web } = await mountWeb({ searchProvider: 'exa' })
+    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    web.setSearchProvider(undefined)
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+  })
+
+  it('serves a stored web-search section as the live selection without re-registering', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: 'exa' })
+    const settingsFiber: Fiber = ctx.plugin(MemorySettings)
+    await settingsFiber.await()
+    ctx.web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    ctx.web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+
+    await ctx.settings.update(WEB_SEARCH_SETTINGS_NAMESPACE, { searchProvider: 'perplexity' })
+
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+    await ctx.fiber.dispose()
+  })
+
+  it('falls back to the composition selection when the settings provider detaches', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: 'exa' })
+    const settingsFiber: Fiber = ctx.plugin(MemorySettings)
+    await settingsFiber.await()
+    ctx.web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    ctx.web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await ctx.settings.update(WEB_SEARCH_SETTINGS_NAMESPACE, { searchProvider: 'perplexity' })
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+
+    await settingsFiber.dispose()
+
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+    await ctx.fiber.dispose()
+  })
+
+  it('releases the web-search namespace when the runtime unloads', async () => {
+    const ctx = new Context()
+    const runtimeFiber: Fiber = ctx.plugin(WebRuntime, {})
+    const settingsFiber: Fiber = ctx.plugin(MemorySettings)
+    await settingsFiber.await()
+    await runtimeFiber.await()
+    expect(ctx.settings.describe().map(row => String(row.ns))).toContain('web-search')
+
+    await runtimeFiber.dispose()
+
+    expect(ctx.settings.describe().map(row => String(row.ns))).not.toContain('web-search')
+    await ctx.fiber.dispose()
   })
 })

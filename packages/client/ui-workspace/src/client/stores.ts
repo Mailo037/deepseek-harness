@@ -19,6 +19,7 @@ export type SessionOrderBy = 'manual' | 'updated'
 type WorkspaceViewState = {
   groupBy: SessionGroupBy
   orderBy: SessionOrderBy
+  isolateActiveWorkspace?: boolean | undefined
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
   /** Shared editable order per Workspace group plus the browser-local flat-list account. */
@@ -34,6 +35,8 @@ type WorkspaceViewState = {
 type WorkspaceViewActions = {
   setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
   setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy) => void
+  setIsolateActiveWorkspace: (draft: WorkspaceViewState, isolate: boolean) => void
+  toggleIsolateActiveWorkspace: (draft: WorkspaceViewState) => void
   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
   syncSessionOrderAccount: (
@@ -54,14 +57,17 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     init: (): WorkspaceViewState => ({
       groupBy: 'workspace',
       orderBy: 'updated',
+      isolateActiveWorkspace: false,
       groupExpansion: {},
       sessionOrderByAccount: {},
       sessionUpdatedAtByAccount: {},
     }),
-    persist: 'dsh.workspace.view.v5',
+    persist: 'dsh.workspace.view.v6',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
+      setIsolateActiveWorkspace: (d, isolate: boolean) => { d.isolateActiveWorkspace = isolate },
+      toggleIsolateActiveWorkspace: (d) => { d.isolateActiveWorkspace = !d.isolateActiveWorkspace },
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)

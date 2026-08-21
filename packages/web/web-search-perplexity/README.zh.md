@@ -10,7 +10,8 @@
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `apiKey` | `$PERPLEXITY_API_KEY` | Perplexity API 密钥。为空或缺失时提供方不可用。 |
+| `apiKey` | `$PERPLEXITY_API_KEY` | 字面 Perplexity API 密钥（或通过凭据域解析）。为空或缺失时搜索以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
+| `apiKeyEnv` | `PERPLEXITY_API_KEY` | 每次搜索时解析的凭据引用。 |
 | `baseURL` | `https://api.perplexity.ai` | 端点基址；追加 `/chat/completions`。无法解析时提供方不可用。 |
 | `model` | `sonar` | 搜索模型名称。 |
 | `maxTokens` | `1024` | 生成答案 token 上限（`max_tokens`）。必须是正整数。 |
@@ -23,9 +24,11 @@
     apiKey: !!js process.env.PERPLEXITY_API_KEY
 ```
 
+提供方拥有 `web-search-perplexity` 设置分区（端点和密钥引用），因此 Web 设置卡片和凭据域可以像管理 DeepSeek 提供方一样管理它。注册可用性基于配置形状；密钥在每次搜索时解析，因此已存储的密钥变更无需重新注册即可在下次搜索生效。
+
 ## 映射
 
-`content` ← `choices[0].message.content`（生成答案）。`sources[]` 优先使用结构化 `search_results[]`（`url`、`title`、`snippet`、`publishedAt` ← `date`），否则回退到只含 URL 的 `citations[]` 数组；仅当不存在 `search_results` 时才采取这条回退路径。这些源只携带 `url`，因此 seam 上的 `title`／`snippet`／`publishedAt` 是可选字段。提供方失败以 `WebError` `WEB_PROVIDER_ERROR` 呈现；中止请求以 `WEB_ABORTED` 呈现。HTTP 重定向会在访问 `Location` 指向的目标之前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。Perplexity 没有结果数量控制，因此 seam 会强制执行 `maxResults`（截断 `sources[]` 并设置 `truncated`）。
+`content` ← `choices[0].message.content`（生成答案）。`sources[]` 优先使用结构化 `search_results[]`（`url`、`title`、`snippet`、`publishedAt` ← `date`），否则回退到只含 URL 的 `citations[]` 数组；仅当不存在 `search_results` 时才采取这条回退路径。这些源只携带 `url`，因此 seam 上的 `title`／`snippet`／`publishedAt` 是可选字段。提供方失败以 `WebError` `WEB_PROVIDER_ERROR` 呈现；缺少密钥以 `WEB_PROVIDER_CREDENTIAL_MISSING` 呈现；中止请求以 `WEB_ABORTED` 呈现。HTTP 重定向会在访问 `Location` 指向的目标之前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。Perplexity 没有结果数量控制，因此 seam 会强制执行 `maxResults`（截断 `sources[]` 并设置 `truncated`）。
 
 ## 模型体验
 

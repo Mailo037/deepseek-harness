@@ -17,7 +17,7 @@ import {
   goalToolExecution,
   requireDirectHuman,
 } from './authority.ts'
-import { renderWrapupContext } from './wrapup.ts'
+import { renderWrapupContext, goalWrapupStats } from './wrapup.ts'
 
 export const name = 'tool-goal'
 export const inject = ['agents', 'goals', 'tools', 'systemPrompt']
@@ -311,10 +311,11 @@ export function apply(ctx: Context, config: Config): void {
           message: args.blocked_reason as string,
         })
       if (authority.kind === 'goal-round') {
+        const stats = goalWrapupStats(execution.agent, goal)
         exec.deferContext(createUserMessage({
           content: args.action === 'complete'
-            ? renderWrapupContext(goal.objective)
-            : renderWrapupContext(goal.objective, args.blocked_reason as string),
+            ? renderWrapupContext(goal.objective, undefined, stats)
+            : renderWrapupContext(goal.objective, args.blocked_reason as string, stats),
           source: {
             kind: 'plugin',
             plugin: 'tool-goal',

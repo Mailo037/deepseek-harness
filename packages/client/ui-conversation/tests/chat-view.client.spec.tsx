@@ -134,6 +134,13 @@ const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummar
   ...over,
 })
 
+/** Settled tool row pinned to an explicit turn so the fixture resolves a
+ *  Turn Location for it (windowless rows otherwise stay session-scoped). */
+const settledTool = (seq: number, callId: string, turn = 1, name = 'bash'): ConversationNode => ({
+  ...toolResult(seq, callId, name),
+  turn,
+}) as unknown as ConversationNode
+
 /** Empty sessions-list hook for the global standard-kit seat. */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
@@ -445,6 +452,159 @@ describe('ChatView', () => {
       ])
   })
 
+  it('tucks settled runs, opens while a call inside runs, and keeps a manual hide sticky', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        assistant(2, 'working', 1),
+        settledTool(3, 'a', 1),
+        settledTool(4, 'b', 1),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // A settled run mounts tucked: one header line, no window.
+    const group = view.container.querySelector('[data-tool-group]') as HTMLElement
+    const toggle = group.querySelector('button') as HTMLButtonElement
+    expect(toggle.textContent).toContain('Bash')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    // The reader's click opens the window.
+    fireEvent.click(toggle)
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+    // While a call inside runs, the window stays open under the scrollport.
+    act(() => {
+      h.set({
+        nodes: [user(1, 'go'), assistant(2, 'working', 1), settledTool(3, 'a', 1), settledTool(4, 'b', 1)],
+        runningCalls: [runningCall('r1')],
+        running: true,
+      })
+    })
+    expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
+    // When the run settles, the window tucks itself away again.
+    act(() => {
+      h.set({
+        nodes: [
+          user(1, 'go'),
+          assistant(2, 'working', 1),
+          settledTool(3, 'a', 1),
+          settledTool(4, 'b', 1),
+          { ...toolResult(5, 'r1'), turn: 1 } as unknown as ConversationNode,
+        ],
+        runningCalls: [],
+        running: false,
+      })
+    })
+    expect(view.queryByTestId('tool-seat-r1')).toBeNull()
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // A MANUAL hide is sticky: reopen, hide again, then keep activity coming —
+    // arriving work never forces the window back open.
+    fireEvent.click(toggle)
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(group.getAttribute('data-hidden')).toBe('true')
+    act(() => {
+      h.set({
+        nodes: [
+          user(1, 'go'),
+          assistant(2, 'working', 1),
+          settledTool(3, 'a', 1),
+          settledTool(4, 'b', 1),
+          { ...toolResult(5, 'r1'), turn: 1 } as unknown as ConversationNode,
+        ],
+        runningCalls: [runningCall('r2')],
+        running: true,
+      })
+    })
+    expect(group.getAttribute('data-hidden')).toBe('true')
+    expect(view.queryByTestId('tool-seat-r2')).toBeNull()
+  })
+
+  it('includes Think-only assistant steps inside the tool window', () => {
+    // A Think-only step is one whose data has only reasoning blocks (no text).
+    const thinkBlock = (seq: number, turn = 1): ReturnType<typeof assistant> => ({
+      ...assistant(seq, '', turn),
+      blocks: [{ kind: 'reasoning', text: 'hmm...' }],
+    })
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        thinkBlock(2, 1),
+        settledTool(3, 'a', 1),
+        thinkBlock(4, 1),
+        settledTool(5, 'b', 1),
+        assistant(6, 'done', 1),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const groups = view.container.querySelectorAll('[data-tool-group]')
+    expect(groups).toHaveLength(1)
+    // The settled run mounts tucked; open it to inspect the window contents.
+    fireEvent.click(groups[0]?.querySelector('button') as HTMLElement)
+    const scroll = groups[0]?.querySelector('[data-tool-scroll]')
+    // Text-bearing assistant steps stay OUT of the group.
+    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:6"]')).toBeNull()
+  })
+
+  it('names the run "edited files" when it edited several files', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        assistant(2, 'editing', 1),
+        settledTool(3, 'w1', 1, 'write'),
+        settledTool(4, 'e1', 1, 'edit'),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const toggle = view.container.querySelector('[data-tool-group] button') as HTMLButtonElement
+    expect(toggle.textContent).toContain('已编辑文件')
+  })
+
+  it('folds a closed turn\'s work behind one duration line, keeping the closing message inline', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        assistant(2, 'working', 1),
+        settledTool(3, 'a', 1),
+        settledTool(4, 'b', 1),
+        assistant(5, 'done', 1),
+      ],
+      turnEnds: new Map([[1, 6]]),
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 4_000 }]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // The work is folded: no tool seats, no mid-turn narration; only the
+    // closing message and the duration line remain.
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByText('working')).toBeNull()
+    expect(view.getByText('done')).toBeTruthy()
+    const fold = view.getByRole('button', { name: '用时 3秒' })
+    expect(fold.getAttribute('aria-expanded')).toBe('false')
+    // Unfolding restores the work as it streamed — the run windows come back
+    // tucked (their own headers only) until each is opened individually.
+    fireEvent.click(fold)
+    expect(view.getByText('working')).toBeTruthy()
+    expect(view.container.querySelectorAll('[data-tool-group]')).toHaveLength(1)
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(view.container.querySelector('[data-tool-group] button') as HTMLElement)
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    fireEvent.click(fold)
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.getByText('done')).toBeTruthy()
+  })
+
+  it('degrades a stale order key to a null seat', () => {
+    const h = makeHarness({ nodes: [user(1, 'hi')] })
+    act(() => {
+      const chat = chatSnapshotFixture({ nodes: [user(1, 'hi')] })
+      h.set({ chat: { ...chat, order: [...chat.order, 'ghost-key'] } })
+    })
+    render(<h.ChatView {...h.props} />)
+    expect(screen.getByText('hi')).toBeTruthy()
+  })
+
   it('renders Host-pending steering at the flow tail and hands off to the durable node', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
@@ -665,7 +825,8 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     // The exact turn/end includes trailing tool activity after the final text.
-    expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
+    // The duration shows twice by design: the work fold's line and the footer.
+    expect(view.getAllByText(/用时 19秒/)).toHaveLength(2)
   })
 
   it('the settled footer appends first-step ttft and turn decode throughput', () => {
@@ -685,8 +846,9 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 20]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // First-step ttft (1.2s) plus 100 tokens over 5s of decode.
-    expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
+    // First-step ttft (1.2s) plus 100 tokens over 5s of decode. The duration
+    // shows twice by design: the work fold's line and the footer.
+    expect(view.getAllByText(/用时 19秒/)).toHaveLength(2)
     expect(view.getAllByText(/首 token 1\.2秒/)).toHaveLength(1)
     expect(view.getAllByText(/20 tok\/s/)).toHaveLength(1)
   })
@@ -1331,6 +1493,45 @@ describe('ChatView', () => {
     expect(h.loadOlder).toHaveBeenCalledTimes(1)
     act(() => { h.set({ loadingOlder: true }) })
     expect(view.getByText('加载中…')).toBeTruthy()
+  })
+
+  it('auto-loads the next page when the reader scrolls to the loaded head', () => {
+    const host = document.createElement('div')
+    host.setAttribute('data-conversation-scroll', '')
+    const metrics = installScrollMetrics(host, 2_000, 500)
+    document.body.appendChild(host)
+    try {
+      const h = makeHarness({ nodes: [user(5, 'later')], hasMore: true })
+      render(<h.ChatView {...h.props} />, { container: host })
+      // reader reaches the top zone of a scrollable window -> next page.
+      readerScroll(host, 0)
+      expect(h.loadOlder).toHaveBeenCalledTimes(1)
+      // A positioned mid-window read (above the anchor-test offsets) never pages.
+      h.loadOlder.mockClear()
+      metrics.setLayout(2_000, 400)
+      readerScroll(host, 150)
+      expect(h.loadOlder).not.toHaveBeenCalled()
+    } finally {
+      host.remove()
+    }
+  })
+
+  it('auto-fills a window shorter than the scrollport until it is scrollable', () => {
+    const host = document.createElement('div')
+    host.setAttribute('data-conversation-scroll', '')
+    installScrollMetrics(host, 400, 500)
+    document.body.appendChild(host)
+    try {
+      const h = makeHarness({ nodes: [user(5, 'later')], hasMore: true })
+      render(<h.ChatView {...h.props} />, { container: host })
+      expect(h.loadOlder).toHaveBeenCalledTimes(1)
+      // Still shorter than the viewport after one page: another page loads.
+      act(() => { h.set({ loadingOlder: true }) })
+      act(() => { h.set({ loadingOlder: false }) })
+      expect(h.loadOlder).toHaveBeenCalledTimes(2)
+    } finally {
+      host.remove()
+    }
   })
 
   it('shows open error and loading states', () => {

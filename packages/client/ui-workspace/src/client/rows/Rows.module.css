@@ -347,6 +347,24 @@
   color: var(--dsw-alias-label-caption);
 }
 
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .projectRow .chevron {
+    display: inline-flex;
+  }
+
+  .projectRow .folder {
+    display: none;
+  }
+
+  .rowActions {
+    display: inline-flex;
+  }
+
+  .sessionRow .time {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sessionRow,
   .arrow {

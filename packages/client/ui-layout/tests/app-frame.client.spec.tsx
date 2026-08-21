@@ -15,7 +15,9 @@ import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
-import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
+import {
+  drawerWidth, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_BREAKPOINT, SIDEBAR_DRAWER_MAX,
+} from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
@@ -325,6 +327,70 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     frameWidth = 1920
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([400, 0])
+  })
+})
+
+describe('AppFrame — mobile drawer overlay', () => {
+  it('expanded below the drawer breakpoint overlays without squeezing the center', () => {
+    frameWidth = 390
+    const { frame, instance, slotCalls } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    // The grid keeps the rail track: the center stays full width under the drawer.
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
+    expect(frame.querySelector('[class*="drawerBackdrop"]')).toBeTruthy()
+    const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
+    expect(lastSidebarCall.props).toEqual({ collapsed: false, width: SIDEBAR_DRAWER_MAX })
+  })
+
+  it('drawer width clamps to the viewport margin on tiny screens', () => {
+    frameWidth = 300
+    const { instance, slotCalls } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
+    expect(lastSidebarCall.props).toEqual({ collapsed: false, width: drawerWidth(300) })
+    expect(drawerWidth(300)).toBeLessThan(SIDEBAR_DRAWER_MAX)
+  })
+
+  it('backdrop click closes the drawer back to the rail', () => {
+    frameWidth = 390
+    const { frame, instance, slotCalls } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    const backdrop = frame.querySelector('[class*="drawerBackdrop"]')!
+    act(() => { backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true) // still fading
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(false)
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
+    expect(lastSidebarCall.props).toEqual({ collapsed: true, width: SIDEBAR_COLLAPSED })
+  })
+
+  it('keeps overlay mode through the 150ms collapse fade, then returns to the rail', () => {
+    frameWidth = 390
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    act(() => { instance.actions.toggleSidebar() })
+    // Content is still fading at the drawer width: the column must not clip it.
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    act(() => { vi.advanceTimersByTime(149) })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(false)
+  })
+
+  it('between the drawer breakpoint and the auto-collapse breakpoint the re-expand still squeezes', () => {
+    frameWidth = SIDEBAR_DRAWER_BREAKPOINT + 60
+    const { frame, instance, slotCalls } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)).toEqual([SIDEBAR_DEFAULT, 0])
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(false)
+    expect(frame.querySelector('[class*="drawerBackdrop"]')).toBeNull()
+    const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
+    expect(lastSidebarCall.props).toEqual({ collapsed: false, width: SIDEBAR_DEFAULT })
   })
 })
 

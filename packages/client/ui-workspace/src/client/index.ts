@@ -101,6 +101,12 @@ export function apply(ctx: ClientContext): void {
     insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
       await ctx.workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },
+    moveSession: async (sessionId, targetWorkspaceId) => {
+      await ctx.workspaces.moveSession(sessionId, targetWorkspaceId)
+    },
+    updateWorkspaceSettings: async (workspaceId, settings) => {
+      await ctx.workspaces.updateSettings(workspaceId, settings)
+    },
     createWorkspace: input => ctx.workspaces.create(input),
     hooks: { directoryFlow: browserFlowSource, hostDescription },
   })

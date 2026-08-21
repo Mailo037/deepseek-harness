@@ -11,7 +11,7 @@ import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
   ReferenceInsert, SubmitOutcome, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { QueueRow } from '../contract/queue.ts'
+import type { QueueItemId, QueueRow } from '../contract/queue.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 
 /** Browser-runtime identity of one unsent image draft. */
@@ -110,6 +110,17 @@ export interface ComposerKeyboard {
    * button is the same operation applied to the whole queue).
    */
   steerQueue(): void
+  /**
+   * Begin composer-side editing of one queued message: the current draft and
+   * attachments are stashed, the row's text becomes the draft, and
+   * InputState.queueEdit publishes until the edit is submitted (same item,
+   * same position) or cancelled (stash restored).
+   * @param itemId - queued occurrence identity.
+   * @returns whether the edit began (plain phase, row present and text-only).
+   */
+  beginQueueEdit(itemId: QueueItemId): boolean
+  /** Leave composer-side editing and restore the stashed draft and attachments. */
+  cancelQueueEdit(): void
   undo(): void
   redo(): void
   /** Paste over the selection (sync components ride the same transaction). */
@@ -225,6 +236,12 @@ export interface InputState {
   readonly paste?: PasteAttemptState
   /** Read-only transient inbox projection (`session/queue`, including pending steering). */
   readonly queue: readonly QueuedMessage[]
+  /**
+   * Present exactly while the composer edits one queued message in place
+   * (the queue dock's edit flow): submit commits that occurrence at its
+   * position, Escape restores the stashed draft.
+   */
+  readonly queueEdit?: { readonly itemId: QueueItemId }
 }
 
 /**

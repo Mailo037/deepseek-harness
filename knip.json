@@ -757,6 +757,23 @@
         "@deepseek-ai/.+"
       ]
     },
+    "apps/electron": {
+      "entry": [
+        "src/index.ts",
+        "src/smoke.ts",
+        "tests/**/*.spec.ts",
+        "scripts/**/*.mjs"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts",
+        "scripts/**/*.mjs"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/.+",
+        "electron"
+      ]
+    },
     "packages/client/modules": {
       "entry": [
         "tests/**/*.spec.ts"

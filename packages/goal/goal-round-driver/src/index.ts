@@ -6,6 +6,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { GoalMessageSource, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -17,6 +18,40 @@ export { renderGoalRoundPrompt } from './prompt.ts'
 
 export const name = 'goal-round-driver'
 export const inject = ['agents', 'goals', 'sessions']
+
+/** Automatic re-poke and failure-retry policy for uninterrupted goal rounds. */
+export interface Config {
+  /** Interval in milliseconds between automatic re-pokes of an idle agent whose goal is active and armed. */
+  nudgeIntervalMs?: number
+  /** Consecutive failed goal rounds after which the driver blocks the goal with `repeated-error`. */
+  consecutiveErrorLimit?: number
+}
+
+/** Schemastery config for the goal-round continuation policy. */
+export const Config: z<Config> = z.object({
+  nudgeIntervalMs: z.number().step(1).min(1_000).max(2_147_483_647).default(30_000),
+  consecutiveErrorLimit: z.number().step(1).min(1).default(5),
+})
+
+/** Fully materialized driver policy. */
+interface ResolvedConfig {
+  readonly nudgeIntervalMs: number
+  readonly consecutiveErrorLimit: number
+}
+
+/** Validate config even when apply is called directly outside Loader normalization. */
+function resolveConfig(config: Config): ResolvedConfig {
+  const nudgeIntervalMs = config.nudgeIntervalMs ?? 30_000
+  const consecutiveErrorLimit = config.consecutiveErrorLimit ?? 5
+  if (!Number.isSafeInteger(nudgeIntervalMs) || nudgeIntervalMs < 1_000
+    || nudgeIntervalMs > 2_147_483_647) {
+    throw new TypeError('nudgeIntervalMs must be an integer between 1000 and 2147483647')
+  }
+  if (!Number.isSafeInteger(consecutiveErrorLimit) || consecutiveErrorLimit < 1) {
+    throw new TypeError('consecutiveErrorLimit must be a positive safe integer')
+  }
+  return { nudgeIntervalMs, consecutiveErrorLimit }
+}
 
 /** Identity reserved before a goal continuation enters the agent inbox. */
 interface RoundIdentity {
@@ -43,6 +78,8 @@ interface DriverState {
   requested: boolean
   run: Promise<void> | undefined
   stopping: boolean
+  /** Consecutive failed round turns since the last successful round or goal mutation. */
+  consecutiveErrors: number
 }
 
 /** Whether a source identifies an automatic, positive-numbered goal round. */
@@ -73,7 +110,8 @@ function renderThrown(value: unknown): string {
 }
 
 /** Install automatic same-session continuation and its race fences. */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
+  const resolved = resolveConfig(config)
   const states = new Map<Agent, DriverState>()
 
   /** Create state for an exact currently live agent. */
@@ -88,6 +126,7 @@ export function apply(ctx: Context): void {
       requested: false,
       run: undefined,
       stopping: false,
+      consecutiveErrors: 0,
     }
     states.set(agent, state)
     return state
@@ -243,8 +282,34 @@ export function apply(ctx: Context): void {
   // One composite effect keeps the step fence installed until this
   // plugin's own scheduling tasks settle.
   ctx.effect(function* () {
-    ctx.on('agent/error', ({ agent }) => {
+    ctx.on('agent/error', ({ agent, error }) => {
       const state = stateFor(agent)
+      // A failed round turn keeps automatic authority: the next idle
+      // checkpoint or nudge re-queues the round so a transient provider or
+      // persistence failure does not orphan the goal. The goal blocks after
+      // the configured number of consecutive failures so an unrecoverable
+      // loop cannot silently burn its whole round budget.
+      const goal = currentGoal(state)
+      const roundFailed = state.attempt !== undefined
+        && (state.attempt.phase === 'claimed' || state.attempt.phase === 'admitted')
+        && goal !== undefined && goal.phase === 'active' && goal.activation === 'armed'
+      if (roundFailed) {
+        const count = state.consecutiveErrors + 1
+        state.consecutiveErrors = count
+        if (count >= resolved.consecutiveErrorLimit) {
+          state.consecutiveErrors = 0
+          try {
+            ctx.goals.block(agent, goalRef(goal), {
+              code: 'repeated-error',
+              message: `Goal rounds failed ${count} consecutive times; last error: ${renderThrown(error)}`,
+            })
+          } catch (blockError: unknown) {
+            ctx.logger.warn(`goal-round-driver: could not block repeatedly failing goal for agent "${agent.id}": ${renderThrown(blockError)}`)
+            disarm(state)
+          }
+        }
+        return
+      }
       disarm(state)
     })
 
@@ -255,6 +320,7 @@ export function apply(ctx: Context): void {
       state.attempt = undefined
       state.competingQueued = false
       state.needsCheckpoint = false
+      state.consecutiveErrors = 0
     })
     ctx.on('agent/status', ({ agent, status }) => {
       const state = stateFor(agent)
@@ -277,6 +343,7 @@ export function apply(ctx: Context): void {
     })
     ctx.on('goal/changed', ({ agent }) => {
       const state = stateFor(agent)
+      state.consecutiveErrors = 0
       state.needsCheckpoint = true
       requestDrive(state)
     })
@@ -315,6 +382,10 @@ export function apply(ctx: Context): void {
           }
           return
         case 'turn/end':
+          if (event.data.reason.kind === 'completed') {
+            state.consecutiveErrors = 0
+            return
+          }
           if (event.data.reason.kind === 'max-tokens') {
             disarm(state)
             return
@@ -420,9 +491,27 @@ export function apply(ctx: Context): void {
       disarm(state)
     }
 
+    // Nudge an idle, active, armed goal that no driver event has touched since
+    // its last admission or mutation. The driver is otherwise fully
+    // event-driven, so without this a goal whose round failed and was re-armed,
+    // or whose create triggered no further goal change, could sit quiescent
+    // forever instead of progressing. Every tick rechecks quiescence and the
+    // durable goal; a completed, paused, or disarmed goal is a no-op.
+    const nudgeTimer = setInterval(() => {
+      for (const state of states.values()) {
+        if (state.stopping) continue
+        const goal = currentGoal(state)
+        if (goal !== undefined && goal.phase === 'active' && goal.activation === 'armed'
+          && state.agent.status === 'idle' && !state.competingQueued) {
+          requestDrive(state)
+        }
+      }
+    }, resolved.nudgeIntervalMs)
+
     // Yielded after listener registration, so this close runs first and the
     // composite effect removes listeners only after its promise settles.
     yield async () => {
+      clearInterval(nudgeTimer)
       const waits: Promise<void>[] = []
       for (const state of states.values()) {
         state.stopping = true

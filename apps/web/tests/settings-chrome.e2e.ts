@@ -131,6 +131,50 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('renders the panel as a full-screen sheet with stacked nav at a phone viewport', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-narrow'))
+    const original = page.viewportSize() ?? { width: 1680, height: 1000 }
+    await page.setViewportSize({ width: 390, height: 844 })
+    try {
+      // Phone width auto-collapses the sidebar; open it as the drawer so the
+      // settings trigger carries its wide-column label.
+      await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+      expect(await page.locator('[class*="frame"]').getAttribute('data-drawer-mode')).toBe('true')
+      await page.getByRole('button', { name: '设置', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: '设置' })
+      await dialog.waitFor({ timeout: 10_000 })
+      // The panel fills the viewport: the two-column 800px card would leave a
+      // sliver for the content column on a phone.
+      const panelBox = await dialog.boundingBox()
+      expect(panelBox).not.toBeNull()
+      expect(panelBox!.width).toBe(390)
+      expect(panelBox!.height).toBe(844)
+      // The nav rail stacks above the content as a full-width row: the content
+      // column sits below the nav and spans the sheet, not a crushed sliver.
+      const navBox = await dialog.locator('[class*="nav"]').first().boundingBox()
+      const contentBox = await dialog.locator('[class*="content"]').first().boundingBox()
+      expect(navBox).not.toBeNull()
+      expect(contentBox).not.toBeNull()
+      expect(navBox!.width).toBeGreaterThan(350)
+      expect(navBox!.height).toBeLessThan(150)
+      expect(contentBox!.y).toBeGreaterThanOrEqual(navBox!.y + navBox!.height - 1)
+      expect(contentBox!.width).toBeGreaterThan(350)
+      await page.keyboard.press('Escape')
+      await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
+      // Close the drawer again so the restored wide viewport is back to its
+      // normal expanded sidebar.
+      const frameBox = await page.locator('[class*="frame"]').boundingBox()
+      expect(frameBox).not.toBeNull()
+      await page.mouse.click(frameBox!.x + frameBox!.width - 20, frameBox!.y + frameBox!.height / 2)
+      await expect.poll(() => page.locator('[class*="frame"]').getAttribute('data-drawer-mode'), {
+        timeout: 5_000,
+      }).toBeNull()
+    } finally {
+      await page.setViewportSize(original)
+    }
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('stores Permission as the default for future sessions without changing an existing session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-permission'))
     const existing = scaffold.ctx.sessions.create(SessionId('settings-permission-before'))

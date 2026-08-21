@@ -1,8 +1,9 @@
 // Web e2e scenario: full-session stats over paged history. A deterministic
-// 28-turn log (56 surface messages — more than one 50-message history page)
-// seeded cold through the REAL persistence API must render whole-log turn/step
-// counts from the sessionStats projection on first open, and loading the
-// older page must NOT change them. This pins the bug the projection fixed:
+// 28-turn log (56 surface messages) seeded cold through the REAL persistence
+// API. Open shows only the last 2 request/response pairs (4 messages) plus
+// auto-filled pages up to the viewport; whole-log turn/step counts already
+// render from the sessionStats projection on first open, and loading older
+// pages must NOT change them. This pins the bug the projection fixed:
 // the pre-projection window fold recounted per loaded page, so 加载更早 grew
 // the counter. Zero model calls; the seed is generated, not recorded, because
 // no line of it is model output.
@@ -102,17 +103,20 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await sessionRow.click()
     // Settled barrier: the newest recorded reply renders from the tail page.
     await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
-    // The tail page is partial (56 messages > one 50-message page): the first
-    // turns are NOT loaded, yet the strip already reports the whole log —
-    // the sessionStats projection, not the window fold.
+    // The tail page is a short recent window (last 2 request/response pairs):
+    // the first turns are NOT loaded, yet the strip already reports the whole
+    // log — the sessionStats projection, not the window fold. Auto-fill keeps
+    // loading pages until the transcript is scrollable, which still excludes
+    // turn 1 (28 turns overflow the filled viewport).
     expect(await page.getByText('m1', { exact: true }).count()).toBe(0)
     await expect.poll(() => page.getByText(FULL_COUNTS, { exact: false }).count(), { timeout: 10_000 }).toBe(1)
     const strip = page.getByText(FULL_COUNTS, { exact: false }).locator('..')
     const stripBeforePaging = await strip.textContent()
 
-    // 加载更早: prepending the older page must not move ANY strip figure —
-    // counts, wall times, or token groups.
-    await page.getByRole('button', { name: 'Load earlier' }).click()
+    // 加载更早: scrolling to the loaded head (or the button) prepends the
+    // older page — moving NOT a single strip figure: counts, wall times, or
+    // token groups.
+    await page.locator('[data-conversation-scroll]').evaluate((host) => { host.scrollTop = 0 })
     await expect.poll(() => page.getByText('m1', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     expect(await strip.textContent()).toBe(stripBeforePaging)
     // With the whole log loaded, the window mounts one turn-tail footer per

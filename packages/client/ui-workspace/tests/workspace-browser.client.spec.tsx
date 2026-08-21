@@ -58,6 +58,17 @@ function dragData(): Pick<DataTransfer, 'effectAllowed' | 'dropEffect' | 'setDat
   return { effectAllowed: 'uninitialized', dropEffect: 'none', setData: vi.fn() }
 }
 
+// jsdom lacks Element.prototype.elementFromPoint — install a controllable stub.
+function stubElementFromPoint(): (el: HTMLElement | null) => void {
+  const holder: { current: HTMLElement | null } = { current: null }
+  Object.defineProperty(document, 'elementFromPoint', {
+    configurable: true,
+    writable: true,
+    value: () => holder.current,
+  })
+  return (el) => { holder.current = el }
+}
+
 function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
@@ -79,6 +90,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
+    moveSession: vi.fn(async () => {}),
+    updateWorkspaceSettings: vi.fn(async () => {}),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostDescription: selector => selector(undefined),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
@@ -438,28 +451,30 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('b')).toBeNull()
   })
 
-  it('shows only the current blank session as the localized New Session, excluded from search', () => {
+  it('hides blank sessions until a message is sent, excluded from search', () => {
     const currentBlank = summary('alpha-blank', 9, { blank: true })
     const staleBlank = summary('beta-blank', 8, { blank: true })
+    const realSession = summary('real-session', 7, { displayTitle: 'Real Session' })
     const sessions = sessionState(
-      [currentBlank, staleBlank],
+      [currentBlank, staleBlank, realSession],
       { current: currentBlank.id },
     )
     const b = mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([
-        workspace('alpha', ['alpha-blank']), workspace('beta', ['beta-blank']),
+        workspace('alpha', ['alpha-blank', 'real-session']), workspace('beta', ['beta-blank']),
       ])),
     })
-    expect(screen.getByText('新会话')).toBeTruthy()
+    expect(screen.queryByText('新会话')).toBeNull()
+    expect(screen.getByText('Real Session')).toBeTruthy()
     expect(screen.queryByText('alpha-blank')).toBeNull()
     expect(screen.queryByText('beta-blank')).toBeNull()
 
-    rerender(b, { useSessions: hook({ ...sessions, current: staleBlank.id }) })
-    expect(screen.getAllByText('新会话')).toHaveLength(1)
     b.store.actions.setGroupBy('flat')
     rerender(b, {})
-    expect(screen.getAllByText('新会话')).toHaveLength(1)
+    expect(screen.queryByText('新会话')).toBeNull()
+    expect(screen.getByText('Real Session')).toBeTruthy()
+
     // Search excludes blank rows entirely — neither the canonical stored
     // title nor the localized display label participates in matching.
     fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'new session' } })
@@ -1022,6 +1037,112 @@ describe('WorkspaceBrowser', () => {
       await waitFor(() => { expect(warn).toHaveBeenCalledWith('session reorder rejected:', expect.any(Error)) })
     } finally {
       warn.mockRestore()
+    }
+  })
+
+  it('touch long-press reorders a flat list and suppresses the tap that follows', () => {
+    vi.useFakeTimers()
+    try {
+      const b = mount({ useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])) })
+      fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+      const rows = screen.getAllByRole('treeitem')
+      const [one, , three] = rows as [HTMLElement, HTMLElement, HTMLElement]
+      // elementFromPoint resolves the hovered row during the armed drag.
+      const at = stubElementFromPoint()
+      at(three)
+      three.getBoundingClientRect = () => ({
+        top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
+      })
+
+      // Hold "one" for the long-press dwell, then move onto "three" and release.
+      fireEvent.pointerDown(one, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 1 })
+      act(() => { vi.advanceTimersByTime(400) })
+      fireEvent.pointerMove(document, { pointerType: 'touch', clientX: 10, clientY: 180, pointerId: 1 })
+      fireEvent.pointerUp(document, { pointerType: 'touch', clientX: 10, clientY: 180, pointerId: 1 })
+      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['two', 'three', 'one'])
+      // The tap after a committed drag must not open the session.
+      at(null)
+      fireEvent.click(one)
+      expect(b.props.open).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('touch long-press reorders grouped sessions and workspaces', () => {
+    vi.useFakeTimers()
+    try {
+      const insertSessionBefore = vi.fn(async () => {})
+      const insertWorkspaceBefore = vi.fn(async () => {})
+      mount({
+        useSessions: hook(sessionState([summary('one', 4), summary('two', 3), summary('three', 2), summary('four', 1)])),
+        useWorkspaces: hook(workspaceState([
+          workspace('z', ['four']),
+          workspace('a', ['one', 'two', 'three']),
+        ])),
+        insertSessionBefore,
+        insertWorkspaceBefore,
+      })
+      fireEvent.click(screen.getByText('a'))
+      const rows = screen.getAllByRole('treeitem')
+      const z = rows[0] as HTMLElement // workspace "z" header
+      const alpha = rows[1] as HTMLElement // workspace "a" header
+      const one = rows[2] as HTMLElement
+      const three = rows[4] as HTMLElement
+      const at = stubElementFromPoint()
+      const withRect = (el: HTMLElement, top: number): void => {
+        el.getBoundingClientRect = () => ({
+          top, bottom: top + 34, left: 0, right: 200, width: 200, height: 34, x: 0, y: top, toJSON: () => ({}),
+        })
+      }
+
+      // Move session "one" above "three" inside its group.
+      withRect(three, 200)
+      at(three)
+      fireEvent.pointerDown(one, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 1 })
+      act(() => { vi.advanceTimersByTime(400) })
+      fireEvent.pointerMove(document, { pointerType: 'touch', clientX: 10, clientY: 205, pointerId: 1 })
+      fireEvent.pointerUp(document, { pointerType: 'touch', clientX: 10, clientY: 205, pointerId: 1 })
+      expect(insertSessionBefore).toHaveBeenCalledWith(wid('a'), sid('one'), sid('three'))
+
+      // Drag the "a" workspace above the "z" workspace.
+      withRect(z, 80)
+      at(z)
+      fireEvent.pointerDown(alpha, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 2 })
+      act(() => { vi.advanceTimersByTime(400) })
+      fireEvent.pointerMove(document, { pointerType: 'touch', clientX: 10, clientY: 90, pointerId: 2 })
+      fireEvent.pointerUp(document, { pointerType: 'touch', clientX: 10, clientY: 90, pointerId: 2 })
+      expect(insertWorkspaceBefore).toHaveBeenCalledWith(wid('a'), wid('z'))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a short tap opens the session (no long-press) and an early move cancels the pending drag', () => {
+    vi.useFakeTimers()
+    try {
+      const b = mount({ useSessions: hook(sessionState([summary('one', 1)])) })
+      fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+      const one = screen.getByRole('treeitem') as HTMLElement
+
+      // A quick tap (releases well before the dwell) does not arm a drag.
+      fireEvent.pointerDown(one, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 1 })
+      fireEvent.pointerUp(document, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 1 })
+      fireEvent.click(one)
+      expect(b.props.open).toHaveBeenCalledTimes(1)
+
+      // Moving before the long-press dwell cancels the pending drag (a scroll),
+      // so a later tap is a normal open — the drag was never armed.
+      fireEvent.pointerDown(one, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 2 })
+      act(() => { vi.advanceTimersByTime(200) })
+      fireEvent.pointerMove(document, { pointerType: 'touch', clientX: 20, clientY: 40, pointerId: 2 })
+      fireEvent.pointerUp(document, { pointerType: 'touch', clientX: 20, clientY: 40, pointerId: 2 })
+      fireEvent.click(one)
+      expect(b.props.open).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
     }
   })
 

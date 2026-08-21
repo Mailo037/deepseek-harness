@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
@@ -1026,6 +1026,7 @@ function workspaceView(workspace: Workspace): WorkspaceView {
     sessionIds: [...workspace.sessionIds],
     createdAt: workspace.createdAt,
     updatedAt: workspace.updatedAt,
+    ...workspace.settings === undefined ? {} : { settings: { ...workspace.settings } },
   }
 }
 
@@ -1039,6 +1040,7 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
     sessionIds: [...record.sessionIds],
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    ...record.settings === undefined ? {} : { settings: { ...record.settings } },
   }
 }
 
@@ -2093,7 +2095,22 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             })
           }
         }
-        const cwd = workspace?.path ?? request.payload.cwd ?? defaults.cwd
+        let cwd = workspace?.path ?? request.payload.cwd
+        if (cwd === undefined) {
+          const persistence = ctx.get('sessionPersistence')
+          const loc = persistence?.locate({
+            id: sessionId,
+            version: 0,
+            createdAt: 0,
+            delegationDepth: 0,
+          })
+          if (loc !== undefined) {
+            const sessionsRoot = dirname(dirname(dirname(loc.path)))
+            cwd = resolve(join(sessionsRoot, 'projects', String(sessionId)))
+          } else {
+            cwd = resolve(join(defaults.cwd, '.dsh-sessions', String(sessionId)))
+          }
+        }
         const requestedPreset = request.payload.agentPreset
         try {
           await ensureSession(sessionId, cwd, request.payload.sessionId !== undefined, requestedPreset)
@@ -2522,6 +2539,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { itemId },
           }))
         }
+        if (action.kind === 'move') {
+          // Reordering addresses the queued-turn list only; steering and
+          // context rows keep their step-boundary semantics.
+          if (target !== 'next-turn' || !agent.inbox.move(itemId, action.toIndex)) {
+            return Promise.resolve(err(request, {
+              code: 'queue-item-not-found',
+              message: 'queued item is no longer pending',
+              details: { itemId },
+            }))
+          }
+          return Promise.resolve(ok(request, { accepted: true as const }))
+        }
         if (action.kind === 'edit') {
           agent.inbox.replace(itemId, freezeMessage({ ...message, content: action.content }))
         } else {
@@ -2770,6 +2799,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           throw error
         }
         return ok(request, { workspace: workspaceView(workspace) })
+      },
+
+      async updateSettings(request) {
+        const { workspaceId, settings } = request.payload
+        const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(workspaceId))
+        if (workspace === undefined) return workspaceNotFound(request, workspaceId)
+        await workspace.setSettings(settings)
+        return ok(request, { workspace: workspaceView(workspace) })
+      },
+
+      async moveSession(request) {
+        const { sessionId, targetWorkspaceId } = request.payload
+        const targetWorkspace = ctx.workspaceRegistry.get(brandWorkspaceId(targetWorkspaceId))
+        if (targetWorkspace === undefined) return workspaceNotFound(request, targetWorkspaceId)
+        try {
+          await ctx.workspaceRegistry.moveSession(sessionId, brandWorkspaceId(targetWorkspaceId))
+          return ok(request, { success: true as const })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'workspace-move-invalid',
+            message: error instanceof Error ? error.message : String(error),
+            details: { workspaceId: targetWorkspaceId, sessionId },
+          })
+        }
       },
 
       async delete(request) {

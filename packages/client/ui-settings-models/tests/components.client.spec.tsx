@@ -845,6 +845,39 @@ describe('ModelsSection', () => {
     })
   })
 
+  it('can configure provider reasoning effort and model reasoning effort for DeepSeek', async () => {
+    const { mutate } = await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
+    })
+    fireEvent.click(screen.getByText(en.customized))
+
+    // Change provider-level reasoning effort
+    const providerReasoningSelect = screen.getByLabelText(en.providerReasoning)
+    fireEvent.change(providerReasoningSelect, { target: { value: 'low' } })
+
+    // Change model-level reasoning effort
+    expandRow(1)
+    const modelReasoningSelect = screen.getByLabelText(`${en.modelReasoning} 1`)
+    fireEvent.change(modelReasoningSelect, { target: { value: 'max' } })
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      ns: 'llm-deepseek',
+      ops: [
+        { op: 'set', path: ['reasoningEffort'], value: 'low' },
+        {
+          op: 'set',
+          path: ['models'],
+          value: [
+            expect.objectContaining({ id: 'deepseek-v4-flash', reasoningEffort: 'max' }),
+            DEFAULT_DEEPSEEK_MODELS[1],
+          ],
+        },
+      ],
+    })
+  })
+
   it('pins the deepseek placeholder and clears typed input back to inherited', async () => {
     const { face } = scriptedFace()
     const bare: SettingsNamespaceView = {
@@ -911,9 +944,8 @@ describe('ModelsSection', () => {
   it('adds a dormant provider with a derived reference and stores its key', async () => {
     const { mutate, set } = await mountSection()
     fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
-    expect([...pick.options].map(option => option.value)).toEqual(['anthropic', 'broken', 'plain'])
-    expect(pick.value).toBe('anthropic')
+    const pick = await screen.findByRole('combobox', { name: en.provider })
+    expect(pick.textContent).toContain('anthropic')
     // A dormant profile has no endpoint anywhere: the pi-ai placeholder
     // falls back to the provider-default wording.
     fireEvent.click(screen.getByText(en.customized))
@@ -934,7 +966,7 @@ describe('ModelsSection', () => {
   it('keeps pi-ai provider-native authentication when no key is entered', async () => {
     const { mutate, set } = await mountSection()
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByRole('combobox', { name: en.provider })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
     expect(mutate.mock.calls[0]?.[0]).toEqual({
@@ -965,7 +997,7 @@ describe('ModelsSection', () => {
       .mockResolvedValueOnce(ok({}))
     const { face, controller, mirror } = await mountSection({ mutate, set })
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByRole('combobox', { name: en.provider })
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-ant' } })
     fireEvent.click(screen.getByText(en.apply))
     await screen.findByText('credential store unavailable')
@@ -991,10 +1023,12 @@ describe('ModelsSection', () => {
   it('switches the add card target and degrades unknown or broken targets loudly', async () => {
     await mountSection()
     fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
-    fireEvent.change(pick, { target: { value: 'broken' } })
+    const pick = await screen.findByRole('combobox', { name: en.provider })
+    fireEvent.click(pick)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'broken' }))
     await screen.findByText(/unresolvable settings path/)
-    fireEvent.change(pick, { target: { value: 'plain' } })
+    fireEvent.click(pick)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'plain' }))
     await waitFor(() => {
       expect(screen.getAllByText(content => content.includes(en.advancedHint)).length).toBeGreaterThan(0)
     })
@@ -1008,7 +1042,7 @@ describe('ModelsSection', () => {
       mutate: vi.fn(() => Promise.resolve(fail('llm-pi-ai: unknown pi-ai provider "bogus"'))),
     })
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByRole('combobox', { name: en.provider })
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-x' } })
     fireEvent.click(screen.getByText(en.apply))
     await screen.findByText(/unknown pi-ai provider/)
@@ -1215,10 +1249,10 @@ describe('ModelsSection', () => {
   it('cancels the add card back to the add button', async () => {
     await mountSection()
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByRole('combobox', { name: en.provider })
     fireEvent.click(screen.getByText(en.cancel))
     await screen.findByText(en.add)
-    expect(screen.queryByLabelText(en.provider)).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
   })
 
   it('collapses the setup card on cancel without disturbing another open card', async () => {
@@ -1227,13 +1261,13 @@ describe('ModelsSection', () => {
     await mountFirstRun()
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByRole('combobox', { name: en.provider })
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(2)
 
     // The setup card is the first one on the page, above the add block.
     fireEvent.click(screen.getAllByText(en.cancel)[0] as HTMLElement)
     // The add card kept its draft…
-    expect(screen.getByLabelText(en.provider)).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
     // …and DeepSeek collapsed to an ordinary row carrying the missing-key dot.
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
     expect(screen.getAllByRole('img', { name: en.credentialMissing })
@@ -1241,7 +1275,7 @@ describe('ModelsSection', () => {
     // Its card reopens through Edit, which closes the add card as any row does.
     fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
-    expect(screen.queryByLabelText(en.provider)).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
   })
 
   it('loads on first render of an idle controller', async () => {

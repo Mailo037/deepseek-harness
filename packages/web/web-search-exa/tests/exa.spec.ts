@@ -245,7 +245,7 @@ describe('web-search-exa plugin registration', () => {
     }
   })
 
-  it('is unavailable when neither config nor env supplies a key', async () => {
+  it('fails searches with WEB_PROVIDER_CREDENTIAL_MISSING when neither config nor env supplies a key', async () => {
     const prev = process.env.EXA_API_KEY
     delete process.env.EXA_API_KEY
     try {
@@ -253,7 +253,7 @@ describe('web-search-exa plugin registration', () => {
       await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
       await ctx.plugin(exaPlugin, {})
       await expect(ctx.web.search({ query: 'q' }))
-        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' }))
     } finally {
       if (prev !== undefined) process.env.EXA_API_KEY = prev
     }

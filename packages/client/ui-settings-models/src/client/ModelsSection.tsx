@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutline16, Modal, Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
@@ -409,21 +409,21 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
             <div className={styles['addCard']}>
               <div className={styles['field']}>
                 <span className={styles['fieldLabel']}>{t('provider')}</span>
-                <select
-                  className={`${styles['input']} ${styles['selectInput']}`}
+                <Select
+                  className={styles['selectInput']}
                   value={addTarget.provider}
                   aria-label={t('provider')}
-                  onChange={(event) => {
-                    const row = addable.find(candidate => candidate.entry.provider === event.target.value)
+                  options={addable.map(row => ({
+                    value: row.entry.provider,
+                    label: row.entry.displayName,
+                  }))}
+                  onChange={(selectedProvider) => {
+                    const row = addable.find(candidate => candidate.entry.provider === selectedProvider)
                     /* v8 ignore next -- the select only lists addable rows */
                     if (row === undefined) return
                     setEditing(targetOf(row))
                   }}
-                >
-                  {addable.map(row => (
-                    <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
-                  ))}
-                </select>
+                />
               </div>
               <ProviderEditor
                 key={addTarget.provider}

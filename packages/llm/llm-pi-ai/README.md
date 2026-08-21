@@ -27,6 +27,7 @@ Configure credentials, the model catalog, and deployment-specific transport sett
             initialDelayMs: 500
             maxDelayMs: 10000
             jitterRatio: 0.1
+            rateLimitMultiplier: 2 # optional; RATE_LIMIT delays scale by this (default 2)
       # Catalog route with its catalog narrowed to one model and that model's
       # capacity corrected; every unset field still comes from the catalog.
       anthropic:

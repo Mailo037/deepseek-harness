@@ -61,6 +61,10 @@ const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  // The desktop app ships its emitted main tree and the shipped agent-preset
+  // root beside it (both source and built layouts resolve them relative to
+  // the package).
+  '@deepseek-ai/dsh-electron': ['lib/types', 'config'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */

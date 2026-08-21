@@ -15,6 +15,7 @@ const DEFAULT_MAX_RETRIES = 5
 const DEFAULT_INITIAL_DELAY_MS = 500
 const DEFAULT_MAX_DELAY_MS = 10_000
 const DEFAULT_JITTER_RATIO = 0.1
+const DEFAULT_RATE_LIMIT_MULTIPLIER = 2
 const DEFAULT_RETRYABLE_CODES = Object.freeze([
   EMPTY_RESPONSE_CODE,
   'RATE_LIMIT',
@@ -31,6 +32,14 @@ export interface BackoffConfig {
   maxDelayMs?: number
   /** Symmetric random multiplier range around one (default 0.1). */
   jitterRatio?: number
+  /**
+   * Multiplier applied to the locally computed delay when the failure code is
+   * `RATE_LIMIT` (default 2), so a rate-limited request waits longer before
+   * its next retry than other transient failures. The effective delay stays
+   * capped by {@link maxDelayMs}; a provider `Retry-After` instruction is used
+   * verbatim and is not multiplied.
+   */
+  rateLimitMultiplier?: number
 }
 
 /** Current bounded transient retry behavior for one provider route. */
@@ -61,6 +70,7 @@ export interface ResolvedRetryBackoff {
   readonly initialDelayMs: number
   readonly maxDelayMs: number
   readonly jitterRatio: number
+  readonly rateLimitMultiplier: number
 }
 
 /** Fully resolved bounded transient retry policy. */
@@ -82,6 +92,7 @@ const backoffSchema: z<BackoffConfig> = z.object({
   initialDelayMs: z.number().max(MAX_TIMER_DELAY_MS).default(DEFAULT_INITIAL_DELAY_MS),
   maxDelayMs: z.number().max(MAX_TIMER_DELAY_MS).default(DEFAULT_MAX_DELAY_MS),
   jitterRatio: z.number().min(0).max(1).default(DEFAULT_JITTER_RATIO),
+  rateLimitMultiplier: z.number().min(1).default(DEFAULT_RATE_LIMIT_MULTIPLIER),
 })
 
 const normalPolicySchema: z<NormalRetryPolicyConfig> = z.object({
@@ -110,7 +121,9 @@ const NORMAL_POLICY_KEYS: ReadonlySet<string> = new Set([
 const ALWAYS_POLICY_KEYS: ReadonlySet<string> = new Set([
   'mode', 'maxRetries', 'retryableCodes', 'backoff',
 ])
-const BACKOFF_KEYS: ReadonlySet<string> = new Set(['initialDelayMs', 'maxDelayMs', 'jitterRatio'])
+const BACKOFF_KEYS: ReadonlySet<string> = new Set([
+  'initialDelayMs', 'maxDelayMs', 'jitterRatio', 'rateLimitMultiplier',
+])
 
 function validateKeys(value: object, allowed: ReadonlySet<string>, path: string): void {
   for (const key of Object.keys(value)) {
@@ -123,6 +136,7 @@ function resolveBackoff(config: BackoffConfig | undefined, path: string): Resolv
   const initialDelayMs = config?.initialDelayMs ?? DEFAULT_INITIAL_DELAY_MS
   const maxDelayMs = config?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS
   const jitterRatio = config?.jitterRatio ?? DEFAULT_JITTER_RATIO
+  const rateLimitMultiplier = config?.rateLimitMultiplier ?? DEFAULT_RATE_LIMIT_MULTIPLIER
 
   if (!Number.isFinite(initialDelayMs) || initialDelayMs <= 0 || initialDelayMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`${path}.initialDelayMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`)
@@ -136,8 +150,11 @@ function resolveBackoff(config: BackoffConfig | undefined, path: string): Resolv
   if (!Number.isFinite(jitterRatio) || jitterRatio < 0 || jitterRatio > 1) {
     throw new Error(`${path}.jitterRatio must be between 0 and 1`)
   }
+  if (!Number.isFinite(rateLimitMultiplier) || rateLimitMultiplier < 1) {
+    throw new Error(`${path}.rateLimitMultiplier must be a finite number no less than 1`)
+  }
 
-  return Object.freeze({ initialDelayMs, maxDelayMs, jitterRatio })
+  return Object.freeze({ initialDelayMs, maxDelayMs, jitterRatio, rateLimitMultiplier })
 }
 
 /**

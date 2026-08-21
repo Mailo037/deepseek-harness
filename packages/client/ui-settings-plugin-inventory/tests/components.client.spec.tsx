@@ -125,3 +125,79 @@ describe('PluginInventorySettingsTab', () => {
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
   })
 })
+
+const GH_ITEMS = [
+  { full_name: 'owner/beta', html_url: 'https://github.com/owner/beta', description: 'A beta plugin', stargazers_count: 5, language: 'TypeScript', archived: false },
+  { full_name: 'owner/alpha', html_url: 'https://github.com/owner/alpha', description: null, stargazers_count: 10, language: null, archived: false },
+  { full_name: 'owner/defunct', html_url: 'https://github.com/owner/defunct', description: 'No longer maintained', stargazers_count: 99, language: 'Go', archived: true },
+]
+
+describe('PluginInventorySettingsTab discover view', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  function stubFetch(payload: unknown): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('switches views, hides archived repos, and sorts the topic by stars', async () => {
+    stubFetch({ items: GH_ITEMS })
+    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
+    await screen.findByRole('heading', { name: en.catalog })
+
+    fireEvent.click(screen.getByRole('button', { name: en.viewDiscover }))
+    expect(screen.queryByRole('heading', { name: en.catalog })).toBeNull()
+    expect(screen.getByRole('heading', { name: en.discoverHeading })).toBeTruthy()
+    expect(await screen.findByText('owner/alpha')).toBeTruthy()
+    expect(screen.queryByText('owner/defunct')).toBeNull()
+
+    const links = screen.getAllByRole('link')
+    expect(links.map(link => link.textContent)).toEqual([
+      expect.stringContaining('owner/alpha'),
+      expect.stringContaining('owner/beta'),
+    ])
+    expect(links[0]!.getAttribute('href')).toBe('https://github.com/owner/alpha')
+    expect(links[0]!.getAttribute('target')).toBe('_blank')
+    expect(screen.getByText('10')).toBeTruthy()
+    expect(screen.getByText('5')).toBeTruthy()
+    expect(screen.getByText('A beta plugin')).toBeTruthy()
+    expect(screen.getByText('TypeScript')).toBeTruthy()
+  })
+
+  it('filters the fetched topic list by name or description', async () => {
+    stubFetch({ items: GH_ITEMS })
+    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
+    await screen.findByRole('heading', { name: en.catalog })
+
+    fireEvent.click(screen.getByRole('button', { name: en.viewDiscover }))
+    await screen.findByText('owner/alpha')
+    const search = screen.getByRole('searchbox', { name: en.search })
+
+    fireEvent.change(search, { target: { value: 'beta' } })
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+    expect(screen.getByText('owner/beta')).toBeTruthy()
+
+    fireEvent.change(search, { target: { value: 'defunct' } })
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    expect(screen.getByText(en.discoverNoResults)).toBeTruthy()
+  })
+
+  it('shows a generic GitHub failure and retries into the ready state', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: GH_ITEMS }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
+    await screen.findByRole('heading', { name: en.catalog })
+
+    fireEvent.click(screen.getByRole('button', { name: en.viewDiscover }))
+    expect((await screen.findByRole('alert')).textContent).toBe(en.discoverError)
+    expect(screen.queryByText('403')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(await screen.findByText('owner/alpha')).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('topic:dsh-plugin'))
+  })
+})

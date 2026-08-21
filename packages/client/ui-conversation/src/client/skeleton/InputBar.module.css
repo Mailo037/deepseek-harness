@@ -108,6 +108,59 @@
   padding: 10px 12px 0;
 }
 
+/* Queue-edit banner: one line inside the card naming the pending occurrence
+   being edited and the two exits (Enter saves, Esc restores the draft). */
+.queueEdit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 12px 0;
+  padding: 4px 4px 4px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.queueEditLead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.queueEditText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queueEditCancel {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.queueEditCancel:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.queueEditCancel:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-tertiary);
+  outline-offset: -2px;
+}
+
 /* Floating overlay anchor (menu / popupSelect shell): entries position
    themselves against the card (bottom: 100% + gap); closed entries render null. */
 .overlayAnchor {
