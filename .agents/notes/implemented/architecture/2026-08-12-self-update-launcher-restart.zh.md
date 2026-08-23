@@ -14,7 +14,7 @@ GUI 既无从得知它对话的是哪个构建，也没有一条从「存在更�
 
 ## 决策
 
-**一个更新平面、两个启动器、感知表面的重启、GitHub 优先的检查。** `dsh-host-self-update` 服务拥有仓库身份（`describe`）、带缓存的上游检查（`check`）、代理静默（`quiesceAgents`：以 `{ kind: 'user' }, keepInbox: true` 取消每个活跃回合，再在时限内排空）以及仅限快进的拉取。检查是 GitHub 优先的，因为部署的检出跟踪的是一个公开的 GitHub fork：github.com 远程经一次未鉴权的 Compare-API 请求应答（`HEAD...branch` → `behind_by` + 最新提交），只有非 GitHub 远程才回退为 `git fetch`。网关的 host 领域通过既有线上协议暴露 check/apply；两个方法都加入环回栅栏，因为 apply 会为每个客户端终结进程，而 check 会让宿主发起网络请求。
+**一个更新平面、两个启动器、感知表面的重启、GitHub 优先的检查。** `dsh-host-self-update` 服务拥有仓库身份（`describe`）、带缓存的上游检查（`check`）、代理静默（`quiesceAgents`：以 `{ kind: 'user' }, keepInbox: true` 取消每个活跃回合，再在时限内排空）以及仅限快进的拉取。检查是 GitHub 优先的，因为部署的检出跟踪的是一个公开的 GitHub fork：github.com 远程经一次未鉴权的 Compare-API 请求应答（`HEAD...branch` → `ahead_by` + 最新提交），只有非 GitHub 远程才回退为 `git fetch`。网关的 host 领域通过既有线上协议暴露 check/apply；两个方法都加入环回栅栏，因为 apply 会为每个客户端终结进程，而 check 会让宿主发起网络请求。
 
 进程替换是**启动器能力**，不是服务：`provideCmdline` 在 `appExit` 旁增加了一个可选的 `appRestart`。CLI 的接线是「弃置树 → 以相同 argv 分离重生 → 退出」；Electron 引导的接线是 `app.relaunch()` → 常规关闭。在该值缺席之处（嵌入宿主），`host.describe` 报告 `canRestart: false`，GUI 隐藏该手势而不是迟来失败。表面检测经 `process.versions.electron` 进入 `host.describe.surface`，让「关于」界面能说出自己运行于什么之上。
 

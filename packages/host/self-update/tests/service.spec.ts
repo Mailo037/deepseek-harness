@@ -138,7 +138,7 @@ describe('SelfUpdateService', () => {
     const payload = {
       ok: true,
       json: async () => ({
-        behind_by: 3,
+        ahead_by: 3,
         commits: [{ sha: 'c'.repeat(40), commit: { message: 'feat: tip\n\nbody' } }],
       }),
     }

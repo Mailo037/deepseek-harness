@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-12-self-update-launcher-restart.md
-2026-08-12-self-update-launcher-restart.md: c58b207e47669b7e4ba9945c45dec91488548809
-2026-08-12-self-update-launcher-restart.zh.md: ca9a83491c5fef816f4ae74573e595bbb69f8cc9
+2026-08-12-self-update-launcher-restart.md: 5158443d0d1d4ec8b4b1ef1ec9403a18e1e6d96f
+2026-08-12-self-update-launcher-restart.zh.md: 35ed1735bd36f8a3b74f9127c62415187d720e90

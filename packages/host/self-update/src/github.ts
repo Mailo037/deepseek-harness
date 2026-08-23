@@ -42,7 +42,7 @@ export function parseGitHubRepo(url: string): GitHubRepo | null {
 /** The part of a Compare-API reply the check reads. */
 export interface GitHubCompare {
   /** Commits the head (upstream branch) has that the base (local HEAD) lacks. */
-  behind_by: number
+  ahead_by: number
   /** The comparison's commits, oldest first; truncated at very large ranges. */
   commits: { sha: string; commit: { message: string } }[]
 }
@@ -89,7 +89,7 @@ export async function fetchGithubCompare(
   const payload = await response.json() as GitHubCompare
   const tip = payload.commits.at(-1)
   return {
-    behind: payload.behind_by,
+    behind: payload.ahead_by,
     latest: tip === undefined ? null : { commit: tip.sha, subject: tip.commit.message.split(/\r?\n/u)[0] ?? '' },
   }
 }
