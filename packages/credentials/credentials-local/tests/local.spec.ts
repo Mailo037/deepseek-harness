@@ -77,6 +77,14 @@ describe('layering and reads', () => {
     expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'file', writable: true })
   })
 
+  it('ignores a version header in the credentials document', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    await writeCredentials(path, 'version: 1\nDSH_CRED_TEST: plain\n')
+    const ctx = await boot({ path, watch: false })
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'plain', source: 'file' })
+  })
+
   it('lets a non-empty process environment win read-only over the file', async () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')

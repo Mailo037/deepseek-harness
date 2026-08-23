@@ -168,6 +168,7 @@ export function parseCredentialsDocument(text: string, filename: string): Map<st
   }
   const entries = new Map<string, string>()
   for (const [key, value] of Object.entries(root as Record<string, unknown>)) {
+    if (key === 'version') continue
     // credentialRef throws on anything that is not a POSIX identifier, which
     // is exactly the constraint a stored reference must satisfy to be
     // addressable through the seam.
