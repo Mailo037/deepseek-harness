@@ -312,6 +312,17 @@ describe('ConversationRoot resident composer', () => {
     expect(modelSeat).toEqual({ locked: false })
   })
 
+  it('hands the workspace picker the standalone flag only for a real standalone session', () => {
+    // Standalone: the picker may mark its no-Workspace entry selected. An
+    // owned session must not, and neither state invents a selected Workspace.
+    const standalone = mount(conversationSnapshot({ composerPhase: 'blank' }), [], undefined, {
+      summaryBlank: true,
+    })
+    expect(standalone.pickerOwner()).toMatchObject({ selectedId: undefined, standalone: true })
+    const owned = mount(conversationSnapshot())
+    expect(owned.pickerOwner()).toMatchObject({ selectedId: wid('one'), standalone: false })
+  })
+
   it('keeps composer text in the machine, mirrors to the chat store, and submits through the sink', () => {
     const b = mount(conversationSnapshot())
     const box = b.view.getByRole('textbox')

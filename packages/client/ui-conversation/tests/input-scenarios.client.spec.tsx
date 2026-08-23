@@ -201,7 +201,11 @@ describe('scenario A: menu-pick /goal, type args, enter submits', () => {
     act(() => { b.controller.pick('command', 0) })
     expect(b.shell.snapshot.phase).toBe('claimed')
     expect(b.textarea.value).toBe('/goal ')
-    expect(b.view.container.querySelector('[data-decoration="token"]')?.textContent).toBe('/goal ')
+    // The decoration keeps the raw claim as its invisible advance; the pill
+    // overlay shows the formatted label.
+    const claimedToken = b.view.container.querySelector('[data-decoration="token"]')
+    expect(claimedToken?.querySelector('[data-pill]')?.textContent).toBe('Goal')
+    expect(claimedToken?.textContent).toContain('/goal ')
     // The zh dictionary owns a hint.goal entry, which overrides the machine's raw hint (production behavior).
     expect(b.view.container.querySelector('[data-decoration="hint"]')?.textContent).toBe('输入目标，智能体将持续执行')
     // Continue typing args; hint drops; claim holds.
@@ -326,7 +330,10 @@ describe('scenario: reference decoration lights up when the lexicon settles', ()
       notify?.()
     })
     const mark = b.view.container.querySelector('[data-decoration="text-ref"]')
-    expect(mark?.textContent).toBe('/deploy')
+    // The raw token rides the invisible advance; the pill overlay shows the
+    // formatted label.
+    expect(mark?.querySelector('[data-pill-advance]')?.textContent).toBe('/deploy')
+    expect(mark?.querySelector('[data-pill]')?.textContent).toBe('Deploy')
   })
 })
 

@@ -130,11 +130,13 @@ function bench(over?: BenchOptions) {
     },
     ...(over?.steerQueue !== undefined ? { steerQueue: over.steerQueue } : {}),
     // Lexicon-only stub: adjudication untouched (undefined slash methods are
-    // never reached — these benches drive plain-draft flows only).
+    // never reached — these benches drive plain-draft flows only). `track` IS
+    // reached: caret-snapping paths report programmatic caret moves.
     ...(lex !== undefined
       ? {
         inputTriggers: (() => ({
           lexicon: { getSnapshot: () => lex, subscribe: () => () => {} },
+          track: () => {},
         })) as unknown as NonNullable<ShellDeps['inputTriggers']>,
       }
       : {}),
@@ -1233,7 +1235,8 @@ describe('decorations', () => {
       )
     })
     const token = view.container.querySelector('[data-decoration="token"]')
-    expect(token?.textContent).toBe('/goal ')
+    expect(token?.querySelector('[data-pill]')?.textContent).toBe('Goal')
+    expect(token?.querySelector('[data-pill-advance]')?.textContent).toBe('/goal ')
     expect(view.container.querySelector('[data-decoration="hint"]')?.textContent).toBe('目标内容')
     // Args typed: the hint disappears, the token highlight stays.
     act(() => { shell.setDraft('/goal 发布') })
@@ -1266,7 +1269,8 @@ describe('decorations', () => {
       )
     })
     const chip = view.container.querySelector('[data-decoration="chip"]')
-    expect(chip?.textContent).toBe('@会话一')
+    expect(chip?.querySelector('[data-pill-advance]')?.textContent).toBe('@会话一')
+    expect(chip?.querySelector('[data-pill]')?.textContent).toBe('会话一')
     expect(chip?.getAttribute('data-reference-appearance')).toBe('session')
     expect(chip?.querySelector('svg')).not.toBeNull()
     expect(shell.snapshot.occurrences).toHaveLength(1)
@@ -1343,7 +1347,8 @@ describe('decorations', () => {
     const { view, shell } = bench({ lexicon })
     act(() => { shell.setDraft('use /fixture-demo now') })
     const mark = view.container.querySelector('[data-decoration="text-ref"]')
-    expect(mark?.textContent).toBe('/fixture-demo')
+    expect(mark?.querySelector('[data-pill-advance]')?.textContent).toBe('/fixture-demo')
+    expect(mark?.querySelector('[data-pill]')?.textContent).toBe('Fixture Demo')
     // Editing the token out of match shape drops the decoration.
     act(() => { shell.setDraft('use /fixture-dem now') })
     expect(view.container.querySelector('[data-decoration="text-ref"]')).toBeNull()
@@ -1353,7 +1358,8 @@ describe('decorations', () => {
     const { view, shell } = bench()
     act(() => { shell.setDraft('see @src/components/') })
     const mark = view.container.querySelector('[data-decoration="text-ref"]')
-    expect(mark?.textContent).toBe('@src/components/')
+    expect(mark?.querySelector('[data-pill-advance]')?.textContent).toBe('@src/components/')
+    expect(mark?.querySelector('[data-pill]')?.textContent).toBe('src/components/')
     expect(mark?.querySelector('svg')).not.toBeNull()
     expect(shell.snapshot.draft).toBe('see @src/components/')
   })
@@ -1638,7 +1644,9 @@ describe('attachment launcher chrome and control seats', () => {
   it('disables spellcheck on the input textarea', () => {
     const { view } = bench()
     const textarea = view.container.querySelector('textarea')!
-    expect(textarea.spellcheck).toBe(false)
+    // jsdom implements no spellcheck IDL attribute; the rendered attribute is
+    // the contract (React renders `false` as spellcheck="false").
+    expect(textarea.getAttribute('spellcheck')).toBe('false')
   })
 
   it('jumps over tokens on arrow navigation and deletes entire token on backspace', () => {
@@ -1672,14 +1680,18 @@ describe('attachment launcher chrome and control seats', () => {
     expect(formatTokenLabel('@src/utils/file.ts')).toBe('src/utils/file.ts')
   })
 
-  it('renders token as a pill with icon and formatted label, showing hover styling on mouse move', () => {
+  it('renders token as a pill with icon and formatted label over an invisible raw advance, showing hover styling on mouse move', () => {
     const lexicon = new Map<'/' | '@', readonly string[]>([['/', ['ai-elements']]])
     const { view } = bench({ draft: '1 /ai-elements 3', lexicon })
     const backdrop = view.container.querySelector('[data-input-backdrop]')!
     const pill = backdrop.querySelector('[data-decoration="text-ref"]') as HTMLElement
     expect(pill).not.toBeNull()
-    expect(pill.textContent).toContain('Ai Elements')
-    expect(pill.textContent).not.toContain('/ai-elements')
+    // The styled overlay shows only the formatted label; the raw characters
+    // live solely in the invisible advance that mirrors the textarea's span.
+    const overlay = pill.querySelector('[data-pill]')!
+    expect(overlay.textContent).toContain('Ai Elements')
+    expect(overlay.textContent).not.toContain('/ai-elements')
+    expect(pill.querySelector('[data-pill-advance]')?.textContent).toBe('/ai-elements')
     expect(pill.querySelector('svg')).not.toBeNull()
   })
 })

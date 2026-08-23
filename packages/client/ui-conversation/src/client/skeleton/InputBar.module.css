@@ -201,7 +201,7 @@
 }
 
 .backdropDisabled,
-.backdropDisabled :is(.hlToken, .hint, .textRef, .chip, .chipInvalid) {
+.backdropDisabled :is(.hlToken, .hint, .textRef, .tokenPill, .chipInvalid) {
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -259,8 +259,20 @@
   background: transparent;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  /* Business blue, not brand-primary: that token resolves to ink in this sheet. */
-  caret-color: var(--dsw-alias-state-business-primary);
+  /* The native caret is hidden: the token pills are wider than the raw spans
+     they decorate, so it would rest under a pill at both of its legal rest
+     positions. The backdrop draws the caret instead (.caret). */
+  caret-color: transparent;
+}
+
+/* The selection paints in the textarea layer ABOVE the glyph backdrop, so it
+   must stay translucent or it covers the visible draft with an opaque bar.
+   Selected glyphs stay invisible: the browser paints selected text in a
+   readable color of its own unless the selection face repeats transparency. */
+.input::selection {
+  background-color: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 32%, transparent);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .input,
@@ -491,21 +503,40 @@
   display: none;
 }
 
-/* Token Pill styling: clean inline presentation at rest, rounded pill background on hover */
+/* Pill host: carries the RAW token characters as an invisible advance, so the
+   backdrop consumes exactly the width the textarea reserves for the span.
+   Every visible glyph after a pill stays aligned with the native caret and
+   selection geometry regardless of how wide the styled overlay is. */
+.pillHost {
+  position: relative;
+}
+
+.pillAdvance {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* The styled pill overlays its host's raw span absolutely. It is allowed to be
+   wider than the span (icon plus padding) because the advance above owns the
+   geometry; anchored to the span start so the caret docked at the range start
+   sits on its left cap, with overflow extending into the following whitespace.
+   A token long enough to soft-wrap degrades to a single-line pill at its first
+   fragment; the invisible advance still wraps exactly like the textarea. */
 .tokenPill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   padding: 1px 3px;
-  margin-right: -14px;
   border-radius: 999px;
   background-color: transparent;
   color: var(--dsw-alias-state-business-primary);
   font: inherit;
   line-height: inherit;
-  vertical-align: baseline;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+  white-space: nowrap;
   transition: background-color 100ms ease;
   user-select: none;
 }
@@ -513,6 +544,30 @@
 .tokenPill:hover,
 .tokenPillHovered {
   background-color: var(--dsw-alias-state-business-tertiary);
+}
+
+/* The composer caret, drawn over the backdrop (the textarea's native caret is
+   hidden — see .input). Position and height arrive measured from the mirror's
+   raw-text geometry, so the transform never participates in layout. */
+.caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--dsw-alias-state-business-primary);
+  animation: input-caret-blink 1.06s steps(1, end) infinite;
+}
+
+@keyframes input-caret-blink {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
 }
 
 .tokenIcon {

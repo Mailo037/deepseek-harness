@@ -178,6 +178,32 @@ interface CatalogModelInfo {
   visionInferred?: boolean
 }
 
+/**
+ * The catalog modality badges of one model, with the inferred-vision hint —
+ * shared by the row header, the expanded row panel, and the fetch dialog so
+ * all three surfaces spell modalities one way.
+ */
+function ModalityBadges({ info, t }: {
+  info: {
+    inputModalities?: readonly string[] | undefined
+    visionInferred?: boolean | undefined
+  }
+  t: (key: keyof typeof en) => string
+}): ReactNode {
+  return (
+    <span className={styles['modelBadges']}>
+      {(info.inputModalities ?? []).map(mod => (
+        <span key={mod} className={styles['modalityBadge']}>
+          {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
+        </span>
+      ))}
+      {info.visionInferred === true && info.inputModalities?.includes('image') ? (
+        <span className={styles['modalityHint']}>{t('modalityVisionInferredHint')}</span>
+      ) : null}
+    </span>
+  )
+}
+
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, api, t, disabled } = props
   const [busy, setBusy] = useState(false)
@@ -200,7 +226,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           const inputModalities = rawModalities ?? (
             m.id.includes('gemini') || m.id.includes('qwen-vl') || m.id.includes('glm-4v')
               ? ['text', 'image', 'video']
-              : m.id.includes('image') || m.id.includes('vision') || m.id.includes('vl') || m.id.includes('janus') || m.id.includes('4o') || m.id.includes('sonnet') || m.id.includes('opus') || m.id.includes('o1') || m.id.includes('o3') || m.id.includes('pixtral') || m.id.includes('llava')
+              : m.id.includes('image') || m.id.includes('vision') || m.id.includes('envision') || m.id.includes('vl') || m.id.includes('janus') || m.id.includes('4o') || m.id.includes('sonnet') || m.id.includes('opus') || m.id.includes('o1') || m.id.includes('o3') || m.id.includes('pixtral') || m.id.includes('llava')
                 ? ['text', 'image']
                 : ['text']
           )
@@ -426,17 +452,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 disabled={disabled}
                 onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
               />
-              {catalogInfo?.inputModalities && catalogInfo.inputModalities.length > 0 ? (
-                <div className={styles['modelBadges']}>
-                  {catalogInfo.inputModalities.map(mod => (
-                    <span key={mod} className={styles['modalityBadge']}>
-                      {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
-                    </span>
-                  ))}
-                  {catalogInfo.visionInferred && catalogInfo.inputModalities.includes('image') ? (
-                    <span className={styles['modalityHint']}>{t('modalityVisionInferredHint')}</span>
-                  ) : null}
-                </div>
+              {catalogInfo !== undefined && catalogInfo.inputModalities.length > 0 ? (
+                <ModalityBadges info={catalogInfo} t={t} />
               ) : null}
               <button
                 type="button"
@@ -477,6 +494,12 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             {expanded.has(index)
               ? (
                 <div className={styles['modelAdvanced']}>
+                  {catalogInfo !== undefined && catalogInfo.inputModalities.length > 0 ? (
+                    <div className={styles['modalitiesRow']}>
+                      <span className={styles['modalitiesLabel']}>{t('modelModalities')}</span>
+                      <ModalityBadges info={catalogInfo} t={t} />
+                    </div>
+                  ) : null}
                   {inCatalog ? (
                     <div className={styles['inheritRow']}>
                       <label className={styles['inheritLabel']}>
@@ -621,16 +644,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     editable in the row that appears. */}
                 <span className={styles['candidateId']}>{candidate.id}</span>
                 {candidate.inputModalities && candidate.inputModalities.length > 0 ? (
-                  <span className={styles['modelBadges']}>
-                    {candidate.inputModalities.map(mod => (
-                      <span key={mod} className={styles['modalityBadge']}>
-                        {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
-                      </span>
-                    ))}
-                    {candidate.visionInferred && candidate.inputModalities.includes('image') ? (
-                      <span className={styles['modalityHint']}>{t('modalityVisionInferredHint')}</span>
-                    ) : null}
-                  </span>
+                  <ModalityBadges info={candidate} t={t} />
                 ) : null}
               </label>
             </li>

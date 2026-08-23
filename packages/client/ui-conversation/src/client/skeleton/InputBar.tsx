@@ -230,7 +230,6 @@ export function InputBar({
   const revealSelectionFocus = (el: HTMLTextAreaElement): void => {
     // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
     const caret = el.selectionDirection === 'backward' ? el.selectionStart : el.selectionEnd
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     revealCaret(caret ?? el.value.length)
   }
 
@@ -308,12 +307,10 @@ export function InputBar({
   }, [])
 
   // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
-  /* oxlint-disable typescript/no-unnecessary-condition */
   const selectionOf = (el: HTMLTextAreaElement) => ({
     start: el.selectionStart ?? 0,
     end: el.selectionEnd ?? el.selectionStart ?? 0,
   })
-  /* oxlint-enable typescript/no-unnecessary-condition */
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const backdropRef = useRef<HTMLDivElement | null>(null)
@@ -325,31 +322,176 @@ export function InputBar({
 
   const allTokenRanges = useMemo(() => {
     if (input === undefined) return []
-    const ranges: { start: number; end: number; key: string }[] = []
+    const raw: { start: number; end: number; key: string }[] = []
     if (deco.token !== null) {
-      ranges.push({ start: deco.token.start, end: deco.token.end, key: 'token' })
+      raw.push({ start: deco.token.start, end: deco.token.end, key: 'token' })
     }
     for (const chip of deco.chips) {
-      ranges.push({ start: chip.offset, end: chip.offset + chip.length, key: `chip-${chip.occurrenceId}` })
+      raw.push({ start: chip.offset, end: chip.offset + chip.length, key: `chip-${chip.occurrenceId}` })
     }
     for (const ref of deco.textRefs) {
-      ranges.push({ start: ref.start, end: ref.end, key: `ref-${ref.start}` })
+      raw.push({ start: ref.start, end: ref.end, key: `ref-${ref.start}` })
     }
-    return ranges.sort((a, b) => a.start - b.start)
+    raw.sort((a, b) => a.start - b.start)
+
+    const normalized: { start: number; end: number; key: string }[] = []
+    for (const range of raw) {
+      if (range.start >= range.end) continue
+      const last = normalized[normalized.length - 1]
+      if (last !== undefined && range.start < last.end) {
+        normalized[normalized.length - 1] = {
+          start: last.start,
+          end: Math.max(last.end, range.end),
+          key: last.key,
+        }
+      } else {
+        normalized.push({ ...range })
+      }
+    }
+    return normalized
   }, [deco, input])
 
-  const snapCaretOutOfTokens = (el: HTMLTextAreaElement): void => {
+  const snapCaretOutOfTokens = useCallback((el: HTMLTextAreaElement): void => {
     const sel = selectionOf(el)
-    if (sel.start !== sel.end) return
-    const caret = sel.start
-    for (const range of allTokenRanges) {
-      if (caret > range.start && caret < range.end) {
-        const snapTo = caret - range.start < range.end - caret ? range.start : range.end
-        el.setSelectionRange(snapTo, snapTo)
+    if (allTokenRanges.length === 0) return
+
+    if (sel.start === sel.end) {
+      const caret = sel.start
+      for (const range of allTokenRanges) {
+        if (caret > range.start && caret < range.end) {
+          const snapTo = caret - range.start < range.end - caret ? range.start : range.end
+          el.setSelectionRange(snapTo, snapTo)
+          keyboard?.track(draft, snapTo)
+          return
+        }
+      }
+    } else {
+      let newStart = sel.start
+      let newEnd = sel.end
+      let changed = false
+      for (const range of allTokenRanges) {
+        if (newStart > range.start && newStart < range.end) {
+          newStart = range.start
+          changed = true
+        }
+        if (newEnd > range.start && newEnd < range.end) {
+          newEnd = range.end
+          changed = true
+        }
+      }
+      if (changed) {
+        el.setSelectionRange(newStart, newEnd, el.selectionDirection)
+      }
+    }
+  }, [allTokenRanges, draft, keyboard])
+
+  // Custom caret rendering. The token pills are wider than the raw spans they
+  // decorate (icon plus padding), so the textarea's native caret would rest
+  // under a pill at both of its legal rest positions — the range start and the
+  // range end. The native caret is hidden (see .input) and this layer draws it
+  // instead: measured from the mirror's raw-text geometry (exact wherever the
+  // draft is plain), docked to the pill's outer edge when the caret sits on a
+  // token boundary. The guarded set keeps the every-render layout effect below
+  // from looping: unchanged measurements return the previous reference.
+  const [caretView, setCaretView] = useState<{ x: number; y: number; h: number } | null>(null)
+  const measureCaretView = useCallback((): void => {
+    const el = inputRef.current
+    const mirrorEl = mirrorRef.current
+    const backdropEl = backdropRef.current
+    if (el === null || mirrorEl === null || backdropEl === null || document.activeElement !== el) {
+      setCaretView(prev => prev === null ? prev : null)
+      return
+    }
+    const text = mirrorEl.firstChild
+    if (!(text instanceof Text)) {
+      setCaretView(prev => prev === null ? prev : null)
+      return
+    }
+    // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
+    const caret = Math.min(el.selectionStart ?? el.value.length, text.data.length)
+    const origin = backdropEl.getBoundingClientRect()
+    // Non-finite measurements (jsdom reports `line-height: normal`, parsed to
+    // NaN) carry no geometry: drop to no caret instead of looping on a value
+    // that never compares equal to itself.
+    const set = (x: number, y: number, h: number): void => {
+      // A non-positive height draws nothing visible; drop to no caret instead.
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(h) || h <= 0) {
+        setCaretView(prev => prev === null ? prev : null)
+        return
+      }
+      setCaretView(prev => prev !== null && prev.x === x && prev.y === y && prev.h === h ? prev : { x, y, h })
+    }
+    const boundary = allTokenRanges.find(r => caret === r.start || caret === r.end)
+    if (boundary !== undefined) {
+      // Token keys are `[a-z-<digits>]` shapes this component mints itself, so
+      // the selector needs no escaping (jsdom ships no CSS namespace at all).
+      const pillEl = backdropEl.querySelector<HTMLElement>(`[data-token-key="${boundary.key}"]`)
+      if (pillEl !== null) {
+        const pillRect = pillEl.getBoundingClientRect()
+        const atStart = caret === boundary.start
+        set(
+          (atStart ? pillRect.left - 1 : pillRect.right + 1) - origin.x,
+          pillRect.top - origin.y,
+          pillRect.height,
+        )
         return
       }
     }
-  }
+    // Same engine disagreement revealCaret handles: a caret straight after a
+    // newline has nothing to collapse onto, so measure the newline itself and
+    // step one line down onto the line the caret sits on.
+    const afterNewline = caret > 0 && text.data[caret - 1] === '\n'
+    const range = document.createRange()
+    if (afterNewline) {
+      range.setStart(text, caret - 1)
+      range.setEnd(text, caret)
+    } else {
+      range.setStart(text, caret)
+      range.collapse(true)
+    }
+    // jsdom's Range has no client-rect API at all (zero-layout environments);
+    // without a caret geometry there is nothing to draw.
+    if (typeof range.getBoundingClientRect !== 'function') {
+      setCaretView(prev => prev === null ? prev : null)
+      return
+    }
+    const rect = range.getBoundingClientRect()
+    if (afterNewline) {
+      const padLeft = Number.parseFloat(getComputedStyle(backdropEl).paddingLeft)
+      const lineHeight = Number.parseFloat(getComputedStyle(mirrorEl).lineHeight)
+      // A theme resolving line-height to `normal` parses to NaN; the measured
+      // fragment height is the honest fallback.
+      set(padLeft, rect.bottom - origin.y, Number.isFinite(lineHeight) ? lineHeight : rect.height)
+    } else if (rect.height > 0) {
+      set(rect.left - origin.x, rect.top - origin.y, rect.height)
+    } else {
+      // Degenerate collapsed geometry (an empty draft collapses at offset 0 of
+      // the mirror's lone '\n' and some engines report a zero rect there):
+      // derive the caret from the first line box instead of an unusable rect.
+      const backdropStyle = getComputedStyle(backdropEl)
+      const padLeft = Number.parseFloat(backdropStyle.paddingLeft)
+      const padTop = Number.parseFloat(backdropStyle.paddingTop)
+      const lineHeight = Number.parseFloat(getComputedStyle(mirrorEl).lineHeight)
+      set(padLeft, padTop, lineHeight)
+    }
+  }, [allTokenRanges])
+
+  useLayoutEffect(() => {
+    measureCaretView()
+  })
+
+  useEffect(() => {
+    const onSelectionChange = (): void => {
+      const el = inputRef.current
+      if (el === null || document.activeElement !== el) return
+      snapCaretOutOfTokens(el)
+      measureCaretView()
+    }
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange)
+    }
+  }, [snapCaretOutOfTokens, measureCaretView])
 
   const onMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>): void => {
     const backdropEl = backdropRef.current
@@ -390,28 +532,61 @@ export function InputBar({
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
-    // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
-    if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+    if (e.key === 'ArrowLeft') {
       const selection = selectionOf(e.currentTarget)
       if (selection.start === selection.end) {
         const caret = selection.start
         const token = allTokenRanges.find(r => caret > r.start && caret <= r.end)
         if (token !== undefined) {
           e.preventDefault()
-          restoreCaret(e.currentTarget, token.start)
+          if (e.shiftKey) {
+            e.currentTarget.setSelectionRange(token.start, selection.end, 'backward')
+          } else {
+            // Synchronous selection, not restoreCaret: no draft write happened,
+            // so the deferred reveal buys nothing and the jump must land within
+            // the gesture itself.
+            e.currentTarget.setSelectionRange(token.start, token.start)
+            revealCaret(token.start)
+            keyboard.track(draft, token.start)
+          }
+          return
+        }
+      } else if (e.shiftKey && e.currentTarget.selectionDirection === 'backward') {
+        const caret = selection.start
+        const token = allTokenRanges.find(r => caret > r.start && caret <= r.end)
+        if (token !== undefined) {
+          e.preventDefault()
+          e.currentTarget.setSelectionRange(token.start, selection.end, 'backward')
           return
         }
       }
     }
-    if (e.key === 'ArrowRight' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+    if (e.key === 'ArrowRight') {
       const selection = selectionOf(e.currentTarget)
       if (selection.start === selection.end) {
         const caret = selection.start
         const token = allTokenRanges.find(r => caret >= r.start && caret < r.end)
         if (token !== undefined) {
           e.preventDefault()
-          restoreCaret(e.currentTarget, token.end)
+          if (e.shiftKey) {
+            e.currentTarget.setSelectionRange(selection.start, token.end, 'forward')
+          } else {
+            // Synchronous selection, not restoreCaret: no draft write happened,
+            // so the deferred reveal buys nothing and the jump must land within
+            // the gesture itself.
+            e.currentTarget.setSelectionRange(token.end, token.end)
+            revealCaret(token.end)
+            keyboard.track(draft, token.end)
+          }
+          return
+        }
+      } else if (e.shiftKey && e.currentTarget.selectionDirection === 'forward') {
+        const caret = selection.end
+        const token = allTokenRanges.find(r => caret >= r.start && caret < r.end)
+        if (token !== undefined) {
+          e.preventDefault()
+          e.currentTarget.setSelectionRange(selection.start, token.end, 'forward')
           return
         }
       }
@@ -428,7 +603,11 @@ export function InputBar({
           e.preventDefault()
           const start = token.start
           let end = token.end
-          if (end < draft.length && draft[end] === ' ') end += 1
+          // Only a plain text token swallows its trailing separator (it was
+          // typed as text, so the separator is ordinary draft text). A
+          // structured chip and the claim token — whose range already carries
+          // the separator — delete as exactly their own range.
+          if (token.key.startsWith('ref-') && end < draft.length && draft[end] === ' ') end += 1
           keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
           restoreCaret(e.currentTarget, start)
           keyboard.track(keyboard.snapshot.draft, start)
@@ -505,7 +684,6 @@ export function InputBar({
     safariNativeShrinkRef.current = safari && next.length < draft.length
     keyboard.setDraft(next)
     // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     keyboard.track(next, e.target.selectionStart ?? next.length)
   }
 
@@ -650,13 +828,6 @@ export function InputBar({
 
   const canAcceptDrop = !locked && !machineBusy && addFiles !== undefined
 
-  const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
-    // Any caret/selection gesture ends a live paste attempt (the machine
-    // cannot observe DOM selection). Cheap no-op when none is live.
-    if (keyboard !== undefined && keyboard.snapshot.paste !== undefined) keyboard.invalidatePaste()
-    snapCaretOutOfTokens(e.currentTarget)
-  }
-
   // Button presses steal focus from the textarea; suppress at mousedown so
   // typing continues seamlessly. `preventScroll` for the same reason as the
   // unlock effect, and with no reveal of its own: the caret has not moved, and
@@ -708,6 +879,40 @@ export function InputBar({
 
   const backdrop: ReactNode[] = []
   {
+    // A token decoration keeps its RAW draft characters as an invisible advance
+    // (.pillAdvance): the backdrop then consumes exactly the width the textarea
+    // reserves for the span, so every visible glyph after a pill stays aligned
+    // with the native caret and selection geometry no matter how wide the styled
+    // pill overlay is (.tokenPill may exceed the span by icon plus padding).
+    const pillDecoration = (spec: {
+      key: string
+      raw: string
+      decorationKind: 'token' | 'chip' | 'text-ref'
+      tokenKey: string
+      hovered: boolean
+      invalid?: boolean
+      hostAttrs?: Record<string, string | undefined>
+      icon: ReactNode
+    }): ReactNode => (
+      <span
+        key={spec.key}
+        className={css.pillHost}
+        data-decoration={spec.decorationKind}
+        data-token-key={spec.tokenKey}
+        title={spec.raw}
+        {...spec.hostAttrs}
+      >
+        <span className={css.pillAdvance} data-pill-advance="">{spec.raw}</span>
+        <span
+          aria-hidden
+          className={clsx(css.tokenPill, spec.invalid && css.chipInvalid, spec.hovered && css.tokenPillHovered)}
+          data-pill=""
+        >
+          <span className={css.tokenIcon}>{spec.icon}</span>
+          <span className={css.tokenLabel}>{formatTokenLabel(spec.raw)}</span>
+        </span>
+      </span>
+    )
     // Segment boundaries: the token range end, every structured-reference
     // offset, and every text-ref range — merged in draft order (the sources never
     // overlap: structured references own their ranges, text-refs own plain tokens, the
@@ -720,23 +925,14 @@ export function InputBar({
     if (deco.token !== null) {
       // The claimed command token renders as a token pill:
       const tokenText = draft.slice(deco.token.start, deco.token.end)
-      const isHovered = hoveredKey === 'token'
-      backdrop.push(
-        <span
-          key="token"
-          className={clsx(css.tokenPill, isHovered && css.tokenPillHovered)}
-          data-decoration="token"
-          data-token-key="token"
-          title={tokenText}
-        >
-          <span className={css.tokenIcon}>
-            <ReferenceIcon kind="command" size={12} className={css.tokenIconGlyph} />
-          </span>
-          <span className={css.tokenLabel}>
-            {formatTokenLabel(tokenText)}
-          </span>
-        </span>,
-      )
+      backdrop.push(pillDecoration({
+        key: 'token',
+        raw: tokenText,
+        decorationKind: 'token',
+        tokenKey: 'token',
+        hovered: hoveredKey === 'token',
+        icon: <ReferenceIcon kind="command" size={12} className={css.tokenIconGlyph} />,
+      }))
       cursor = deco.token.end
     }
     type Boundary =
@@ -752,62 +948,40 @@ export function InputBar({
       if (b.kind === 'chip') {
         const chip = b.chip
         const chipKey = `chip-${chip.occurrenceId}`
-        const isHovered = hoveredKey === chipKey
-        backdrop.push(
-          <span
-            key={chipKey}
-            className={clsx(
-              css.tokenPill,
-              chip.invalid && css.chipInvalid,
-              isHovered && css.tokenPillHovered,
-            )}
-            data-decoration="chip"
-            data-token-key={chipKey}
-            data-reference-appearance={chip.appearance}
-            data-occurrence={chip.occurrenceId}
-            data-invalid={chip.invalid || undefined}
-            title={chip.label}
-          >
-            <span className={css.tokenIcon}>
-              {chip.appearance === 'file'
-                ? <FileTypeIcon kind={fileTypeIconKind(chip.text)} size={12} className={css.tokenIconGlyph} />
-                : chip.appearance !== undefined
-                  ? <ReferenceIcon kind={chip.appearance} size={12} className={css.tokenIconGlyph} />
-                  : <FileTypeIcon kind="file" size={12} className={css.tokenIconGlyph} />}
-            </span>
-            <span className={css.tokenLabel}>
-              {formatTokenLabel(chip.text)}
-            </span>
-          </span>,
-        )
+        backdrop.push(pillDecoration({
+          key: chipKey,
+          raw: draft.slice(chip.offset, chip.offset + chip.length),
+          decorationKind: 'chip',
+          tokenKey: chipKey,
+          hovered: hoveredKey === chipKey,
+          invalid: chip.invalid,
+          hostAttrs: {
+            'data-reference-appearance': chip.appearance,
+            'data-occurrence': String(chip.occurrenceId),
+            'data-invalid': chip.invalid ? 'true' : undefined,
+          },
+          icon: chip.appearance === 'file'
+            ? <FileTypeIcon kind={fileTypeIconKind(chip.text)} size={12} className={css.tokenIconGlyph} />
+            : chip.appearance !== undefined
+              ? <ReferenceIcon kind={chip.appearance} size={12} className={css.tokenIconGlyph} />
+              : <FileTypeIcon kind="file" size={12} className={css.tokenIconGlyph} />,
+        }))
         cursor = chip.offset + chip.length
       } else {
         const text = draft.slice(b.ref.start, b.ref.end)
         const refKey = `ref-${b.ref.start}`
-        const isHovered = hoveredKey === refKey
         const appearance = b.ref.appearance ?? (b.ref.trigger === '@' ? 'file' : 'command')
-        backdrop.push(
-          <span
-            key={refKey}
-            className={clsx(
-              css.tokenPill,
-              isHovered && css.tokenPillHovered,
-            )}
-            data-decoration="text-ref"
-            data-token-key={refKey}
-            data-appearance={appearance}
-            title={text}
-          >
-            <span className={css.tokenIcon}>
-              {appearance === 'file'
-                ? <FileTypeIcon kind={fileTypeIconKind(text)} size={12} className={css.tokenIconGlyph} />
-                : <ReferenceIcon kind={appearance} size={12} className={css.tokenIconGlyph} />}
-            </span>
-            <span className={css.tokenLabel}>
-              {formatTokenLabel(text)}
-            </span>
-          </span>,
-        )
+        backdrop.push(pillDecoration({
+          key: refKey,
+          raw: text,
+          decorationKind: 'text-ref',
+          tokenKey: refKey,
+          hovered: hoveredKey === refKey,
+          hostAttrs: { 'data-appearance': appearance },
+          icon: appearance === 'file'
+            ? <FileTypeIcon kind={fileTypeIconKind(text)} size={12} className={css.tokenIconGlyph} />
+            : <ReferenceIcon kind={appearance} size={12} className={css.tokenIconGlyph} />,
+        }))
         cursor = b.ref.end
       }
     }
@@ -906,6 +1080,13 @@ export function InputBar({
               data-disabled={textareaDisabled || undefined}
             >
               {backdrop}
+              {caretView !== null && (
+                <span
+                  aria-hidden
+                  className={css.caret}
+                  style={{ transform: `translate(${caretView.x}px, ${caretView.y}px)`, height: caretView.h }}
+                />
+              )}
             </div>
             <textarea
               ref={inputRef}
@@ -933,10 +1114,22 @@ export function InputBar({
               rows={2}
               onChange={onChange}
               onKeyDown={onKeyDown}
-              onSelect={onSelect}
+              onSelect={(e) => {
+                // Any caret/selection gesture ends a live paste attempt (the
+                // machine cannot observe DOM selection). Cheap no-op when none.
+                if (keyboard !== undefined && keyboard.snapshot.paste !== undefined) keyboard.invalidatePaste()
+                snapCaretOutOfTokens(e.currentTarget)
+                measureCaretView()
+              }}
+              onFocus={() => { measureCaretView() }}
+              onBlur={() => { setCaretView(null) }}
               onMouseMove={onMouseMove}
               onMouseLeave={onMouseLeave}
               onClick={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
+              onMouseDown={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
+              onMouseUp={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
+              onPointerDown={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
+              onPointerUp={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
               onKeyUp={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
               onCopy={(e) => { onCopyOrCut(e, false) }}
               onCut={(e) => { onCopyOrCut(e, true) }}

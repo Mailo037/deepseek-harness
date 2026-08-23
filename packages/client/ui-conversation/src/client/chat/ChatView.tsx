@@ -147,6 +147,7 @@ function closedTurnOf(node: ChatConversationViewNode): number | undefined {
 interface AssistantMeta {
   readonly finalNode?: { readonly seq: number }
   readonly blocks?: readonly { readonly kind: string; readonly text?: string }[]
+  readonly status?: 'running' | 'settled' | 'interrupted'
 }
 
 /**
@@ -154,13 +155,17 @@ interface AssistantMeta {
  * visible text (or image/other content). Such nodes belong inside the tool
  * window, since their only rendered content is the Think row. Whitespace-only
  * text blocks don't count as visible text; a node with just tool heads (no
- * reasoning/text) renders an empty shell and stays out.
+ * reasoning/text) renders an empty shell and stays out. An interrupted step
+ * carries its own Stopped marker and always renders in flow, splitting the
+ * surrounding tool run instead of tucking into it.
  * @param node - settled/interrupted Assistant chat node.
- * @returns true when reasoning is present and nothing visible except it remains.
+ * @returns true when reasoning is present, the step is not interrupted, and
+ *   nothing visible except it remains.
  */
 function isThinkOnly(node: ChatConversationViewNode): boolean {
   if (node.kind !== 'assistant-step') return false
-  const { blocks } = node.data as AssistantMeta
+  const { blocks, status } = node.data as AssistantMeta
+  if (status === 'interrupted') return false
   if (blocks === undefined || !blocks.some(block => block.kind === 'reasoning')) return false
   return blocks.every(block =>
     block.kind === 'reasoning'
@@ -292,9 +297,14 @@ function TurnStatus({ startTime, t }: {
   t: ChatViewSlotProps['t']
 }) {
   const [mountedAt] = useState(() => Date.now())
-  // Anchored to turn/start so a mid-turn reload keeps the real
-  // elapsed time and the final footer's Ran-for label matches this clock.
-  const anchor = startTime ?? mountedAt
+  // Anchored to the earliest start time of this active run (or mount time)
+  // so intermediate tool calls/steps during a run do not reset the clock or rotating phrase.
+  const [anchor, setAnchor] = useState(() => startTime ?? mountedAt)
+  useEffect(() => {
+    if (startTime !== null) {
+      setAnchor(prev => Math.min(prev, startTime))
+    }
+  }, [startTime])
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
   useEffect(() => {
     const tick = (): void => {
@@ -329,7 +339,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  sendMessage, fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -616,6 +626,7 @@ export function ChatView({
       openFile={requestOpenFile}
       inspectCall={inspectCall}
       forkAt={forkAt}
+      sendMessage={sendMessage}
       renderMessageImages={renderMessageImages}
       fileMentions={fileMentions}
       {...(hideAssistantReasoning === undefined ? {} : { hideAssistantReasoning })}
@@ -627,13 +638,18 @@ export function ChatView({
   // Flow construction. Contiguous tool runs live inside one bounded scroll
   // window whose header names the run's last action; a run of one call renders
   // as the bare row (no window chrome). Think-only steps join the surrounding
-  // run so their reasoning row stays inside one tool window; steps with visible
-  // text render in flow and split the run.
+  // run while tool calls keep following them; a TRAILING think-only step (no
+  // further tool call precedes the next visible content) renders in flow — its
+  // reasoning belongs to the answer text it leads, not to the tool window
+  // above; steps with visible text render in flow and split the run.
   interface FlowElement { readonly el: ReactNode; readonly fold: boolean }
   const foldableNode = (node: ChatConversationViewNode, closingSeq: number | null): boolean => {
     if (node.kind === 'tool-call' || node.kind === 'model-retry' || node.kind === 'context' || isThinkOnly(node)) return true
     if (closingSeq === null || node.kind !== 'assistant-step') return false
     const data = node.data as AssistantMeta
+    // An interrupted step stays in flow: its Stopped marker must never hide
+    // behind a work-summary fold.
+    if (data.status === 'interrupted') return false
     return data.blocks?.some(block => block.kind === 'text') === true
       && data.finalNode !== undefined && data.finalNode.seq !== closingSeq
   }
@@ -645,6 +661,28 @@ export function ChatView({
       children: ReactNode[]
       nodes: ChatConversationViewNode[]
     } | null = null
+    // Think-only steps met since the run's last tool call. They join the run
+    // when another tool call follows; otherwise they flush as standalone rows.
+    let trailingThink: { key: string; node: ChatConversationViewNode }[] = []
+    const flushThinkIntoRun = (): void => {
+      if (run === null) {
+        const first = trailingThink[0]
+        if (first === undefined) return
+        run = { firstKey: first.key, toolKey: first.key, children: [], nodes: [] }
+      }
+      for (const pending of trailingThink) {
+        run.children.push(seat(pending.key))
+        run.nodes.push(pending.node)
+      }
+      trailingThink = []
+    }
+    const flushTrailingThinkStandalone = (): void => {
+      if (run !== null) flushRun()
+      for (const pending of trailingThink) {
+        out.push({ el: seat(pending.key), fold: foldableNode(pending.node, closingSeq) })
+      }
+      trailingThink = []
+    }
     const flushRun = (): void => {
       if (run === null) return
       if (run.children.length === 1) {
@@ -672,11 +710,12 @@ export function ChatView({
     for (const key of keys) {
       const node = nodeStore.get(key)
       if (node === undefined) {
-        flushRun()
+        flushTrailingThinkStandalone()
         out.push({ el: seat(key), fold: false })
         continue
       }
-      if (node.kind === 'tool-call' || node.kind === 'model-retry' || isThinkOnly(node)) {
+      if (node.kind === 'tool-call' || node.kind === 'model-retry') {
+        flushThinkIntoRun()
         if (run === null) {
           run = { firstKey: key, toolKey: key, children: [], nodes: [] }
         }
@@ -684,10 +723,14 @@ export function ChatView({
         run.nodes.push(node)
         continue
       }
-      flushRun()
+      if (isThinkOnly(node)) {
+        trailingThink.push({ key, node })
+        continue
+      }
+      flushTrailingThinkStandalone()
       out.push({ el: seat(key), fold: foldableNode(node, closingSeq) })
     }
-    flushRun()
+    flushTrailingThinkStandalone()
     return out
   }
 

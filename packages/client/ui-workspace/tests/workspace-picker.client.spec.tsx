@@ -103,6 +103,7 @@ function mount(
   occupancy = occupancySource(),
   pickerRequests = pickerRequestSource(),
   open = true,
+  standalone = false,
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
@@ -122,6 +123,7 @@ function mount(
       useWorkspacePickerRequest={pickerRequests.useWorkspacePickerRequest}
       settleWorkspacePickerRequest={settleWorkspacePickerRequest}
       renderSlot={renderSlot}
+      standalone={standalone}
       t={t}
     />
   )
@@ -231,6 +233,20 @@ describe('WorkspacePicker', () => {
     const b = mount([workspace('alpha', 'Alpha')])
     fireEvent.click(screen.getByRole('menuitem', { name: '无工作区 (独立会话)' }))
     expect(b.onPick).toHaveBeenCalledWith(undefined)
+  })
+
+  it('marks no entry selected while the surface still reads "Choose workspace"', () => {
+    // Cold start: nothing is chosen yet, so the no-Workspace entry carries its
+    // leading icon alone — no trailing selection check.
+    mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), pickerRequestSource(), true, false)
+    const entry = screen.getByRole('menuitem', { name: '无工作区 (独立会话)' })
+    expect(entry.querySelectorAll('svg')).toHaveLength(1)
+  })
+
+  it('marks the no-Workspace entry selected once the session is standalone', () => {
+    mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), pickerRequestSource(), true, true)
+    const entry = screen.getByRole('menuitem', { name: '无工作区 (独立会话)' })
+    expect(entry.querySelectorAll('svg')).toHaveLength(2)
   })
 
   it('treats flow cancellation as a silent no-op', () => {

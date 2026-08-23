@@ -17,7 +17,7 @@ type RoutedChatNodeOwner = {
 
 /** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, selectedCallId, cwd, openFile, inspectCall, forkAt,
+  nodeKey, selectedCallId, cwd, openFile, inspectCall, forkAt, sendMessage,
   renderMessageImages, fileMentions, hideAssistantReasoning,
   useSession, renderSlot, t,
 }: ChatNodeSeatProps) {
@@ -31,11 +31,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       openFile,
       inspectCall,
       forkAt,
+      sendMessage,
       renderMessageImages,
       fileMentions,
       ...(hideAssistantReasoning === undefined ? {} : { hideAssistantReasoning }),
     }, [
-    node, selectedCallId, cwd, openFile, inspectCall, forkAt, renderMessageImages, fileMentions,
+    node, selectedCallId, cwd, openFile, inspectCall, forkAt, sendMessage, renderMessageImages, fileMentions,
     hideAssistantReasoning,
   ])
   if (routedNode === undefined || owner === null) return null

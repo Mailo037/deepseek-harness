@@ -44,15 +44,21 @@ export interface WorkspacePickFlowProps {
   /** Close the popover (outside click / Escape / post-pick). */
   onClose: () => void
   /** End an external picker request without choosing a Workspace. */
-  onCancel?: () => void
+  onCancel?: (() => void) | undefined
   /** Only offer the add action, hide existing workspaces. */
-  addOnly?: boolean
+  addOnly?: boolean | undefined
   /** Bypass the menu and start the composed directory flow for an external request. */
-  directDirectoryFlow?: boolean
+  directDirectoryFlow?: boolean | undefined
   /** Menu opening direction relative to the anchor. */
-  side?: 'bottom' | 'top' | 'right'
+  side?: ('bottom' | 'top' | 'right') | undefined
   /** Currently active workspace (trailing check in the picker list). */
   selectedId?: WorkspaceId | undefined
+  /**
+   * The surface currently shows the standalone no-Workspace state, so the
+   * menu marks the no-Workspace entry selected. Absent on a cold start,
+   * where nothing is chosen yet and no entry may read as selected.
+   */
+  standalone?: boolean | undefined
 }
 
 /**
@@ -75,6 +81,7 @@ export function WorkspacePickFlow({
   directDirectoryFlow = false,
   side = 'bottom',
   selectedId,
+  standalone = false,
 }: WorkspacePickFlowProps) {
   const workspaceSnapshot = useWorkspaces(state => state)
   const workspaces = workspaceSnapshot.items
@@ -211,7 +218,10 @@ export function WorkspacePickFlow({
         anchor={null}
         items={items}
         {...!addOnly && addEntries.length > 0 ? { footer: addEntries } : {}}
-        selectedId={selectedId ?? (!addOnly ? NO_WORKSPACE : undefined)}
+        // The no-Workspace check names a state the user reached (a standalone
+        // session); on a cold start the "Choose workspace" placeholder means
+        // nothing is chosen, so no entry may read as selected.
+        selectedId={selectedId ?? (!addOnly && standalone ? NO_WORKSPACE : undefined)}
         onSelect={handleSelect}
         onClose={onCancel ?? onClose}
         side={side}
@@ -251,6 +261,7 @@ export function WorkspacePicker({
   anchorRef,
   useWorkspaces,
   selectedId,
+  standalone,
   onPick,
   onClose,
   createWorkspace,
@@ -306,6 +317,7 @@ export function WorkspacePicker({
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       directDirectoryFlow={requestedOpen}
       selectedId={selectedId}
+      standalone={standalone}
       onPick={pickWorkspace}
       onClose={close}
       onCancel={cancelRequest}

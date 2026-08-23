@@ -174,6 +174,7 @@ function parseModalities(entry: ListingEntry | null, id: string): { inputModalit
   const lowerId = id.toLowerCase()
   if (
     lowerId.includes('vision')
+    || lowerId.includes('envision')
     || lowerId.includes('vl')
     || lowerId.includes('janus')
     || lowerId.includes('gemini')

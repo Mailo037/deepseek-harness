@@ -1,7 +1,8 @@
 // MessageItem: simple chat nodes — user and consumed-steering bubbles
 // (right-aligned, with clock + copy IconActions; branch lives only under
 // assistant answers), pending steering (copy only), context injection,
-// compaction marker, retry disclosure, and unknown-surface JSON rows.
+// compaction marker, retry disclosure, turn-error retry/copy actions, and
+// unknown-surface JSON rows.
 
 import { memo, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -164,18 +165,28 @@ function ModelRetryItem({ node, active, t }: {
 }
 
 /** Persistent, turn-positioned feedback for a terminal failure. */
-function TurnErrorItem({ node, t }: {
+function TurnErrorItem({ node, onRetry, t }: {
   node: TurnErrorNode
+  /** Send the continue prompt into the session (queued turn). */
+  onRetry: () => void
   t: ChatViewSlotProps['t']
 }) {
   return (
-    <div className={css.turnErrorRow} role="status">
-      <StateDot state="error" className={css.turnErrorDot} />
-      <div className={css.turnErrorCopy}>
-        <span className={css.turnErrorTitle}>{t('message.turnError')}</span>
-        <span className={css.turnErrorMessage}>{node.message}</span>
+    <div className={css.turnErrorBlock}>
+      <div className={css.turnErrorRow} role="status">
+        <StateDot state="error" className={css.turnErrorDot} />
+        <div className={css.turnErrorCopy}>
+          <span className={css.turnErrorTitle}>{t('message.turnError')}</span>
+          <span className={css.turnErrorMessage}>{node.message}</span>
+        </div>
+        {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
       </div>
-      {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
+      <div className={css.turnErrorActions}>
+        <button type="button" className={css.turnErrorRetry} onClick={onRetry}>
+          {t('message.turnError.retry')}
+        </button>
+        <MessageIconActions text={node.message} clock="end" className={css.turnErrorCopyAction} t={t} />
+      </div>
     </div>
   )
 }
@@ -382,8 +393,16 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
 })
 
 /** Terminal turn-error keyed Chat renderer. */
-export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
-  return <TurnErrorItem node={node.data} t={t} />
+export const TurnErrorNodeView = memo(function TurnErrorNodeView({
+  node, sendMessage, t,
+}: ChatNodeViewProps<'turn-error'>) {
+  return (
+    <TurnErrorItem
+      node={node.data}
+      onRetry={() => { sendMessage(t('message.turnError.retryMessage')) }}
+      t={t}
+    />
+  )
 })
 
 /** Max-tokens turn-end notice keyed Chat renderer. */

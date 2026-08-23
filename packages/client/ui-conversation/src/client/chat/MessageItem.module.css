@@ -264,18 +264,60 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Turn-error block: status row plus its inline retry/copy actions. The block
+   owns the vertical padding so role="status" stays exactly the failure text. */
+.turnErrorBlock {
+  padding: 2px 0;
+}
+
 .turnErrorRow {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
-  padding: 2px 0;
   font-size: 13px;
   line-height: 20px;
 }
 
 .turnErrorDot {
   margin-top: 5px;
+}
+
+/* Actions align under the error copy (10px dot column + 8px gap). */
+.turnErrorActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  margin-left: 18px;
+}
+
+.turnErrorRetry {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.turnErrorRetry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.turnErrorRetry:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-button-info-fill);
+  outline-offset: 1px;
+}
+
+/* Pull the icon-only copy row tight against the retry button (the shared
+   module reserves clock padding this row never uses). */
+.turnErrorCopyAction {
+  height: 22px;
 }
 
 .turnErrorCopy {

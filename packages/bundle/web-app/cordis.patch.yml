@@ -207,6 +207,10 @@
     - id: ui-sidebar
       name: '@deepseek-ai/dsh-client-ui-sidebar'
 
+    # Global keyboard shortcuts: the sidebar toggle and New Session chords.
+    - id: ui-shortcuts
+      name: '@deepseek-ai/dsh-client-ui-shortcuts'
+
     - id: ui-settings
       name: '@deepseek-ai/dsh-client-ui-settings'
 
@@ -296,6 +300,13 @@
     # sessions created later. Absent a roster it renders nothing.
     - id: ui-agent-preset
       name: '@deepseek-ai/dsh-client-ui-agent-preset'
+
+    # Notification sounds: the General-settings opt-in row and the
+    # session-state watcher that plays a sound on the same summary transitions
+    # the sidebar status dots project. Remove this entry to turn the surface
+    # off; the watcher then never mounts.
+    - id: ui-notifications
+      name: '@deepseek-ai/dsh-client-ui-notifications'
 
     # Plugin configuration: the host-plane sections a user owns, as expandable
     # cards. A namespace this deployment does not expose renders nothing.

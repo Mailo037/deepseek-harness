@@ -102,6 +102,7 @@ function isModelMissingImageSupport(
           }
           if (
             modelId.includes('vision')
+            || modelId.includes('envision')
             || modelId.includes('gemini')
             || modelId.includes('ox-alpha')
             || modelId.includes('vl')
@@ -117,6 +118,7 @@ function isModelMissingImageSupport(
   }
   if (
     modelId.includes('vision')
+    || modelId.includes('envision')
     || modelId.includes('gemini')
     || modelId.includes('ox-alpha')
     || modelId.includes('vl')

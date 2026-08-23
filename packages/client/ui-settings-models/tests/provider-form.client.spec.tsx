@@ -1526,5 +1526,12 @@ describe('API key field', () => {
     fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
     const inheritCheckbox = screen.getByLabelText(en.inheritModelSettings) as HTMLInputElement
     expect(inheritCheckbox.checked).toBe(true)
+
+    // The expanded panel repeats the modalities under their own label, so the
+    // opened row states what the model accepts without hunting the header.
+    expect(screen.getByText(en.modelModalities)).toBeDefined()
+    expect(screen.getAllByText(en.modalityText)).toHaveLength(2)
+    expect(screen.getAllByText(en.modalityImage)).toHaveLength(2)
+    expect(screen.getAllByText(en.modalityVideo)).toHaveLength(2)
   })
 })

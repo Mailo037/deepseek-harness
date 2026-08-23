@@ -434,6 +434,12 @@ export function apply(ctx: Context): void {
           actions.setInspect({ callId })
           actions.setView('trajectory')
         },
+        // Fire-and-forget retry send (turn-error inline action).
+        sendMessage: (text) => {
+          scoped.send(text).catch(() => {
+            // Rejected admission lands in the snapshot's promptError; nothing to restore here.
+          })
+        },
         chatScroll: {
           save: (position) => {
             if (position === null) chatScrollPositions.delete(sessionId)

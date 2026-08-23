@@ -415,6 +415,8 @@ export interface ChatNodeOwnerProps {
   openFile: (path: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
+  /** Send one prompt into the session as a queued user turn. */
+  sendMessage: (text: string) => void
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
@@ -763,6 +765,11 @@ export interface ChatViewInjected {
   /** Hand a call off to the trajectory view: write the one-shot inspect target and switch tabs. */
   inspectCall: (callId: CallId) => void
   /**
+   * Send one prompt into the session as a queued user turn (the turn-error
+   * retry path; send failures surface through the snapshot's promptError).
+   */
+  sendMessage: (text: string) => void
+  /**
    * Per-session scroll memory surviving view switches (in-memory, never
    * persisted): the view saves on every scroll and restores on remount; a
    * fresh page load starts empty and keeps the open-jump-to-bottom default.
@@ -816,6 +823,13 @@ export interface EmptyWorkspaceOwnerProps {
   anchorRef?: RefObject<HTMLElement>
   /** Currently active workspace (renders a trailing check in the picker list). */
   selectedId?: WorkspaceId | undefined
+  /**
+   * The surface currently shows the standalone no-Workspace state (the chip
+   * reads "No workspace"), so the picker marks its no-Workspace entry as the
+   * selection. Absent on a cold start, where the "Choose workspace"
+   * placeholder means nothing is chosen yet and no entry may read as selected.
+   */
+  standalone?: boolean | undefined
   onPick: (workspaceId?: WorkspaceId) => void
   onClose: () => void
 }

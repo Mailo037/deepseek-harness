@@ -316,6 +316,22 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
       } as Model<Api>)
     }
   }
+  if (provider === 'deepseek') {
+    if (!map.has('deepseek-v4-flash-vision-exp')) {
+      map.set('deepseek-v4-flash-vision-exp', {
+        id: 'deepseek-v4-flash-vision-exp',
+        name: 'DeepSeek V4 Flash Vision (Exp)',
+        provider: 'deepseek',
+        api: 'openai-completions',
+        baseUrl: 'https://api.deepseek.com',
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        input: ['text', 'image'],
+        reasoning: true,
+        cost: NO_COST,
+      } as Model<Api>)
+    }
+  }
   return map
 }
 

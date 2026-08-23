@@ -130,7 +130,11 @@ describe('matrix row: claimed', () => {
     const { view, textarea, shell, claim } = bench()
     claim()
     expect(shell.snapshot.claim).toEqual({ token: '/goal ', hint: '目标' })
-    expect(view.container.querySelector('[data-decoration="token"]')?.textContent).toBe('/goal ')
+    // The decoration keeps the raw claim as its invisible advance and shows the
+    // formatted label in the pill overlay.
+    const tokenDecoration = view.container.querySelector('[data-decoration="token"]')
+    expect(tokenDecoration?.querySelector('[data-pill]')?.textContent).toBe('Goal')
+    expect(tokenDecoration?.textContent).toContain('/goal ')
     // The zh dictionary owns a hint.goal entry, which overrides the raw claim hint (production behavior).
     expect(view.container.querySelector('[data-decoration="hint"]')?.textContent).toBe('输入目标，智能体将持续执行')
     expect((textarea).readOnly).toBe(false)

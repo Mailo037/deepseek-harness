@@ -167,6 +167,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partia
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const sendMessage = vi.fn<(text: string) => void>()
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -292,6 +293,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partia
     inspectCall,
     chatScroll,
     forkAt,
+    sendMessage,
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -303,7 +305,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partia
   }
   return {
     set, setSessions, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, sendMessage, setSelection, toolOwners,
   }
 }
 
@@ -561,6 +563,75 @@ describe('ChatView', () => {
     // Think rows belong inside the tool group, while final text stays out.
     expect(scroll?.querySelector('[data-variant="think"]')).toBeTruthy()
     expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeNull()
+  })
+
+  it('renders a TRAILING Think step in flow, outside the tool group it follows', () => {
+    // A think-only step after the run's last tool call reasons for the answer
+    // text that follows — it does not belong inside the tool window above.
+    const thinkBlock = (seq: number, turn = 1): ReturnType<typeof assistant> => ({
+      ...assistant(seq, '', turn),
+      blocks: [{ kind: 'reasoning', text: 'summarizing...' }],
+    })
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        settledTool(2, 'a', 1),
+        settledTool(3, 'b', 1),
+        thinkBlock(4, 1),
+        assistant(5, 'done', 1),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const groups = view.container.querySelectorAll('[data-tool-group]')
+    expect(groups).toHaveLength(1)
+    fireEvent.click(groups[0]?.querySelector('button') as HTMLElement)
+    const scroll = groups[0]?.querySelector('[data-tool-scroll]')
+    // The window holds only the tool calls; the Think row renders in flow.
+    expect(scroll?.querySelector('[data-variant="think"]')).toBeNull()
+    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:4"]')).toBeNull()
+    expect(view.container.querySelector('[data-variant="think"]')).toBeTruthy()
+    const thinkRow = view.container.querySelector('[data-chat-flow-key="fixture:assistant:4"]')
+    expect(thinkRow).not.toBeNull()
+    // The Think row sits before the answer text, both outside the group.
+    expect(thinkRow?.nextElementSibling?.getAttribute('data-chat-flow-key')).toBe('fixture:assistant:5')
+  })
+
+  it('keeps an INTERRUPTED Think step in flow — the Stopped marker never joins the tool group', () => {
+    // A stopped step is turn feedback, not tool-call work: it splits the run
+    // and its Stopped marker stays visible outside any group window.
+    const interruptedThink = (seq: number, turn = 1): ReturnType<typeof assistant> => ({
+      ...assistant(seq, '', turn),
+      blocks: [{ kind: 'reasoning', text: 'cut off mid-thought' }],
+      interrupted: true,
+    })
+    const thinkBlock = (seq: number, turn = 1): ReturnType<typeof assistant> => ({
+      ...assistant(seq, '', turn),
+      blocks: [{ kind: 'reasoning', text: 'hmm...' }],
+    })
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        thinkBlock(2),
+        settledTool(3, 'a', 1),
+        settledTool(4, 'b', 1),
+        interruptedThink(5),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const groups = view.container.querySelectorAll('[data-tool-group]')
+    expect(groups).toHaveLength(1)
+    fireEvent.click(groups[0]?.querySelector('button') as HTMLElement)
+    const scroll = groups[0]?.querySelector('[data-tool-scroll]')
+    // The window holds the leading Think row plus the two tool calls; only
+    // the interrupted step renders outside, with its Stopped marker.
+    expect(scroll?.querySelector('[data-variant="think"]')).toBeTruthy()
+    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeNull()
+    const stoppedRow = view.container.querySelector('[data-chat-flow-key="fixture:assistant:5"]')
+    expect(stoppedRow).not.toBeNull()
+    expect(within(stoppedRow as HTMLElement).getByText('已停止')).toBeTruthy()
+    // Exactly one tool group remains, and the interrupted step sits outside it.
+    expect(view.container.querySelectorAll('[data-tool-group]')).toHaveLength(1)
+    expect(stoppedRow?.closest('[data-tool-group]')).toBeNull()
   })
 
   it('names the run "edited files" when it edited several files', () => {
@@ -835,6 +906,20 @@ describe('ChatView', () => {
       '本轮运行失败API key is invalidAUTH',
       '本轮运行失败plugin exploded',
     ])
+  })
+
+  it('offers inline retry and copy on turn errors; retry sends the continue prompt', () => {
+    const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'AUTH')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const errorBlock = view.getByRole('status').parentElement
+    expect(errorBlock).not.toBeNull()
+    // The error block carries its own copy action beside retry.
+    const copy = within(errorBlock as HTMLElement).getByRole('button', { name: '复制' })
+    const retry = within(errorBlock as HTMLElement).getByRole('button', { name: '重试' })
+    fireEvent.click(retry)
+    expect(h.sendMessage).toHaveBeenCalledTimes(1)
+    expect(h.sendMessage).toHaveBeenCalledWith('发生意外错误，请继续你之前的工作。')
+    expect(copy).toBeDefined()
   })
 
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {
