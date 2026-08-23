@@ -280,6 +280,9 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
         input: m.input,
         reasoning: m.reasoning,
         cost: NO_COST,
+        compat: {
+          supportsDeveloperRole: false,
+        },
       } as Model<Api>)
     }
     return map
@@ -875,6 +878,7 @@ function resolveModelCompat(
   route: PiAiCompatProfile | undefined,
   base: Model<Api> | undefined,
   api: string,
+  baseUrl?: string,
 ): { compat: ModelCompat } | Record<string, never> {
   const gate = compatGate(api)
   const configured: Record<string, unknown> = {}
@@ -891,7 +895,6 @@ function resolveModelCompat(
     }
     configured[field] = value
   }
-  if (Object.keys(configured).length === 0) return {}
   // The installed entry's compat matches the entry's OWN api — a route-level
   // `api` repoint (an anthropic catalog served through an OpenAI-compatible
   // gateway) leaves `base.compat` in the other protocol's shape, so it is
@@ -899,7 +902,12 @@ function resolveModelCompat(
   // model starts from pi-ai's baseURL-derived detection instead, which is
   // what a protocol change means for every other compat field too.
   const inherited = base?.api === api ? base.compat : undefined
-  return { compat: { ...inherited, ...configured } as ModelCompat }
+  const isBai = (provider === 'b.ai' || provider === 'bai' || baseUrl?.includes('api.b.ai') || baseUrl?.includes('b.ai'))
+    && (api === 'openai-completions' || api === 'openai-responses')
+  const defaults = isBai ? { supportsDeveloperRole: false } : undefined
+  const merged = { ...defaults, ...inherited, ...configured }
+  if (Object.keys(merged).length === 0) return {}
+  return { compat: merged as ModelCompat }
 }
 
 /** One route's materialized catalog, plus the request caps its profile chose. */
@@ -1024,7 +1032,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       contextWindow,
       maxTokens,
       ...resolveModelReasoning(provider, entry, base),
-      ...resolveModelCompat(provider, entry, request.compat, base, api),
+      ...resolveModelCompat(provider, entry, request.compat, base, api, baseUrl),
     }
   })
   // Per field, not per block: a route may default a switch its completions

@@ -859,6 +859,20 @@ describe('compat switches', () => {
     expect(models.get('acme-r')?.compat).toEqual({ supportsDeveloperRole: false })
   })
 
+  it('defaults supportsDeveloperRole to false for b.ai catalog and custom routes', () => {
+    const baiModels = modelsOf({ 'b.ai': {} }, 'b.ai')
+    expect(baiModels.get('deepseek-ai/deepseek-r1')?.compat).toEqual({ supportsDeveloperRole: false })
+
+    const customBai = modelsOf({
+      'custom-bai': {
+        api: 'openai-completions',
+        baseURL: 'https://api.b.ai/v1',
+        models: [{ id: 'deepseek-r1', reasoningEfforts: { off: null, high: 'high' } }],
+      },
+    }, 'custom-bai')
+    expect(customBai.get('deepseek-r1')?.compat).toEqual({ supportsDeveloperRole: false })
+  })
+
   it('carries an anthropic-only switch onto an anthropic-messages route', () => {
     const models = modelsOf({
       'acme-claude': {
