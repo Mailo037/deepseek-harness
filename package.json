@@ -157,7 +157,7 @@
     "desktop:package:linux": "npm run desktop:clean:linux && npm run build && npm run desktop:compile && npm run desktop:config && electron-builder --config desktop/electron-builder.yml --linux"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "0.25.1",
+    "@agentclientprotocol/sdk": "1.3.0",
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@testing-library/dom": "^10.4.1",
