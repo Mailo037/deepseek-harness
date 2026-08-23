@@ -52,4 +52,4 @@ vendor/**/src/*.js
 vendor/**/src/*.js.map
 vendor/**/src/*.d.ts
 vendor/**/src/*.d.ts.map
-!packages/client/ui-shell-command/src/css-modules.d.ts
+!packages/**/src/css-modules.d.ts
