@@ -3,7 +3,7 @@
 // and the inline key write lands in an isolated harness home without a reload
 // or model call.
 import { randomBytes } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -21,6 +21,7 @@ import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './s
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/onboarding-deepseek-config', import.meta.url))
 const WELCOME_EXPECTED = join(SNAPSHOT_DIR, 'welcome.expected.md')
 const MISSING_EXPECTED = join(SNAPSHOT_DIR, 'missing.expected.md')
+const WORKSPACE_EXPECTED = join(SNAPSHOT_DIR, 'workspace.expected.md')
 const MODELS_EXPECTED = join(SNAPSHOT_DIR, 'models.expected.md')
 const MODE = webSnapshotMode()
 
@@ -78,11 +79,62 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     const initial = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MISSING_EXPECTED, initial, MODE)
 
+    // The recovery CTA leaves no unusable first-run state silent: it opens
+    // the normal Models section, whose route/key editors remain the one
+    // configuration surface. Reload returns to the pending key step.
+    await credentialStep.getByRole('button', { name: '打开模型设置' }).click()
+    const recoverySettings = page.getByRole('dialog', { name: '设置' })
+    await recoverySettings.waitFor({ timeout: 10_000 })
+    expect(await recoverySettings.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
+    await page.keyboard.press('Escape')
+    const recoveryReloadWarnings = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, recoveryReloadWarnings)
+    await credentialStep.waitFor({ timeout: 15_000 })
+
     const secret = `dsh_onboarding_${randomBytes(12).toString('hex')}`
     await keyInput.fill(secret)
     await credentialStep.getByRole('button', { name: '保存并继续' }).click()
     await credentialStep.waitFor({ state: 'detached', timeout: 15_000 })
+
+    // A configured provider advances to an explicit Workspace step rather
+    // than falsely declaring first-run configuration complete. Deferral closes
+    // only this guide: it neither opens the picker nor creates a Workspace.
+    const workspaceStep = page.getByRole('dialog', { name: '选择工作区' })
+    await workspaceStep.waitFor({ timeout: 15_000 })
+    const workspaceAria = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(WORKSPACE_EXPECTED, workspaceAria, MODE)
+    // Onboarding goes straight to the same composed directory selector as the
+    // sidebar Add action. Cancellation restores the guide without adopting.
+    await workspaceStep.getByRole('button', { name: '选择工作区' }).click()
+    const workspaceDirectory = page.getByRole('dialog', { name: '选择工作区目录' })
+    await workspaceDirectory.waitFor({ timeout: 10_000 })
+    await workspaceDirectory.getByRole('button', { name: '取消', exact: true }).click()
+    await workspaceDirectory.waitFor({ state: 'hidden', timeout: 10_000 })
+    await workspaceStep.waitFor({ timeout: 10_000 })
+    await workspaceStep.getByRole('button', { name: '暂时跳过' }).click()
+    await workspaceStep.waitFor({ state: 'detached', timeout: 15_000 })
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
+    expect(await page.getByRole('dialog', { name: '选择工作区目录' }).count()).toBe(0)
+    // The ordinary picker remains available after the guide is deferred, and
+    // opens the same selector. Selecting a path returns to the live composer.
+    expect(await page.getByRole('button', { name: '选择工作区' }).count()).toBe(1)
+    await page.getByRole('button', { name: '添加工作区' }).click()
+    await workspaceDirectory.waitFor({ timeout: 10_000 })
+    await workspaceDirectory.getByRole('button', { name: '取消', exact: true }).click()
+    await workspaceDirectory.waitFor({ state: 'hidden', timeout: 10_000 })
+    await page.getByRole('button', { name: '添加工作区' }).click()
+    await workspaceDirectory.waitFor({ timeout: 10_000 })
+    const sidebarWorkspace = join(scaffold.workspaceCwd, 'sidebar-workspace')
+    await mkdir(sidebarWorkspace, { recursive: true })
+    await workspaceDirectory.getByRole('button', { name: '编辑路径' }).click()
+    const sidebarPath = workspaceDirectory.getByRole('textbox', { name: '编辑路径' })
+    await sidebarPath.fill(sidebarWorkspace)
+    await sidebarPath.press('Enter')
+    await workspaceDirectory.getByRole('button', { name: '打开', exact: true }).click()
+    await workspaceDirectory.waitFor({ state: 'hidden', timeout: 15_000 })
+    await page.locator('textarea:enabled[placeholder="描述你想要构建的内容"]')
+      .waitFor({ timeout: 15_000 })
 
     const stored = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
     expect(stored.includes(`DEEPSEEK_API_KEY: ${secret}`)).toBe(true)
@@ -244,7 +296,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
   it('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(
       SNAPSHOT_DIR,
-      ['welcome.expected.md', 'missing.expected.md', 'models.expected.md'],
+      ['welcome.expected.md', 'missing.expected.md', 'workspace.expected.md', 'models.expected.md'],
     )
   })
 })

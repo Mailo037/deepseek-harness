@@ -136,8 +136,9 @@ describe('SettingsPanel close paths', () => {
   it('closes via a mask click', () => {
     mount()
     openPanel()
-    const dialog = screen.getByRole('dialog')
-    fireEvent.click(dialog.parentElement!.firstElementChild!)
+    // The mask is the overlay's first child regardless of panel layout.
+    const overlay = document.querySelector('[role="presentation"]')!
+    fireEvent.click(overlay.firstElementChild!)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

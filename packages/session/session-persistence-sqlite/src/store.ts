@@ -238,6 +238,28 @@ export class SqliteStore implements PersistenceBackend<number> {
     }
   }
 
+  /**
+   * Remove one session's metadata row; the `events` foreign key cascades the
+   * log. One immediate transaction, schema revalidated like every mutation.
+   * @param id - persisted session id to remove.
+   * @param signal - optional cancellation before the deletion work.
+   * @returns whether a materialized session row existed.
+   */
+  async deleteStored(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    await this.observe(signal)
+    signal?.throwIfAborted()
+    this.db.exec(sql('begin-immediate'))
+    try {
+      validateSchemaForMutation(this.databaseConstructor, this.db, this.databasePath)
+      const existed = this.rowFor(id) !== undefined
+      if (existed) this.db.prepare(sql('delete-session')).run(id)
+      this.db.exec(sql('commit'))
+      return existed
+    } catch (error: unknown) {
+      this.rollback(error, 'delete')
+    }
+  }
+
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
     await this.observe(signal)
     const rows = this.sessionRows()

@@ -85,6 +85,11 @@ export function apply(ctx: ClientContext): void {
     hooks: { models: controller.store },
     api: connection.api,
     schema,
+    requestWorkspace: (onSettled) => {
+      const requests = ctx.get('workspacePickerRequests') as { request: (onSettled: (completed: boolean) => void) => boolean } | undefined
+      if (requests === undefined) return false
+      return requests.request(onSettled)
+    },
     t,
   })
   // The scope's own memory mode is what keeps a remote browser process-local,

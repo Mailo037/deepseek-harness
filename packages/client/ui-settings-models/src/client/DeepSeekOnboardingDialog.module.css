@@ -9,8 +9,26 @@
   margin-top: 24px;
 }
 
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.error {
+  margin: 16px 0 0;
+  color: var(--dsw-alias-status-danger);
+  font-size: 14px;
+  line-height: 20px;
+}
+
 @media (max-width: 560px) {
   .editor {
+    margin-top: 20px;
+  }
+
+  .actions {
     margin-top: 20px;
   }
 }

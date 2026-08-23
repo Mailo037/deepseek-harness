@@ -15,6 +15,7 @@ import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/d
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from '../src/client/AgentPresetLabel.tsx'
+import { AgentPresetMenuHead } from '../src/client/AgentPresetMenuHead.tsx'
 import { AgentPresetRow } from '../src/client/AgentPresetRow.tsx'
 import type { AgentPresetRowInjected } from '../src/client/AgentPresetRow.tsx'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
@@ -141,6 +142,8 @@ function declareConversation(slots: SlotRegistry): () => void {
     children: {
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'conversation.session.header.utilities.menuHead': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
 }
@@ -317,9 +320,13 @@ describe('ui-agent-preset apply', () => {
     const label = slots.entries('conversation.session.header.actions')[0]!
     expect(label.component).toBe(AgentPresetLabel)
     expect(label.options).toMatchObject({ id: 'agent-preset', order: -10 })
+    // The more-options menu head rides the same declaration lifetime.
+    const menuHead = slots.entries('conversation.session.header.utilities.menuHead')[0]!
+    expect(menuHead.component).toBe(AgentPresetMenuHead)
     await fiber.dispose()
     expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    expect(slots.entries('conversation.session.header.utilities.menuHead')).toHaveLength(0)
     expect(slots.entries('settings.section')).toHaveLength(0)
     conversation()
   })

@@ -228,6 +228,10 @@ export interface LlmDiscoveredModel {
   contextWindow?: number
   /** Maximum output tokens, when disclosed. */
   maxTokens?: number
+  /** Input modalities supported by the model, e.g. ['text', 'image', 'video']. */
+  inputModalities?: string[]
+  /** True when vision modality was inferred from model name rather than explicitly declared by provider. */
+  visionInferred?: boolean
 }
 
 /** One adapter-discovered model; catalog membership is advisory, not request validation. */

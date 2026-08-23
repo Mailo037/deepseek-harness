@@ -5,17 +5,24 @@
  * describe mirror; update phases ride the shared UpdateStore.
  */
 
-import type { ReactNode } from 'react'
-import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useId, type ReactNode } from 'react'
+import {
+  Button, ComparisonRail, LabeledField, Select, StateDot, SurfaceCard,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { HostDescription } from '@deepseek-ai/dsh-api-remotes/client'
 import type { UpdateStore } from './update-store.ts'
+import {
+  HARNESS_UPDATE_SOURCES, type HarnessSyncStore,
+} from './harness-sync-store.ts'
 import css from './AboutSection.module.css'
 
 /** Registrant-owned dependencies of {@link AboutSection}. */
 export interface AboutSectionInjected {
   /** Shared update-state owner (check/apply phases). */
   controller: UpdateStore
+  /** AI-assisted Harness update session owner. */
+  syncController: HarnessSyncStore
   hooks: {
     /** Controller snapshot bound by the UI renderer as useSnapshot. */
     snapshot: UpdateStore['store']
@@ -24,6 +31,8 @@ export interface AboutSectionInjected {
       getSnapshot(): HostDescription | undefined
       subscribe(listener: () => void): () => void
     }
+    /** AI-assisted update snapshot bound by the UI renderer. */
+    syncSnapshot: HarnessSyncStore['store']
   }
 }
 
@@ -46,9 +55,24 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
  * @param props - section owner props, localized copy, and injected faces.
  * @returns the section element tree.
  */
-export function AboutSection({ controller, useDescribe, useSnapshot, t }: AboutSectionProps): ReactNode {
+export function AboutSection({
+  close,
+  controller,
+  syncController,
+  useDescribe,
+  useSyncSnapshot,
+  useSessions,
+  useSnapshot,
+  useWorkspaces,
+  t,
+}: AboutSectionProps): ReactNode {
   const description = useDescribe(snapshot => snapshot)
   const state = useSnapshot(snapshot => snapshot)
+  const sync = useSyncSnapshot(snapshot => snapshot)
+  const sessions = useSessions(snapshot => snapshot)
+  const workspaces = useWorkspaces(snapshot => snapshot)
+  const sourceId = useId()
+  const modelId = useId()
 
   if (description === undefined) {
     return <div className={css.section}><p className={css.note}>{t('about.offline')}</p></div>
@@ -57,6 +81,25 @@ export function AboutSection({ controller, useDescribe, useSnapshot, t }: AboutS
   const repository = description.repository
   const shortCommit = repository === null ? null : repository.commit.slice(0, 7)
   const busy = state.phase === 'applying' || state.phase === 'restarting'
+  const currentSession = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+  const targetWorkspace = workspaces.items.find(workspace =>
+    sessions.current !== undefined && workspace.sessionIds.includes(sessions.current))
+    ?? workspaces.items.find(workspace => workspace.path === currentSession?.cwd)
+    ?? workspaces.items.find(workspace => workspace.path === description.cwd)
+    ?? workspaces.items.find(workspace => workspace.workspaceId === workspaces.recentWorkspaceId)
+  const syncBusy = sync.phase === 'preparing' || sync.phase === 'starting'
+  const updateSource = sync.source === 'unofficial' ? HARNESS_UPDATE_SOURCES[0] : HARNESS_UPDATE_SOURCES[1]
+  const sourceLabel = sync.source === 'unofficial'
+    ? t('about.aiUpdate.source.unofficial')
+    : t('about.aiUpdate.source.official')
+  const sourceOptions = [
+    { value: 'unofficial', label: t('about.aiUpdate.source.unofficial') },
+    { value: 'official', label: t('about.aiUpdate.source.official') },
+  ]
+  const modelOptions = sync.models.map(model => ({
+    value: model.id,
+    label: `${model.group} · ${model.label}`,
+  }))
 
   return (
     <div className={css.section}>
@@ -77,11 +120,7 @@ export function AboutSection({ controller, useDescribe, useSnapshot, t }: AboutS
         )}
       </div>
 
-      <div className={css.update}>
-        <div className={css.updateHead}>
-          <span className={css.updateTitle}>{t('about.updates')}</span>
-          {busy && <StateDot state="ongoing" />}
-        </div>
+      <SurfaceCard title={t('about.updates')} status={busy ? <StateDot state="ongoing" /> : undefined}>
         {repository === null
           ? (
             <p className={css.note}>{t('about.noRepository')}</p>
@@ -122,7 +161,88 @@ export function AboutSection({ controller, useDescribe, useSnapshot, t }: AboutS
                 </div>
               </>
             )}
-      </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        id="harness-update-card"
+        title={t('about.aiUpdate.title')}
+        status={syncBusy ? <StateDot state="ongoing" /> : undefined}
+      >
+        <ComparisonRail from={t('about.aiUpdate.local')} to={sourceLabel} />
+        <p className={css.note}>{t('about.aiUpdate.description')}</p>
+        <p className={css.note}>{t('about.aiUpdate.optional')}</p>
+        <LabeledField label={t('about.aiUpdate.source')} labelFor={sourceId}>
+          <Select
+            id={sourceId}
+            value={sync.source}
+            options={sourceOptions}
+            disabled={syncBusy}
+            size="sm"
+            onChange={(value) => {
+              const source = HARNESS_UPDATE_SOURCES.find(candidate => candidate.id === value)
+              if (source !== undefined) syncController.selectSource(source.id)
+            }}
+          />
+        </LabeledField>
+        <a
+          className={css.sourceLink}
+          href={updateSource.repository}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {sync.source === 'unofficial' ? 'Mailo037/deepseek-harness' : 'deepseek-ai/deepseek-harness'}
+        </a>
+        {targetWorkspace === undefined
+          ? <p className={css.note}>{t('about.aiUpdate.noWorkspace')}</p>
+          : (
+            <LabeledField label={t('about.aiUpdate.target')}>
+              <code className={css.targetPath}>{targetWorkspace.path}</code>
+            </LabeledField>
+          )}
+        {sync.phase === 'preparing' && <p className={css.note}>{t('about.aiUpdate.preparing')}</p>}
+        {sync.phase === 'starting' && <p className={css.note}>{t('about.aiUpdate.starting')}</p>}
+        {sync.error !== null && <p className={css.error} role="alert">{sync.error}</p>}
+        {sync.phase === 'ready' && (
+          <LabeledField label={t('about.aiUpdate.model')} labelFor={modelId}>
+            <Select
+              id={modelId}
+              value={sync.selectedModelId ?? ''}
+              options={modelOptions}
+              size="sm"
+              onChange={(value) => { syncController.selectModel(value) }}
+            />
+          </LabeledField>
+        )}
+        <div className={css.actions}>
+          {sync.phase !== 'ready'
+            ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={syncBusy || targetWorkspace === undefined}
+                onClick={() => {
+                  if (targetWorkspace !== undefined) {
+                    void syncController.prepare(targetWorkspace.workspaceId, targetWorkspace.path)
+                  }
+                }}
+              >
+                {t('about.aiUpdate.prepare')}
+              </Button>
+            )
+            : (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={syncBusy || sync.selectedModelId === null}
+                onClick={() => {
+                  void syncController.start().then((started) => { if (started) close() })
+                }}
+              >
+                {t('about.aiUpdate.start')}
+              </Button>
+            )}
+        </div>
+      </SurfaceCard>
     </div>
   )
 }

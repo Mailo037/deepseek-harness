@@ -9,7 +9,7 @@
  * occupant's own create-folder affordance already covers creating one.
  */
 import type { ReactNode, RefObject } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button, IconFolderClose16, IconNewChatOutline16, IconPlusOutline16, Menu, Modal, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -43,8 +43,12 @@ export interface WorkspacePickFlowProps {
   onPick: (workspaceId: WorkspaceId | undefined) => void
   /** Close the popover (outside click / Escape / post-pick). */
   onClose: () => void
+  /** End an external picker request without choosing a Workspace. */
+  onCancel?: () => void
   /** Only offer the add action, hide existing workspaces. */
   addOnly?: boolean
+  /** Bypass the menu and start the composed directory flow for an external request. */
+  directDirectoryFlow?: boolean
   /** Menu opening direction relative to the anchor. */
   side?: 'bottom' | 'top' | 'right'
   /** Currently active workspace (trailing check in the picker list). */
@@ -66,7 +70,9 @@ export function WorkspacePickFlow({
   renderDirectoryFlow,
   onPick,
   onClose,
+  onCancel,
   addOnly = false,
+  directDirectoryFlow = false,
   side = 'bottom',
   selectedId,
 }: WorkspacePickFlowProps) {
@@ -110,20 +116,22 @@ export function WorkspacePickFlow({
   }
   const items: MenuEntry[] = addOnly
     ? addEntries
-    : [
-      noWorkspaceEntry,
-      ...(workspaces.length > 0
-        ? [
-          { type: 'separator', id: 'sep-workspaces' } as const,
-          ...workspaces.map(workspace => ({
-            id: workspace.workspaceId,
-            label: workspace.title,
-            icon: <IconFolderClose16 size={16} />,
-            disabled: flowBusy,
-          })),
-        ]
-        : []),
-    ]
+    : workspaces.length === 0 && !flowAvailable
+      ? []
+      : [
+        noWorkspaceEntry,
+        ...(workspaces.length > 0
+          ? [
+            { type: 'separator', id: 'sep-workspaces' } as const,
+            ...workspaces.map(workspace => ({
+              id: workspace.workspaceId,
+              label: workspace.title,
+              icon: <IconFolderClose16 size={16} />,
+              disabled: flowBusy,
+            })),
+          ]
+          : []),
+      ]
   // Nothing listed and nothing to add with (a composition that mounts this
   // package without any directory-picker): an empty popover would claim a
   // choice that does not exist, so the anchor gesture shows nothing at all.
@@ -132,6 +140,7 @@ export function WorkspacePickFlow({
   const closeModal = (): void => {
     setErrorOpen(false)
     setModalError(null)
+    if (directDirectoryFlow) onCancel?.()
   }
 
   /** Adopt a picked directory; failures land in the folder-error dialog (Choose again reopens the flow). */
@@ -152,20 +161,17 @@ export function WorkspacePickFlow({
     setFlowOpen(true)
   }, [onClose])
 
-  // A menu exists to disambiguate between targets. With no workspaces listed
-  // and the add action the only entry left, the anchor gesture IS that action:
-  // a one-row popover would cost a click and offer nothing to choose between.
-  // The owner's open request is consumed the same way selecting the entry
-  // would consume it (close the popover, raise the flow). An empty list is
-  // only final once the baseline lands — until then the menu stays up with its
-  // loading status instead of jumping into a flow the arriving list would have
-  // made unnecessary; the add-only surface lists nothing and never waits.
+  // An add-only control has no selection decision, so its anchor gesture is
+  // the add action itself. The ordinary picker always keeps its menu: even an
+  // empty Workspace list still offers the independent no-Workspace choice and
+  // the Add workspace footer. External requests bypass that menu separately.
   const addIsTheOnlyEntry = addOnly && addEntries.length === 1
+  const opensDirectoryFlowDirectly = addIsTheOnlyEntry || directDirectoryFlow
   // `flowBusy` gates this exactly as it disables the equivalent menu entry: a
   // pick still being adopted owns the surface until it settles.
   useEffect(() => {
-    if (open && addIsTheOnlyEntry && !flowBusy) openDirectoryFlow()
-  }, [open, addIsTheOnlyEntry, flowBusy, openDirectoryFlow])
+    if (open && opensDirectoryFlowDirectly && !flowBusy && !errorOpen) openDirectoryFlow()
+  }, [open, opensDirectoryFlowDirectly, flowBusy, errorOpen, openDirectoryFlow])
 
   /** Owner side of the flow conversation: adopt keeps the flow open (busy) until the Host answers. */
   const flowOwner: DirectoryFlowOwnerProps = {
@@ -175,7 +181,10 @@ export function WorkspacePickFlow({
       setPickingFolder(true)
       void adoptDirectory(path).finally(() => { setPickingFolder(false) })
     },
-    onCancel: () => { setFlowOpen(false) },
+    onCancel: () => {
+      setFlowOpen(false)
+      onCancel?.()
+    },
     onError: (message) => {
       setFlowOpen(false)
       setModalError(message)
@@ -198,18 +207,18 @@ export function WorkspacePickFlow({
   return (
     <>
       <Menu
-        open={open && !addIsTheOnlyEntry && !menuIsEmpty}
+        open={open && !opensDirectoryFlowDirectly && !menuIsEmpty}
         anchor={null}
         items={items}
         {...!addOnly && addEntries.length > 0 ? { footer: addEntries } : {}}
         selectedId={selectedId ?? (!addOnly ? NO_WORKSPACE : undefined)}
         onSelect={handleSelect}
-        onClose={onClose}
+        onClose={onCancel ?? onClose}
         side={side}
         portal
         getAnchorRect={getAnchorRect}
       />
-      {open && !addIsTheOnlyEntry && !menuIsEmpty && workspaceSnapshot.phase === 'pending' && <div className={css.menuStatus} role="status">{t('picker.loading')}</div>}
+      {open && !opensDirectoryFlowDirectly && !menuIsEmpty && workspaceSnapshot.phase === 'pending' && <div className={css.menuStatus} role="status">{t('picker.loading')}</div>}
       {renderDirectoryFlow(flowOwner)}
       <Modal
         open={errorOpen}
@@ -246,21 +255,60 @@ export function WorkspacePicker({
   onClose,
   createWorkspace,
   useDirectoryFlow,
+  useWorkspacePickerRequest,
+  settleWorkspacePickerRequest,
   renderSlot,
   t,
 }: WorkspacePickerProps) {
+  const request = useWorkspacePickerRequest(revision => revision)
+  // The onboarding handoff can happen before this slot renders: start at the
+  // service's zero revision so a request already published during mount still
+  // opens the existing picker.
+  const observedRequest = useRef(0)
+  const [requestedOpen, setRequestedOpen] = useState(false)
+  const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
+
+  useEffect(() => {
+    if (request === observedRequest.current) return
+    observedRequest.current = request
+    setRequestedOpen(true)
+  }, [request])
+
+  const close = useCallback((): void => {
+    onClose()
+  }, [onClose])
+  const cancelRequest = useCallback((): void => {
+    setRequestedOpen(false)
+    settleWorkspacePickerRequest(false)
+    onClose()
+  }, [onClose, settleWorkspacePickerRequest])
+  const pickWorkspace = useCallback((workspaceId: WorkspaceId | undefined): void => {
+    setRequestedOpen(false)
+    settleWorkspacePickerRequest(true)
+    onPick(workspaceId)
+  }, [onPick, settleWorkspacePickerRequest])
+
+  // The request channel only accepts a live occupant, but it can unload after
+  // acceptance and before this picker observes its revision. Settle that
+  // handoff as cancelled instead of opening an ownerless direct flow.
+  useEffect(() => {
+    if (requestedOpen && !directoryFlowAvailable) cancelRequest()
+  }, [cancelRequest, directoryFlowAvailable, requestedOpen])
+
   return (
     <WorkspacePickFlow
       t={t}
-      open={open}
+      open={open || requestedOpen}
       anchorRef={anchorRef}
       useWorkspaces={useWorkspaces}
       createWorkspace={createWorkspace}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
+      directDirectoryFlow={requestedOpen}
       selectedId={selectedId}
-      onPick={onPick}
-      onClose={onClose}
+      onPick={pickWorkspace}
+      onClose={close}
+      onCancel={cancelRequest}
     />
   )
 }

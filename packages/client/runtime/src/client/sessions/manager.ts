@@ -71,7 +71,13 @@ interface CatalogInflight {
 type SessionListMutation =
   | { kind: 'upsert'; summary: SessionSummary }
   | { kind: 'remove'; sessionId: SessionId }
-  | { kind: 'status'; sessionId: SessionId; running: boolean }
+  | {
+    kind: 'status'
+    sessionId: SessionId
+    running: boolean
+    /** Current terminal-failure verdict, always carried by the live frame (null = none). */
+    attention: 'retry-exhausted' | 'error' | null
+  }
   | { kind: 'activity'; sessionId: SessionId; updatedAt: number }
   /** Local first-send flip: the sender clears blank without waiting for a host frame. */
   | { kind: 'engaged'; sessionId: SessionId }
@@ -817,7 +823,7 @@ export class SessionManager {
         const summary = this.summaries.find(candidate => candidate.sessionId === frame.sessionId)
         const durableSubagent = summary?.origin === 'subagent' || this.addresses.has(frame.sessionId)
         this.recordMutation(durableSubagent
-          ? { kind: 'status', sessionId: frame.sessionId, running: false }
+          ? { kind: 'status', sessionId: frame.sessionId, running: false, attention: null }
           : { kind: 'remove', sessionId: frame.sessionId })
         this.updateCatalogActivity(frame.sessionId, false)
         if (durableSubagent) {
@@ -861,7 +867,12 @@ export class SessionManager {
         return
       }
       case 'host/session-status': {
-        this.recordMutation({ kind: 'status', sessionId: frame.sessionId, running: frame.running })
+        this.recordMutation({
+          kind: 'status',
+          sessionId: frame.sessionId,
+          running: frame.running,
+          attention: frame.attention,
+        })
         this.sessions.get(frame.sessionId)?.handleRunning(frame.running)
         this.updateCatalogActivity(frame.sessionId, frame.running)
         return
@@ -1047,6 +1058,7 @@ export class SessionManager {
         && prev.parentSessionId === entry.parentSessionId && prev.cwd === entry.cwd
         && prev.origin === entry.origin && prev.title === entry.title && prev.depth === entry.depth
         && prev.pendingInteraction === entry.pendingInteraction
+        && prev.attention === entry.attention
         && prev.projectionValues === entry.projectionValues
         && prev.completed === entry.completed
       ) return prev
@@ -1105,13 +1117,28 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
     }
     case 'remove':
       return summaries.filter(summary => summary.sessionId !== mutation.sessionId)
-    case 'status':
+    case 'status': {
+      // attention rides the live frame authoritatively: null clears, a value sets.
+      const attentionValue = mutation.attention === null ? undefined : mutation.attention
       // running:true doubles as the cross-client blank flip (a blank session
       // never runs, so the first running frame proves a message landed).
-      return summaries.map(summary => summary.sessionId === mutation.sessionId
-        && (summary.running !== mutation.running || (mutation.running && summary.blank))
-        ? { ...summary, running: mutation.running, blank: summary.blank && !mutation.running }
-        : summary)
+      return summaries.map((summary) => {
+        if (summary.sessionId !== mutation.sessionId) return summary
+        const runningChanged = summary.running !== mutation.running
+        const blankFlip = mutation.running && summary.blank
+        const attentionChanged = summary.attention !== attentionValue
+        if (!runningChanged && !blankFlip && !attentionChanged) return summary
+        const next: SessionSummary = {
+          ...summary,
+          running: mutation.running,
+          blank: summary.blank && !mutation.running,
+        }
+        // The spread above carries any stale verdict; clear or set explicitly.
+        if (attentionValue === undefined) delete next.attention
+        else next.attention = attentionValue
+        return next
+      })
+    }
     case 'activity':
       return summaries.map(summary => summary.sessionId === mutation.sessionId
         && mutation.updatedAt > summary.updatedAt

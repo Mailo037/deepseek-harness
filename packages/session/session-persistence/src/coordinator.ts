@@ -199,6 +199,15 @@ export interface PersistenceBackend<TornMarker = unknown> {
   list(signal?: AbortSignal): Promise<SessionHeader[]>
 
   /**
+   * Durably remove one stored session's artifact and metadata. Returns
+   * whether a materialized log existed. The coordinator runs this inside the
+   * session id's serialization chain and drops its in-memory state after.
+   * @param id - persisted session id to remove.
+   * @param signal - optional cancellation for backend deletion work.
+   */
+  deleteStored(id: SessionId, signal?: AbortSignal): Promise<boolean>
+
+  /**
    * Optional side-effect-free artifact locator, used to point refusal
    * diagnostics ({@link SessionFormatUnsupportedError}) at the raw log.
    * Backends without one artifact per session omit it or return `undefined`.
@@ -707,6 +716,30 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     state.materialized = true
     state.cursor += events.length
     this.preparations.invalidate(id)
+  }
+
+  /**
+   * Durably remove one session's stored log and forget its in-memory write
+   * state. A live Session (open in this process) rejects both before queueing
+   * and inside the id's serialization chain; a pending retirement is awaited
+   * first, so a session disposed mid-call deletes instead of spuriously
+   * failing. A retained cold preparation is discarded with the log.
+   * @param id - persisted session to remove.
+   * @param signal - optional cancellation for the wait and backend deletion work.
+   * @returns whether a materialized log was removed (`false` for an absent id
+   *   or a created-but-never-appended session).
+   */
+  async delete(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    await this.waitForRetirement(id, signal)
+    return this.serialize(id, async () => {
+      if (this.ctx.sessions.get(id) !== undefined) {
+        throw new Error(`cannot delete session "${id}" while it is live`)
+      }
+      const removed = await this.backend.deleteStored(id, signal)
+      this.preparations.invalidate(id)
+      this.states.delete(id)
+      return removed
+    }, signal)
   }
 
   /**

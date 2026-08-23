@@ -631,7 +631,7 @@ export function ChatView({
   // text render in flow and split the run.
   interface FlowElement { readonly el: ReactNode; readonly fold: boolean }
   const foldableNode = (node: ChatConversationViewNode, closingSeq: number | null): boolean => {
-    if (node.kind === 'tool-call' || node.kind === 'model-retry' || isThinkOnly(node)) return true
+    if (node.kind === 'tool-call' || node.kind === 'model-retry' || node.kind === 'context' || isThinkOnly(node)) return true
     if (closingSeq === null || node.kind !== 'assistant-step') return false
     const data = node.data as AssistantMeta
     return data.blocks?.some(block => block.kind === 'text') === true
@@ -691,7 +691,17 @@ export function ChatView({
     return out
   }
 
-  const flow: ReactNode[] = []
+  // Segment the order by consecutive equal closed turns first: a
+  // session-scoped row between two segments of one turn (an admitted steer,
+  // for example) splits the turn's nodes without ending it. Fold decisions
+  // therefore read the WHOLE turn — per-segment counting rendered two
+  // identical "ran for" folds for one split turn.
+  interface BuiltSegment {
+    readonly closedTurn: number | undefined
+    readonly actionCount: number
+    readonly elements: FlowElement[]
+  }
+  const built: BuiltSegment[] = []
   for (let index = 0; index < order.length;) {
     const nodeKey = order[index] as string
     const node = nodeStore.get(nodeKey)
@@ -706,16 +716,14 @@ export function ChatView({
       next++
     }
     if (closedTurn === undefined) {
-      for (const element of buildElements(chunk, null)) flow.push(element.el)
+      built.push({ closedTurn: undefined, actionCount: 0, elements: buildElements(chunk, null) })
       index = next
       continue
     }
-    // Collect the closed turn's complete segment, then fold its work behind
-    // one duration line only if the turn exceeds 10 actions; otherwise
-    // intermediate work and tools remain inline in flow.
+    // Collect the closed turn's segment; the fold decision below reads the
+    // whole turn and hides its work behind one duration line only if the
+    // turn exceeds 10 actions.
     const turn = timeline.turns.get(closedTurn)
-    const startTime = turn?.start?.time
-    const endTime = turn?.end?.time
     const closingSeq = turn?.data.get('turn-tail')?.closing?.finalNode.seq ?? null
     const elements = buildElements(chunk, closingSeq)
     let actionCount = 0
@@ -725,35 +733,57 @@ export function ChatView({
         actionCount++
       }
     }
-    const shouldFold = startTime !== undefined && endTime !== undefined && actionCount >= 10
-    if (!shouldFold) {
-      for (const element of elements) flow.push(element.el)
-      index = next
-      continue
-    }
-    const folded: ReactNode[] = []
-    const flushFolded = (): void => {
-      if (folded.length === 0) return
-      flow.push(
-        <TurnWorkSummary
-          key={`turn-work:${closedTurn}`}
-          label={t('message.ranFor', { duration: formatRunDuration(endTime - startTime, t) })}
-        >
-          {[...folded]}
-        </TurnWorkSummary>,
-      )
-      folded.length = 0
-    }
-    for (const element of elements) {
-      if (element.fold) {
-        folded.push(element.el)
+    built.push({ closedTurn, actionCount, elements })
+    index = next
+  }
+  const foldTotals = new Map<number, number>()
+  for (const segment of built) {
+    if (segment.closedTurn === undefined) continue
+    const turn = timeline.turns.get(segment.closedTurn)
+    if (turn?.start?.time === undefined || turn?.end?.time === undefined) continue
+    foldTotals.set(
+      segment.closedTurn,
+      (foldTotals.get(segment.closedTurn) ?? 0) + segment.actionCount,
+    )
+  }
+  const flow: ReactNode[] = []
+  // One fold body per turn; the placeholder marks where the single summary
+  // renders (at the turn's first fold) and is resolved after the walk.
+  const foldBodies = new Map<number, ReactNode[]>()
+  const foldSlots = new Map<number, number>()
+  for (const segment of built) {
+    const turnId = segment.closedTurn
+    const total = turnId === undefined ? undefined : foldTotals.get(turnId)
+    const folding = turnId !== undefined && total !== undefined && total >= 10
+    for (const element of segment.elements) {
+      if (folding && element.fold) {
+        let body = foldBodies.get(turnId)
+        if (body === undefined) {
+          body = []
+          foldBodies.set(turnId, body)
+          foldSlots.set(turnId, flow.length)
+          flow.push(null)
+        }
+        ;(body as ReactNode[]).push(element.el)
       } else {
-        flushFolded()
         flow.push(element.el)
       }
     }
-    flushFolded()
-    index = next
+  }
+  for (const [turnId, slot] of foldSlots) {
+    const turn = timeline.turns.get(turnId)
+    const startTime = turn?.start?.time
+    const endTime = turn?.end?.time
+    /* v8 ignore next -- foldTotals records only turns with both times, so a slot cannot exist without them. */
+    if (startTime === undefined || endTime === undefined) continue
+    flow[slot] = (
+      <TurnWorkSummary
+        key={`turn-work:${turnId}`}
+        label={t('message.ranFor', { duration: formatRunDuration(endTime - startTime, t) })}
+      >
+        {foldBodies.get(turnId) ?? []}
+      </TurnWorkSummary>
+    )
   }
 
   return (

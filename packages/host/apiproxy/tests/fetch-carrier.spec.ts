@@ -102,6 +102,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: { ok: true, value: { attachment: { attachmentId: 'a' as never, mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }, data: 'AA==' } },
         }
       },
+      async uploadAttachment(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { path: '.uploads/fixture-file', bytes: 1 } } }
+      },
       async updateQueue(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { accepted: true as const } } }
       },
@@ -171,7 +174,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     },
     workspace: {
       async list(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { items: [], archivedSessionIds: [] } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { items: [], archivedSessionIds: [], pinnedSessionIds: [] } } }
       },
       async create(request) {
         return {
@@ -198,7 +201,25 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         }
       },
       async archiveSession(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [request.payload.sessionId] } } }
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { archivedSessionIds: [request.payload.sessionId], pinnedSessionIds: [] } },
+        }
+      },
+      async unarchiveSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [] } } }
+      },
+      async deleteSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [] } } }
+      },
+      async deleteArchivedSessions(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [] } } }
+      },
+      async setSessionPinned(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { pinnedSessionIds: request.payload.pinned ? [request.payload.sessionId] : [] } },
+        }
       },
       async updateSettings(request) {
         return {
@@ -298,6 +319,14 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
       async discoverModels(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { models: [] } } }
+      },
+    },
+    jobs: {
+      async kill(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { result: 'requested' as const } } }
+      },
+      async output(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { text: '', status: 'running' as const } } }
       },
     },
     events: {

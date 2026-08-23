@@ -6,3 +6,4 @@
     - /placeholder: 输入 API 密钥
   - button "稍后配置"
   - button "保存并继续" [disabled]
+  - button "打开模型设置"

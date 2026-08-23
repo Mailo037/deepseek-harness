@@ -107,8 +107,6 @@ const ROW_CLASS: Record<DiffRow['kind'], string | undefined> = {
 function buildRows(diffs: DiffHunk[]): { rows: DiffRow[]; added: number; removed: number; files: number } {
   const rows: DiffRow[] = []
   const paths = new Set<string>()
-  let added = 0
-  let removed = 0
   let prevPath: string | undefined
   for (const diff of diffs) {
     paths.add(diff.path)
@@ -118,15 +116,32 @@ function buildRows(diffs: DiffHunk[]): { rows: DiffRow[]; added: number; removed
     if (diff.oldText !== null) {
       for (const line of contentLines(diff.oldText)) {
         rows.push({ kind: 'del', text: line })
-        removed++
       }
     }
     for (const line of contentLines(diff.newText)) {
       rows.push({ kind: 'add', text: line })
-      added++
     }
   }
+  const { added, removed } = diffLineCounts(diffs)
   return { rows, added, removed, files: paths.size }
+}
+
+/**
+ * The +/- line totals over a hunk list, with the same line-terminator rule the
+ * block body draws: every old-side content line counts toward `removed`, every
+ * new-side line toward `added`. Exported so summary surfaces (a collapsed
+ * tool row's trailing count) agree with the expanded card's footer.
+ * @param diffs - the hunks to count.
+ * @returns the added and removed line totals.
+ */
+export function diffLineCounts(diffs: DiffHunk[]): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const diff of diffs) {
+    if (diff.oldText !== null) removed += contentLines(diff.oldText).length
+    added += contentLines(diff.newText).length
+  }
+  return { added, removed }
 }
 
 /**

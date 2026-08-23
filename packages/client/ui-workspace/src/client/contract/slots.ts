@@ -1,5 +1,5 @@
 /**
- * ui-workspace contracts. Two registrations share this package:
+ * ui-workspace contracts. Three registrations share this package:
  *
  * - WorkspaceBrowser fills the sidebar shell's `sidebar.workspaces` hole —
  *   the whole browsing region (section header, search, grouped/flat session
@@ -7,17 +7,19 @@
  *   consumes the shell's two-fact owner share (wide / expandSidebar).
  * - WorkspacePicker fills the conversation empty-state hole (menu + error
  *   dialog shared with the browser).
+ * - SessionOptionsAction contributes the conversation header's more-options
+ *   entry (rename / fork / move / archive for the current session).
  *
- * Each registration also declares one **directory-flow hole** (`single`
- * kind): the slot a composed picker package's client half fills with its
- * picking interaction — a renderless native-chooser driver or an in-app
- * browsing dialog. ui-workspace owns the trigger (the "Add workspace…"
- * entry, present only while the hole is occupied) and the adoption
- * semantics (`createWorkspace({ path })`, the retryable error dialog,
- * Choose again); the occupant owns everything between `open` and the picked path,
- * including creating a new directory to hand back. That occupant-owned
- * creation is why adding a workspace has a single route: an unoccupied hole
- * leaves the surface with no add affordance at all.
+ * Each browser/picker registration also declares one **directory-flow hole**
+ * (`single` kind): the slot a composed picker package's client half fills
+ * with its picking interaction — a renderless native-chooser driver or an
+ * in-app browsing dialog. ui-workspace owns the trigger (the "Add
+ * workspace…" entry, present only while the hole is occupied) and the
+ * adoption semantics (`createWorkspace({ path })`, the retryable error
+ * dialog, Choose again); the occupant owns everything between `open` and the
+ * picked path, including creating a new directory to hand back. That
+ * occupant-owned creation is why adding a workspace has a single route: an
+ * unoccupied hole leaves the surface with no add affordance at all.
  * Two holes exist because the two menu surfaces are independent slot entries
  * and a hole has exactly one declaring entry — they carry the same owner
  * contract and the same occupant.
@@ -28,6 +30,9 @@ import type { HostObservable, PropsHooks, PropsLocale, PropsRenderSlots, PropsRu
 // runtime shares below.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: the download-state mirror the options menu reads through its
+// hooks compartment (the export feature owns that state and its dialog).
+import type { SessionLogDownloadState } from '@deepseek-ai/dsh-session-log-export/client'
 import type {
   SessionId, SessionSearchResultItem, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -57,6 +62,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+    /**
+     * Pinned context above the more-options menu's verb rows, declared by
+     * the SessionOptionsAction entry. The owner passes nothing: an occupant
+     * reports read-only session facts (the running agent preset, for
+     * example) and owns its own responsive visibility.
+     */
+    'conversation.session.header.utilities.menuHead': { kind: 'single'; scope: 'session' }
   }
 }
 
@@ -123,12 +135,19 @@ export type WorkspaceBrowserInjected = {
    * Omitted anchor appends to the end.
    */
   insertWorkspaceBefore: (workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId) => Promise<void>
-  /**
-   * Archive a Session into the registry-global set: hidden from grouping
+  /** Archive a Session into the registry-global set: hidden from grouping
    * surfaces, log and accounting slot retained. Archiving the current
    * session clears the selection into the New Session view state.
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
+  /** Restore a Session from the registry-global archive set. */
+  unarchiveSession: (sessionId: SessionId) => Promise<void>
+  /** Permanently delete one archived Session and its durable log. */
+  deleteSession: (sessionId: SessionId) => Promise<void>
+  /** Permanently delete every deletable archived Session. */
+  deleteArchivedSessions: () => Promise<readonly SessionId[]>
+  /** Set one session's durable sidebar pin membership. */
+  setSessionPinned: (sessionId: SessionId, pinned: boolean) => Promise<void>
   /**
    * Reorder a session inside its Workspace account (DOM-insertBefore
    * semantics: omitted anchor appends to the end). The view refreshes from
@@ -158,9 +177,64 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
+  hooks: DirectoryPickingInjected['hooks'] & {
+    /** Monotonic external requests for this existing hero picker. */
+    workspacePickerRequest: HostObservable<number>
+  }
+  /** Settle a cross-feature picker request after the user picks or cancels. */
+  settleWorkspacePickerRequest: (completed: boolean) => void
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }
+
+/**
+ * Session-header utilities injected share: the Host actions behind the
+ * current session's more-options menu. Data reads use the global framework
+ * hooks; these are exactly the verbs the menu offers.
+ */
+export type SessionOptionsInjected = {
+  /** Reserved hooks compartment: the export feature's download-state mirror. */
+  hooks: {
+    /**
+     * Download state shared by every export trigger. Always present — an
+     * empty mirror when the composition mounts no exporter — so the menu's
+     * busy read has one stable source.
+     */
+    sessionLogDownload: HostObservable<SessionLogDownloadState>
+  }
+  /** Rename a Session (explicit user title; resolves on host acceptance). */
+  renameSession: (sessionId: SessionId, title: string) => Promise<void>
+  /** Fork a Session at its last completed turn and open the child. */
+  forkSession: (sessionId: SessionId) => void
+  /**
+   * Archive a Session into the registry-global set: hidden from grouping
+   * surfaces, log and accounting slot retained. Archiving the current
+   * session clears the selection into the New Session view state.
+   */
+  archiveSession: (sessionId: SessionId) => Promise<void>
+  /** Set one session's durable sidebar pin membership. */
+  setSessionPinned: (sessionId: SessionId, pinned: boolean) => Promise<void>
+  /** Move a session into a target Workspace. */
+  moveSession: (sessionId: SessionId, targetWorkspaceId: WorkspaceId) => Promise<void>
+  /**
+   * Start this Session's log download through the export feature's
+   * controller; absent when the composition mounts no exporter, and the
+   * menu drops its download row accordingly.
+   */
+  downloadSessionLog?: ((sessionId: SessionId) => void) | undefined
+}
+
+/**
+ * Full props of the session-header more-options entry: the session runtime
+ * share, the injected verbs, the bound download mirror, the menu-head hole,
+ * and the locale seat.
+ */
+export type SessionOptionsActionProps =
+  & PropsRuntime<'conversation.session.header.utilities'>
+  & PropsRenderSlots<'conversation.session.header.utilities.menuHead'>
+  & Omit<SessionOptionsInjected, 'hooks'>
+  & PropsHooks<SessionOptionsInjected['hooks']>
+  & PropsLocale<'workspace'>
 
 /**
  * Full picker props: the owner share plus the creation callback and the
@@ -171,5 +245,5 @@ export type WorkspacePickerProps =
   PropsRuntime<'conversation.hero.workspace'>
   & PropsRenderSlots<'conversation.hero.workspace.directoryFlow'>
   & Omit<WorkspacePickerInjected, 'hooks'>
-  & DirectoryPickingHooks
+  & PropsHooks<WorkspacePickerInjected['hooks']>
   & PropsLocale<'workspace'>

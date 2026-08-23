@@ -61,6 +61,17 @@
   box-shadow: var(--dsw-shadow-lv3);
 }
 
+/* Phone: the trigger sits at the tab strip's right edge (the dropped action
+ * row), so a left-anchored popover leaves the screen — anchor to the
+ * trigger's right side instead, capped inside the viewport. */
+@media (max-width: 639px) {
+  .menu {
+    left: auto;
+    right: 0;
+    max-width: min(400px, calc(100vw - 40px));
+  }
+}
+
 .node {
   position: relative;
   min-width: 0;

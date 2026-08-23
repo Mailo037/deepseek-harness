@@ -50,6 +50,40 @@
   object-fit: cover;
 }
 
+.chip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 6px 5px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 16px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chipIcon {
+  display: block;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.chipName {
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipSize {
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .warningBadge {
   position: absolute;
   top: 3px;
@@ -73,10 +107,39 @@
 }
 
 .remove {
+  composes: controlButton;
+}
+
+.controls {
   position: absolute;
   top: 4px;
   right: 4px;
   z-index: 1;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.item:hover .controls,
+.controls:focus-within {
+  opacity: 1;
+}
+
+/* Touch surfaces and smaller screens have no hover to reveal the control. */
+@media (pointer: coarse), (hover: none), (max-width: 768px) {
+  .controls {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls {
+    transition: none;
+  }
+}
+
+.controlButton {
   display: grid;
   place-items: center;
   width: 18px;
@@ -87,26 +150,10 @@
   background: var(--dsw-alias-button-contrast-fill);
   color: var(--dsw-alias-label-primary-inverted);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease-in-out;
 }
 
-.item:hover .remove,
-.remove:focus-visible {
-  opacity: 1;
-}
-
-/* Touch surfaces and smaller screens have no hover to reveal the control. */
-@media (pointer: coarse), (hover: none), (max-width: 768px) {
-  .remove {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .remove {
-    transition: none;
-  }
+.restore {
+  composes: controlButton;
 }
 
 .arrow {

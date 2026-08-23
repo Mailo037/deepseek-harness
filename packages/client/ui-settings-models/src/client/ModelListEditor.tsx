@@ -175,6 +175,7 @@ interface CatalogModelInfo {
   supportsReasoning: boolean
   defaultEfforts: string[]
   inputModalities: string[]
+  visionInferred?: boolean
 }
 
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
@@ -195,17 +196,20 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         for (const m of group.models) {
           const supportsReasoning = m.reasoning !== undefined
           const defaultEfforts = m.reasoning?.efforts.map(e => e.id) ?? []
-          const inputModalities = m.inputModalities ?? (
+          const rawModalities = m.inputModalities
+          const inputModalities = rawModalities ?? (
             m.id.includes('gemini') || m.id.includes('qwen-vl') || m.id.includes('glm-4v')
               ? ['text', 'image', 'video']
-              : m.id.includes('image') || m.id.includes('vision') || m.id.includes('4o') || m.id.includes('sonnet') || m.id.includes('opus') || m.id.includes('o1') || m.id.includes('o3')
+              : m.id.includes('image') || m.id.includes('vision') || m.id.includes('vl') || m.id.includes('janus') || m.id.includes('4o') || m.id.includes('sonnet') || m.id.includes('opus') || m.id.includes('o1') || m.id.includes('o3') || m.id.includes('pixtral') || m.id.includes('llava')
                 ? ['text', 'image']
                 : ['text']
           )
+          const visionInferred = (m as { visionInferred?: boolean }).visionInferred ?? (rawModalities === undefined && inputModalities.includes('image'))
           map.set(m.id, {
             supportsReasoning,
             defaultEfforts,
             inputModalities,
+            visionInferred,
           })
         }
       }
@@ -422,6 +426,18 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 disabled={disabled}
                 onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
               />
+              {catalogInfo?.inputModalities && catalogInfo.inputModalities.length > 0 ? (
+                <div className={styles['modelBadges']}>
+                  {catalogInfo.inputModalities.map(mod => (
+                    <span key={mod} className={styles['modalityBadge']}>
+                      {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
+                    </span>
+                  ))}
+                  {catalogInfo.visionInferred && catalogInfo.inputModalities.includes('image') ? (
+                    <span className={styles['modalityHint']}>{t('modalityVisionInferredHint')}</span>
+                  ) : null}
+                </div>
+              ) : null}
               <button
                 type="button"
                 className={styles['iconButton']}
@@ -461,18 +477,6 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             {expanded.has(index)
               ? (
                 <div className={styles['modelAdvanced']}>
-                  {catalogInfo?.inputModalities && catalogInfo.inputModalities.length > 0 ? (
-                    <div className={styles['modalitiesRow']}>
-                      <span className={styles['modalitiesLabel']}>{t('modelModalities')}:</span>
-                      <div className={styles['modelBadges']}>
-                        {catalogInfo.inputModalities.map(mod => (
-                          <span key={mod} className={styles['modalityBadge']}>
-                            {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                   {inCatalog ? (
                     <div className={styles['inheritRow']}>
                       <label className={styles['inheritLabel']}>
@@ -616,6 +620,18 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     capacities the endpoint reported are adopted with it and
                     editable in the row that appears. */}
                 <span className={styles['candidateId']}>{candidate.id}</span>
+                {candidate.inputModalities && candidate.inputModalities.length > 0 ? (
+                  <span className={styles['modelBadges']}>
+                    {candidate.inputModalities.map(mod => (
+                      <span key={mod} className={styles['modalityBadge']}>
+                        {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
+                      </span>
+                    ))}
+                    {candidate.visionInferred && candidate.inputModalities.includes('image') ? (
+                      <span className={styles['modalityHint']}>{t('modalityVisionInferredHint')}</span>
+                    ) : null}
+                  </span>
+                ) : null}
               </label>
             </li>
           ))}

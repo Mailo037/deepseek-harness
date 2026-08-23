@@ -4,12 +4,12 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -21,12 +21,13 @@ import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, 
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
-import type { SubagentListEntry as CatalogSubagentListEntry } from '@deepseek-ai/dsh-subagent'
+import type { SubagentListEntry as CatalogSubagentListEntry, SubagentDescendantListEntry } from '@deepseek-ai/dsh-subagent'
 import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
-  WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError,
+  WorkspaceArchivedSessionError, WorkspaceMoveInvalidError, WorkspaceOrderInvalidError,
+  WorkspaceSessionLiveError, WorkspaceSessionNotArchivedError, WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
 // Type-only: brings the `ctx.tools` Context merge into this program (viewFor reads presenters).
 import {
@@ -64,6 +65,8 @@ import type {} from '@deepseek-ai/dsh-jobs'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 // Type-only: resolves `ctx.get('sessionProjectionCache')` (the cold listing column).
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
+// Type-only: resolves `llm/retry` event data for the session-list-metadata fold.
+import type {} from '@deepseek-ai/dsh-llm-retry/types'
 // GoalError narrows domain rejections to their stable codes at the wire boundary.
 import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalRef as CoreGoalRef } from '@deepseek-ai/dsh-goal'
@@ -459,20 +462,63 @@ function sessionBlank(session: Session): boolean {
   return !session.events.some(event => event.type === 'turn/start')
 }
 
+/** Session-list fold state: the public hints plus the internal exhaustion tracker. */
+interface SessionListFoldState extends SessionListMetadata {
+  /**
+   * Turn whose model-request retry budget was exhausted (an `llm/retry` at
+   * `retry === maxRetries`), pending that turn's verdict. Cleared by an
+   * `assistant/message` (the retry attempt recovered), the next `turn/start`,
+   * or the `turn/end` that resolves it. Internal only: `view` strips it from
+   * every published or persisted value.
+   */
+  exhaustedRetryTurn?: number
+}
+
 /** Advance the Session-list hint projection by one committed event. */
-function applySessionListMetadata(state: SessionListMetadata, event: SessionEvent): SessionListMetadata {
+function applySessionListMetadata(state: SessionListFoldState, event: SessionEvent): SessionListFoldState {
   const blank = state.blank && event.type !== 'turn/start'
   const lastPromptAt = event.type === 'user/message' && event.data.source.kind === 'user'
     ? event.time
     : state.lastPromptAt
+  let attention = state.attention
+  let exhaustedRetryTurn = state.exhaustedRetryTurn
+  if (event.type === 'llm/retry' && event.data.mode === 'normal'
+    && event.data.retry === event.data.maxRetries) {
+    // The budget is spent: any further request failure in this turn is terminal.
+    exhaustedRetryTurn = event.data.turn
+  } else if (event.type === 'assistant/message') {
+    // An assistant message after a scheduled retry means that retry attempt
+    // succeeded, so the exhaustion no longer drives the turn's verdict.
+    exhaustedRetryTurn = undefined
+  } else if (event.type === 'turn/end') {
+    if (event.data.reason.kind === 'error') {
+      // Every error-ended turn needs the operator: retry exhaustion is the
+      // distinguished verdict, any other failure the plain one. Aborts and
+      // interruptions are deliberate or recovered endings, never attention.
+      attention = exhaustedRetryTurn !== undefined && event.data.turn === exhaustedRetryTurn
+        ? 'retry-exhausted'
+        : 'error'
+    }
+    exhaustedRetryTurn = undefined
+  } else if (event.type === 'turn/start') {
+    // A fresh turn supersedes the previous turn's verdict.
+    attention = undefined
+    exhaustedRetryTurn = undefined
+  }
   return blank === state.blank && lastPromptAt === state.lastPromptAt
+    && attention === state.attention && exhaustedRetryTurn === state.exhaustedRetryTurn
     ? state
-    : { blank, lastPromptAt }
+    : {
+      blank,
+      lastPromptAt,
+      ...attention === undefined ? {} : { attention },
+      ...exhaustedRetryTurn === undefined ? {} : { exhaustedRetryTurn },
+    }
 }
 
 /** Fold exact list metadata for an attached Session. */
-function sessionListMetadata(events: readonly SessionEvent[]): SessionListMetadata {
-  let state: SessionListMetadata = { blank: true, lastPromptAt: null }
+function sessionListMetadata(events: readonly SessionEvent[]): SessionListFoldState {
+  let state: SessionListFoldState = { blank: true, lastPromptAt: null }
   for (const event of events) state = applySessionListMetadata(state, event)
   return state
 }
@@ -509,6 +555,7 @@ function summarize(session: Session, running: boolean): SessionSummary {
     updatedAt: sessionListUpdatedAt(session.header, metadata),
     running,
     blank: metadata.blank,
+    ...metadata.attention === undefined ? {} : { attention: metadata.attention },
     ...sessionListFields(session.header, session.events),
   }
 }
@@ -571,6 +618,7 @@ async function summarizeCold(
     // Header-only: reading the log for a blank-window preset switch would
     // defeat the same index read, and attaching the session replaces this row
     // with `summarize()`, which resolves the switch from the events.
+    ...metadata?.attention === undefined ? {} : { attention: metadata.attention },
     ...sessionListFields(meta),
   }
 }
@@ -1097,6 +1145,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const presetSwitches = new Map<SessionId, Promise<unknown>>()
   /** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
   const sessionCreations = new Map<SessionId, Promise<Agent>>()
+  /**
+   * Teardown capabilities for the agents this gateway created or resumed.
+   * Handles adopted from another entry path stay untracked — such a session
+   * remains undeletable while attached (the registry's `session-live` guard).
+   * An entry can go stale when the creating fiber unloads; disposal then
+   * rejects and is contained at the call site.
+   */
+  const agentHandles = new Map<SessionId, AgentHandle>()
   /** Serializes path ownership and explicit title checks with Workspace mutations. */
   let workspaceCreationChain = Promise.resolve()
   /**
@@ -1254,6 +1310,85 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     for (const queue of muxQueues) queue.push(envelope)
   }
 
+  /**
+   * Best-effort stop of every live activity of one session: cancels the main
+   * agent's active turn and durably drops its queued inbox work, kills the
+   * running background jobs of the session and of each live descendant agent,
+   * and interrupts every live continuable subagent turn in the descendant
+   * tree under its durable direct-parent authority. A degraded catalog read,
+   * an already-finished job, or a rejected interrupt never blocks the caller.
+   */
+  async function stopSessionActivity(sessionId: SessionId): Promise<void> {
+    let descendants: readonly SubagentDescendantListEntry[] = []
+    const subagents = ctx.get('subagents')
+    if (subagents !== undefined) {
+      try {
+        descendants = await subagents.listDescendants(sessionId)
+      } catch {
+        // A degraded descendant listing still stops the session's own activity.
+      }
+    }
+    const agent = ctx.agents.get(sessionId)
+    if (agent !== undefined && !hasSubagentOwner(agent.session, agent)) {
+      // keepInbox stays unset on purpose: archiving abandons queued turns too.
+      agent.cancel({ kind: 'user' })
+    }
+    const jobs = ctx.get('jobs')
+    if (jobs !== undefined) {
+      const owners = agent === undefined ? [] : [agent]
+      for (const entry of descendants) {
+        if (entry.kind !== 'child') continue
+        const childAgent = ctx.agents.get(entry.id)
+        if (childAgent !== undefined) owners.push(childAgent)
+      }
+      for (const jobOwner of owners) {
+        for (const job of jobs.list(jobOwner)) {
+          try {
+            jobs.kill(job.id, jobOwner, 'session-archived')
+          } catch {
+            // An already-finished job needs no stop; killing never blocks archiving.
+          }
+        }
+      }
+    }
+    for (const entry of descendants) {
+      if (entry.kind !== 'child' || entry.mode !== 'continuable') continue
+      try {
+        subagents?.interrupt(entry.id, { kind: 'user', parentSessionId: entry.parentId })
+      } catch {
+        // Absent, idle, and unauthorized targets are no-ops upstream; an
+        // unexpected rejection must not block the archive either.
+      }
+    }
+  }
+
+  /**
+   * Permanently delete one archived session, closing it in this host first.
+   * A session this gateway attached stays in the live store after archiving,
+   * which the registry's deletion guard rejects; when this gateway owns the
+   * agent handle it stops every activity, disposes the agent (which detaches
+   * the session in order with its loop), and lets the retry pass. A session
+   * adopted from another entry path has no owned handle and still rejects
+   * with {@link WorkspaceSessionLiveError}.
+   */
+  async function deleteArchivedSessionClosed(sessionId: SessionId): Promise<void> {
+    try {
+      await ctx.workspaceRegistry.deleteSession(sessionId)
+      return
+    } catch (error: unknown) {
+      if (!(error instanceof WorkspaceSessionLiveError)) throw error
+      if (!agentHandles.has(sessionId)) throw error
+    }
+    await stopSessionActivity(sessionId)
+    const handle = agentHandles.get(sessionId)
+    agentHandles.delete(sessionId)
+    await handle?.dispose().catch(() => {
+      // A handle already torn down with its creating fiber must not block the
+      // retry; the registry re-checks store liveness itself.
+    })
+    await ctx.workspaceRegistry.deleteSession(sessionId)
+  }
+
   // Projection change feed → session/projection push frames. The carrier
   // mints the wire frame (the Service Definition package holds no wire vocabulary); the
   // child activates only when a projection registry is composed, and the
@@ -1267,13 +1402,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   // The cache supplies recency and a monotonic non-blank hint. A cached
   // `blank: true` remains only a prefix fact and is verified on the cold path.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
-    projectionCtx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
+    projectionCtx.sessionProjections.register<'sessionListMetadata', SessionListFoldState>({
       key: 'sessionListMetadata',
       schema: sessionListMetadataProjectionSchema,
       init: () => ({ blank: true, lastPromptAt: null }),
       apply: applySessionListMetadata,
-      view: state => state,
-      stateVersion: 1,
+      view: ({ attention, blank, lastPromptAt }: SessionListFoldState): SessionListMetadata =>
+        ({ blank, lastPromptAt, ...attention === undefined ? {} : { attention } }),
+      // v2: fold state gained the internal exhausted-retry tracker and the
+      // derived `attention` hint; cached v1 rows are discarded, never migrated.
+      stateVersion: 2,
     })
   })
 
@@ -1486,6 +1624,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { id: inspected.meta.id, header: inspected.meta, events: inspected.events }
   }
 
+  /**
+   * Sanitize a proposed upload file name into a safe basename, or return
+   * undefined when no safe name exists. Backslashes are normalized to slashes,
+   * then any `.`/`..` path component is rejected (path-traversal guard) and only
+   * the final segment is kept; the result is rejected when empty, named `.`/`..`,
+   * contains control characters, or exceeds 200 Unicode code points.
+   */
+  function sanitizeUploadName(name: string): string | undefined {
+    const slashName = name.replace(/\\/g, '/')
+    const segments = slashName.split('/')
+    for (const segment of segments) {
+      if (segment === '.' || segment === '..') return undefined
+    }
+    const candidate = segments[segments.length - 1] ?? ''
+    if (candidate === '') return undefined
+    for (const char of candidate) {
+      const code = char.codePointAt(0)
+      if (code === undefined || code < 0x20 || code === 0x7f) return undefined
+    }
+    if (Array.from(candidate).length > 200) return undefined
+    return candidate
+  }
+
   /** Resolve the Workspace inherited by a fork without making ordinary loose lineage grouped. */
   async function forkWorkspace(source: Pick<Session, 'id' | 'header'>): Promise<Workspace | undefined> {
     const workspaces = ctx.workspaceRegistry.list()
@@ -1632,11 +1793,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // session's history was produced under that composition, and
           // rebuilding it differently would replay tool calls the model can no
           // longer make.
-          return (await ctx.agents.resume({
+          const handle = await ctx.agents.resume({
             resumeSessionId: sessionId,
             agentOptions: agentOptions(),
             setup: (await composeAgent(storedPreset)).setup,
-          })).agent
+          })
+          agentHandles.set(sessionId, handle)
+          return handle.agent
         }
 
         try {
@@ -1645,7 +1808,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
         const composition = await composeAgent(presetId)
-        return (await ctx.agents.create({
+        const handle = await ctx.agents.create({
           sessionId,
           agentOptions: agentOptions(),
           meta: {
@@ -1653,7 +1816,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
           },
           setup: composition.setup,
-        })).agent
+        })
+        agentHandles.set(sessionId, handle)
+        return handle.agent
       })().catch((error: unknown) => {
         // Another Host entry path may have published the same identity while
         // this operation crossed an asynchronous persistence/filesystem step.
@@ -2384,7 +2549,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // plane, composing nothing would leave the child with no tools at all.
         const forkComposition = await composeAgent(resolveSessionPreset(source))
         try {
-          await ctx.agents.create({
+          const handle = await ctx.agents.create({
             sessionId: childId,
             seed: events.slice(0, cut),
             meta: {
@@ -2398,6 +2563,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             agentOptions: agentOptions(),
             setup: forkComposition.setup,
           })
+          agentHandles.set(childId, handle)
         } catch (error: unknown) {
           return err(request, {
             code: 'internal',
@@ -2527,6 +2693,84 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: {},
           })
         }
+      },
+
+      /**
+       * Uploads one browser file into the session's project `.uploads/` so the
+       * composer's binary/large attachments become durable workspace bytes the
+       * agent can later read by the returned path. Resolves the project cwd the
+       * same way `attachment` does and never logs the bytes itself — model
+       * visibility comes from the prompt text referencing the returned path.
+       * The name sanitization and the 25 MiB size bound below are fixed
+       * protocol/security invariants, not config tunables.
+       */
+      async uploadAttachment(request) {
+        const { sessionId, name, data } = request.payload
+        let cwd: string
+        try {
+          const state = await readSessionState(sessionId)
+          if (state.header.cwd === undefined) {
+            // Every served session records its project at create time; a
+            // cwd-less header is a pre-project legacy log (not served).
+            return err(request, { code: 'internal', message: `session "${sessionId}" has no project cwd`, details: {} })
+          }
+          cwd = state.header.cwd
+        } catch (error: unknown) {
+          if (error instanceof SessionNotFound) {
+            return err(request, {
+              code: 'session-not-found',
+              message: error.message,
+              details: { sessionId },
+            })
+          }
+          return err(request, {
+            code: 'internal',
+            message: `attachment upload authorization unavailable for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+
+        const bytes = Buffer.from(data, 'base64')
+        if (bytes.length === 0) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'uploaded file is empty',
+            details: { reason: 'EMPTY_FILE' },
+          })
+        }
+        // Fixed security bound on decoded byte length, not a config tunable.
+        if (bytes.length > 26_214_400) {
+          return err(request, {
+            code: 'attachment-error',
+            message: `uploaded file exceeds the 25 MiB limit (${bytes.length} bytes)`,
+            details: { reason: 'FILE_TOO_LARGE' },
+          })
+        }
+
+        const basename = sanitizeUploadName(name)
+        if (basename === undefined) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'invalid upload file name',
+            details: { reason: 'INVALID_NAME' },
+          })
+        }
+
+        const uploadDir = join(cwd, '.uploads')
+        const filename = `${Date.now()}-${basename}`
+        try {
+          await mkdir(uploadDir, { recursive: true })
+          await writeFile(join(uploadDir, filename), bytes)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `upload failed for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        // Forward slashes, never an absolute path: this is the agent-readable
+        // workspace-relative location.
+        return ok(request, { path: `.uploads/${filename}`, bytes: bytes.length })
       },
 
       updateQueue(request) {
@@ -2780,6 +3024,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return Promise.resolve(ok(request, {
           items: ctx.workspaceRegistry.list().map(workspaceView),
           archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+          pinnedSessionIds: [...ctx.workspaceRegistry.pinnedSessionIds],
         }))
       },
 
@@ -2904,6 +3149,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async archiveSession(request) {
         const { sessionId } = request.payload
+        // The session leaves every grouping here, so nothing it owns may keep
+        // running afterwards: stop the turn, queued inbox work, background
+        // jobs, and subagent activity before the archive set commits.
+        await stopSessionActivity(sessionId)
         try {
           await ctx.workspaceRegistry.archiveSession(sessionId)
         } catch (error: unknown) {
@@ -2916,7 +3165,85 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { sessionId },
           })
         }
-        return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+        return ok(request, {
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+          pinnedSessionIds: [...ctx.workspaceRegistry.pinnedSessionIds],
+        })
+      },
+
+      async unarchiveSession(request) {
+        await ctx.workspaceRegistry.unarchiveSession(request.payload.sessionId)
+        return ok(request, {
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+        })
+      },
+
+      async deleteSession(request) {
+        const { sessionId } = request.payload
+        try {
+          await deleteArchivedSessionClosed(sessionId)
+        } catch (error: unknown) {
+          // Only the registry's business rejections are wire codes; storage
+          // and durability failures propagate as internal errors.
+          if (error instanceof WorkspaceSessionNotArchivedError) {
+            return err(request, {
+              code: 'session-not-archived',
+              message: error.message,
+              details: { sessionId },
+            })
+          }
+          if (error instanceof WorkspaceSessionLiveError) {
+            return err(request, {
+              code: 'session-live',
+              message: error.message,
+              details: { sessionId },
+            })
+          }
+          throw error
+        }
+        return ok(request, {
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+        })
+      },
+
+      async deleteArchivedSessions(request) {
+        // Sessions adopted from another entry path cannot close here; skip
+        // them and report them through the remaining archive set instead of
+        // failing the whole sweep.
+        for (const sessionId of [...ctx.workspaceRegistry.archivedSessionIds]) {
+          try {
+            await deleteArchivedSessionClosed(sessionId)
+          } catch (error: unknown) {
+            if (!(error instanceof WorkspaceSessionLiveError)) throw error
+          }
+        }
+        return ok(request, {
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+        })
+      },
+
+      async setSessionPinned(request) {
+        const { sessionId, pinned } = request.payload
+        try {
+          await ctx.workspaceRegistry.setSessionPinned(sessionId, pinned)
+        } catch (error: unknown) {
+          if (error instanceof WorkspaceUnknownSessionError) {
+            return err(request, {
+              code: 'session-not-found',
+              message: error.message,
+              details: { sessionId },
+            })
+          }
+          if (error instanceof WorkspaceArchivedSessionError) {
+            return err(request, {
+              code: 'session-archived',
+              message: error.message,
+              details: { sessionId },
+            })
+          }
+          throw error
+        }
+        return ok(request, { pinnedSessionIds: [...ctx.workspaceRegistry.pinnedSessionIds] })
       },
     },
 
@@ -3503,6 +3830,64 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
     },
 
+    jobs: {
+      kill(request) {
+        const { sessionId, jobId, reason } = request.payload
+        const jobs = ctx.get('jobs')
+        if (jobs === undefined) {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: 'jobs service is unavailable',
+            details: {},
+          }))
+        }
+        try {
+          const agent = ctx.agents.get(sessionId)
+          const result = jobs.kill(jobId, agent, reason ?? 'user-requested')
+          return Promise.resolve(ok(request, { result }))
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: error instanceof Error ? error.message : 'failed to kill job',
+            details: {},
+          }))
+        }
+      },
+
+      output(request) {
+        const { sessionId, jobId } = request.payload
+        const jobs = ctx.get('jobs')
+        if (jobs === undefined) {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: 'jobs service is unavailable',
+            details: {},
+          }))
+        }
+        try {
+          const agent = ctx.agents.get(sessionId)
+          const snapshot = jobs.get(jobId, agent)
+          let text = ''
+          try {
+            text = jobs.read(jobId, agent).text
+          } catch {
+            // non-fatal read error if reading output delta
+          }
+          return Promise.resolve(ok(request, {
+            text,
+            status: snapshot.status,
+            ...snapshot.detail !== undefined ? { detail: snapshot.detail } : {},
+          }))
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: error instanceof Error ? error.message : 'failed to read job output',
+            details: {},
+          }))
+        }
+      },
+    },
+
     events: {
       mux(_request, signal) {
         const queue = new FrameQueue<RpcRequest<MuxFrame>>()
@@ -3619,6 +4004,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // stream opens against the current set; workspace.list re-baselines
         // reconnecting clients, so only later changes need frames.
         let archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds
+        let pinnedSessionIds = ctx.workspaceRegistry.pinnedSessionIds
         const disposers = [
           ctx.on('session/created', (session: Session) => {
             queue.push(frame({
@@ -3634,8 +4020,22 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           ctx.on('session/disposed', (session: Session) => {
             queue.push(frame({ type: 'host/session-removed', sessionId: session.id }))
           }),
+          ctx.on('workspace/session-deleted', (sessionId) => {
+            // A deleted archived session leaves every list the same way a
+            // disposed live one does; the client's remove path already owns it.
+            queue.push(frame({ type: 'host/session-removed', sessionId }))
+          }),
           ctx.on('agent/status', ({ agent, status }: { agent: Agent; status: AgentStatus }) => {
-            queue.push(frame({ type: 'host/session-status', sessionId: agent.id, running: status === 'running' }))
+            queue.push(frame({
+              type: 'host/session-status',
+              sessionId: agent.id,
+              running: status === 'running',
+              // A running session carries no attention verdict; an idle one
+              // reports its latest turn's retry-exhausted outcome (null = none).
+              attention: status === 'running'
+                ? null
+                : sessionListMetadata(agent.session.events).attention ?? null,
+            }))
           }),
           ctx.on('agent/error', ({ agent, error }: { agent: Agent; error: unknown }) => {
             queue.push(frame({ type: 'host/agent-error', sessionId: agent.id, message: errorChain(error) }))
@@ -3670,6 +4070,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 queue.push(frame({
                   type: 'host/archived-sessions-changed',
                   archivedSessionIds: [...state.archivedSessionIds],
+                }))
+              }
+              if (state.pinnedSessionIds.length !== pinnedSessionIds.length
+                || state.pinnedSessionIds.some((id, index) => id !== pinnedSessionIds[index])) {
+                pinnedSessionIds = state.pinnedSessionIds
+                queue.push(frame({
+                  type: 'host/pinned-sessions-changed',
+                  pinnedSessionIds: [...state.pinnedSessionIds],
                 }))
               }
               return

@@ -26,7 +26,6 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/lifecycle-chrome', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
-const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
 const FUZZY_COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-fuzzy.expected.md')
 const PLAN_ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'plan-active.expected.md')
 // Post-reload golden: the same settled conversation rebuilt purely from
@@ -61,30 +60,25 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await scaffold?.close()
   })
 
-  it.skipIf(MODE === 'record')('opens the shared slash menu from plus with only Command candidates', async () => {
+  it.skipIf(MODE === 'record')('opens the attachment context menu from plus; slash commands stay on the "/" trigger', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-command-menu-launcher'))
-    const launcher = page.getByRole('button', { name: 'Commands' })
+    // The plus launcher owns the attachment context menu (upload today).
+    const launcher = page.getByRole('button', { name: 'Add attachment' })
     await launcher.click()
+    const addMenu = page.getByRole('menu')
+    await addMenu.waitFor({ timeout: 10_000 })
+    expect(await addMenu.getByRole('menuitem', { name: 'Upload file' }).count()).toBe(1)
+    await page.locator('textarea').first().press('Escape')
+    await expect.poll(() => addMenu.count()).toBe(0)
+    // The shared slash menu keeps its own trigger: typing '/' in the textarea.
+    const input = page.locator('textarea').first()
+    await input.fill('/')
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
     await menu.waitFor({ timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(COMMAND_MENU_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('text: Commands')
     expect(snapshot).not.toContain('text: Skills')
     expect(snapshot).not.toContain('text: Subagents')
-    const launchedBox = await menu.boundingBox()
-    await page.locator('textarea').first().press('Escape')
-    await expect.poll(() => menu.count()).toBe(0)
-    const input = page.locator('textarea').first()
-    await input.fill('/')
-    await menu.waitFor({ timeout: 10_000 })
-    const typedBox = await menu.boundingBox()
-    expect(launchedBox).not.toBeNull()
-    expect(typedBox).not.toBeNull()
-    expect(Math.abs(launchedBox!.x - typedBox!.x)).toBeLessThan(1)
-    expect(Math.abs(
-      launchedBox!.y + launchedBox!.height - typedBox!.y - typedBox!.height,
-    )).toBeLessThan(1)
     await input.fill('/cpt')
     await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual([
       'compactCompact older conversation history',
@@ -104,7 +98,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await activePage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await connectFreshWorkspace(activePage, activeScaffold.workspaceCwd)
       const input = activePage.locator('textarea').first()
-      await activePage.getByRole('button', { name: 'Commands' }).click()
+      await input.fill('/')
       const menu = activePage.getByRole('listbox', { name: 'Trigger suggestions' })
       await menu.waitFor({ timeout: 10_000 })
       await menu.getByRole('option', { name: 'plan Enter or leave plan mode' }).click()
@@ -271,7 +265,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.jsonl', 'command-menu.expected.md', 'command-menu-fuzzy.expected.md', 'hero.expected.md', 'plan-active.expected.md', 'reloaded.expected.md',
+      'session.jsonl', 'command-menu-fuzzy.expected.md', 'hero.expected.md', 'plan-active.expected.md', 'reloaded.expected.md',
     ])
   })
 })

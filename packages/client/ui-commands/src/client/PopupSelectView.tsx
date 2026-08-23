@@ -19,7 +19,7 @@ import type { PopupSelectController } from './popup.ts'
 import css from './PopupSelectView.module.css'
 
 /** Design cap on the card height (same MenuDropdown family as the slash menu). */
-const MAX_HEIGHT = 320
+const MAX_HEIGHT = 240
 
 /** Injected business face of the popupSelect overlay entry. */
 export interface PopupSelectInjected {

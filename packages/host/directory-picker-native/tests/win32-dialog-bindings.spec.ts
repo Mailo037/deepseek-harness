@@ -40,6 +40,16 @@ interface ComWorld {
   registered: number
   unregistered: number
   uninitialized: number
+  /** Named callback prototypes already declared in this Koffi process. */
+  declaredProtoNames: string[]
+  /** Windows `IsWindowVisible` accepts (the raise callback skips the others). */
+  visibleWindows: boolean
+  /** Enumerated window numbers carrying `WS_EX_TOOLWINDOW`. */
+  toolWindowNumbers: number[]
+  /** Enumerated window numbers using the common-dialog `#32770` class. */
+  dialogWindowNumbers: number[]
+  /** Per-window raise actions, recorded in enumeration order. */
+  raised: { hwnd: unknown; topmost: boolean; appwindow: boolean; foregroundAttempt: boolean }[]
 }
 
 function comWorld(overrides: Partial<ComWorld> = {}): ComWorld {
@@ -48,7 +58,8 @@ function comWorld(overrides: Partial<ComWorld> = {}): ComWorld {
     hasThreadDpi: true, supportedDpiContexts: [-4], enumThrows: false,
     path: 'C:\\选中\\directory',
     titles: [], options: [], dpiContexts: [], freed: [], released: [], posted: [],
-    registered: 0, unregistered: 0, uninitialized: 0,
+    registered: 0, unregistered: 0, uninitialized: 0, declaredProtoNames: [],
+    visibleWindows: true, toolWindowNumbers: [], dialogWindowNumbers: [2], raised: [],
     ...overrides,
   }
 }
@@ -120,11 +131,58 @@ function installFakeKoffi(world: ComWorld): void {
               return 1
             }
             case 'PostMessageW': return (hwnd: unknown, message: number) => { world.posted.push({ hwnd, message }); return 1 }
+            case 'IsWindowVisible': return (_hwnd: unknown) => world.visibleWindows ? 1 : 0
+            case 'GetClassNameW': return (hwnd: unknown, buffer: Buffer) => {
+              const number = (hwnd as { n?: unknown }).n
+              const className = typeof number === 'number' && world.dialogWindowNumbers.includes(number)
+                ? '#32770'
+                : 'helper-window'
+              buffer.write(className, 'utf16le')
+              return className.length
+            }
+            case 'SetWindowPos': return (hwnd: unknown, insertAfter: unknown) => {
+              const entry = world.raised.find(r => r.hwnd === hwnd) ?? { hwnd, topmost: false, appwindow: false, foregroundAttempt: false }
+              entry.topmost = insertAfter === -1
+              if (!world.raised.includes(entry)) world.raised.push(entry)
+              return 1
+            }
+            case 'GetWindowLongW': return (hwnd: unknown, index: number) => {
+              void index
+              const entry = world.raised.find(r => r.hwnd === hwnd)
+              const number = (hwnd as { n?: unknown }).n
+              const toolWindow = typeof number === 'number' && world.toolWindowNumbers.includes(number)
+              return (entry?.appwindow ? 0x40000 : 0) | (toolWindow ? 0x80 : 0)
+            }
+            case 'SetWindowLongW': return (hwnd: unknown, _index: number, value: number) => {
+              let entry = world.raised.find(r => r.hwnd === hwnd)
+              if (entry === undefined) {
+                entry = { hwnd, topmost: false, appwindow: false, foregroundAttempt: false }
+                world.raised.push(entry)
+              }
+              entry.appwindow = (value & 0x40000) !== 0
+              return value
+            }
+            case 'SetForegroundWindow': return (hwnd: unknown) => {
+              const entry = world.raised.find(r => r.hwnd === hwnd)
+              if (entry !== undefined) entry.foregroundAttempt = true
+              return 1
+            }
+            case 'AttachThreadInput': return () => 1
+            case 'GetForegroundWindow': return () => null
+            case 'GetWindowThreadProcessId': return () => 0
             default: throw new Error(`unexpected native import ${dll}/${name}`)
           }
         },
       }),
-      proto: (declaration: string) => ({ declaration }),
+      proto: (...args: unknown[]) => {
+        if (args.length === 1) {
+          const declaration = args[0] as string
+          const name = /\b([A-Za-z_]\w*)\s*\(/.exec(declaration)?.[1]
+          if (name !== undefined && world.declaredProtoNames.includes(name)) throw new Error(`Duplicate type name '${name}'`)
+          if (name !== undefined) world.declaredProtoNames.push(name)
+        }
+        return { declaration: args.join(' ') }
+      },
       pointer: (type: unknown) => type,
       sizeof: (type: string) => { void type; return FAKE_POINTER_SIZE },
       view: (value: unknown, len: number): ArrayBuffer => {
@@ -255,11 +313,80 @@ describe('closeThreadWindows over the fake COM world', () => {
     expect(world.unregistered).toBe(1)
   })
 
+  it('can retry closing in one process without redeclaring a named callback type', async () => {
+    const world = comWorld()
+    installFakeKoffi(world)
+    const { closeThreadWindows } = await loadBindingsModule()
+    await closeThreadWindows(777)
+    await closeThreadWindows(777)
+    expect(world.registered).toBe(2)
+    expect(world.unregistered).toBe(2)
+  })
+
   it('unregisters the callback even when the enumeration itself throws', async () => {
     const world = comWorld({ enumThrows: true })
     installFakeKoffi(world)
     const { closeThreadWindows } = await loadBindingsModule()
     await expect(closeThreadWindows(777)).rejects.toThrow('EnumThreadWindows refused')
+    expect(world.unregistered).toBe(1)
+  })
+})
+
+describe('raiseThreadWindows over the fake COM world', () => {
+  it('skips helper tool windows and raises the visible dialog window', async () => {
+    const world = comWorld({ toolWindowNumbers: [1] })
+    installFakeKoffi(world)
+    const { raiseThreadWindows } = await loadBindingsModule()
+    await expect(raiseThreadWindows(777)).resolves.toBe(true)
+    expect(world.raised).toHaveLength(1)
+    expect(world.raised[0]?.hwnd).toEqual({ kind: 'hwnd', n: 2 })
+    expect(world.raised[0]).toMatchObject({ topmost: true, appwindow: true, foregroundAttempt: true })
+    expect(world.registered).toBe(1)
+    expect(world.unregistered).toBe(1)
+  })
+
+  it('reports false while only visible helper tool windows exist', async () => {
+    const world = comWorld({ toolWindowNumbers: [1, 2], dialogWindowNumbers: [] })
+    installFakeKoffi(world)
+    const { raiseThreadWindows } = await loadBindingsModule()
+    await expect(raiseThreadWindows(777)).resolves.toBe(false)
+    expect(world.raised).toHaveLength(0)
+    expect(world.unregistered).toBe(1)
+  })
+
+  it('reports false while only visible non-tool helper windows exist', async () => {
+    const world = comWorld({ dialogWindowNumbers: [] })
+    installFakeKoffi(world)
+    const { raiseThreadWindows } = await loadBindingsModule()
+    await expect(raiseThreadWindows(777)).resolves.toBe(false)
+    expect(world.raised).toHaveLength(0)
+    expect(world.unregistered).toBe(1)
+  })
+
+  it('can retry in one process without redeclaring a named callback type', async () => {
+    const world = comWorld()
+    installFakeKoffi(world)
+    const { raiseThreadWindows } = await loadBindingsModule()
+    await expect(raiseThreadWindows(777)).resolves.toBe(true)
+    await expect(raiseThreadWindows(777)).resolves.toBe(true)
+    expect(world.registered).toBe(2)
+    expect(world.unregistered).toBe(2)
+  })
+
+  it('reports false when the thread has no visible window yet', async () => {
+    const world = comWorld({ visibleWindows: false })
+    installFakeKoffi(world)
+    const { raiseThreadWindows } = await loadBindingsModule()
+    await expect(raiseThreadWindows(777)).resolves.toBe(false)
+    expect(world.raised).toHaveLength(0)
+    expect(world.unregistered).toBe(1)
+  })
+
+  it('propagates the enumeration failure after unregistering', async () => {
+    const world = comWorld({ enumThrows: true })
+    installFakeKoffi(world)
+    const { raiseThreadWindows } = await loadBindingsModule()
+    await expect(raiseThreadWindows(777)).rejects.toThrow('EnumThreadWindows refused')
     expect(world.unregistered).toBe(1)
   })
 })

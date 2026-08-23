@@ -1,6 +1,8 @@
 /**
  * Settings shell root: the sidebar-foot trigger row plus the centered modal
- * panel (figma 501:29947, 1080x700) with the section nav rail. The shell is
+ * panel (figma 501:29947) — a single column: header row (title top-left,
+ * section actions + close top-right), the horizontally scrolling section tab
+ * row, then the options area that owns all vertical scrolling. The shell is
  * a pure composition face — every piece of text (trigger label, panel title,
  * close label, sections) arrives from registrants through slots; accessible
  * names resolve to that content (trigger: its own text; dialog:
@@ -62,8 +64,15 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className={css.header}>
+          <div className={css.title} id={titleId}>{renderSlot('settings.header', {})}</div>
+          <div className={css.actions}>{renderSlot('settings.action', {})}</div>
+          <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
+            <IconCloseOutline16 size={14} />
+            <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
+          </button>
+        </div>
         <nav className={css.nav}>
-          <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
           <div className={css.navList}>
             {rows.map(row => (
               <button
@@ -79,17 +88,8 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
             ))}
           </div>
         </nav>
-        <div className={css.content}>
-          <div className={css.header}>
-            <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-            <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
-              <IconCloseOutline16 size={14} />
-              <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
-            </button>
-          </div>
-          <div className={css.options}>
-            {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
-          </div>
+        <div className={css.options}>
+          {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
         </div>
       </div>
     </div>

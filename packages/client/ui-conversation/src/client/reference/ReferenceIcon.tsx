@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import {
-  IconBrowseOutline16, IconFolderClose16,
+  IconBrowseOutline16, IconFolderClose16, IconSkillOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Reference domains with distinct composer and transcript glyphs. */
-export type ReferenceIconKind = 'session' | 'file' | 'folder'
+export type ReferenceIconKind = 'session' | 'file' | 'folder' | 'skill' | 'command'
 
 /** Props shared by inline reference glyphs. */
 export interface ReferenceIconProps {
@@ -31,5 +31,19 @@ export function ReferenceIcon({ kind, size = 16, className }: ReferenceIconProps
       )
     case 'file': return <IconBrowseOutline16 size={size} className={className} />
     case 'folder': return <IconFolderClose16 size={size} className={className} />
+    case 'skill': return <IconSkillOutline16 size={size} className={className} />
+    case 'command':
+      // Terminal-prompt glyph: the command token's domain mark.
+      return (
+        <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path
+            d="M2.5 4L6.5 8L2.5 12M8.5 12.5H13.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )
   }
 }

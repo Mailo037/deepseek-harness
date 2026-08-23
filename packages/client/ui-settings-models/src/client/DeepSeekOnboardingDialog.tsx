@@ -6,11 +6,12 @@
  * the onboarding plugin's shared modal, so the key is entered once.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelsSettingsState, ModelsSettingsStore } from './store.ts'
 import { onboardingReadiness } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
@@ -31,6 +32,8 @@ export interface DeepSeekOnboardingInjected {
   api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
   /** Settings schema and immutable path callbacks. */
   schema: SettingsSchemaOperations
+  /** Ask ui-workspace's existing hero picker to start its directory-flow route. */
+  requestWorkspace: (onSettled: (completed: boolean) => void) => boolean
   /** Feature copy. */
   t: (key: keyof typeof en) => string
 }
@@ -46,33 +49,91 @@ function assertNever(_value: never): never {
 
 /**
  * Prompt a first-run user for the official DeepSeek credential while no
- * provider can serve requests and that credential is writable.
+ * provider can serve requests and that credential is writable. Unrepairable
+ * states stay explicit with a Models recovery action; a usable provider
+ * continues through Workspace and first-task guidance.
  * @param props - settings-shell owner state and Models feature dependencies.
  * @returns the onboarding modal or null when onboarding needs no intervention.
  */
 export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): ReactNode {
-  const { complete, controller, useModels, api, schema, t } = props
+  const {
+    complete, openSection, controller, useModels, useWorkspaces, api, schema, requestWorkspace, t,
+  } = props
   const state = useModels(snapshot => snapshot)
+  const workspaces = useWorkspaces(snapshot => snapshot)
   const readiness = onboardingReadiness(state)
+  const [workspaceError, setWorkspaceError] = useState(false)
+  const [workspaceHandoff, setWorkspaceHandoff] = useState(false)
+  const [showFirstTask, setShowFirstTask] = useState(false)
 
   useEffect(() => {
     if (state.status === 'idle') void controller.load()
   }, [controller, state.status])
 
-  useEffect(() => {
-    if (
-      readiness.kind === 'adapter-absent'
-      || readiness.kind === 'provider-ready'
-      || readiness.kind === 'unavailable'
-    ) complete()
-  }, [complete, readiness.kind])
-
   switch (readiness.kind) {
     case 'loading':
-    case 'adapter-absent':
-    case 'provider-ready':
-    case 'unavailable':
       return null
+    case 'adapter-absent':
+      return (
+        <Recovery
+          title={t('onboardingRecoveryTitle')}
+          description={t('onboardingRecoveryAdapterAbsent')}
+          actionLabel={t('onboardingOpenModels')}
+          onAction={() => { openSection('models'); complete() }}
+        />
+      )
+    case 'unavailable': {
+      const recoveryKey = {
+        'load-failed': 'onboardingRecoveryLoadFailed',
+        'provider-inactive': 'onboardingRecoveryProviderInactive',
+        'credentials-unavailable': 'onboardingRecoveryCredentialsUnavailable',
+        'settings-read-only': 'onboardingRecoverySettingsReadOnly',
+        'credential-read-only': 'onboardingRecoveryCredentialReadOnly',
+      } as const
+      return (
+        <Recovery
+          title={t('onboardingRecoveryTitle')}
+          description={t(recoveryKey[readiness.reason])}
+          actionLabel={t('onboardingOpenModels')}
+          onAction={() => { openSection('models'); complete() }}
+        />
+      )
+    }
+    case 'provider-ready':
+      if (workspaces.items.length === 0) {
+        return (
+          <Recovery
+            title={t('onboardingWorkspaceTitle')}
+            description={t('onboardingWorkspaceDescription')}
+            actionLabel={t('onboardingChooseWorkspace')}
+            secondaryActionLabel={t('onboardingSkipForNow')}
+            error={workspaceError ? t('onboardingWorkspaceUnavailable') : undefined}
+            actionsDisabled={workspaceHandoff}
+            onSecondaryAction={complete}
+            onAction={() => {
+              if (!requestWorkspace((completed) => {
+                setWorkspaceHandoff(false)
+                setShowFirstTask(completed)
+              })) {
+                setWorkspaceError(true)
+                return
+              }
+              setWorkspaceHandoff(true)
+            }}
+          />
+        )
+      }
+      if (!showFirstTask) return null
+      return (
+        <Recovery
+          title={t('onboardingTaskTitle')}
+          description={t('onboardingTaskDescription')}
+          actionLabel={t('onboardingStartTask')}
+          secondaryActionLabel={t('onboardingSkipForNow')}
+          onAction={complete}
+          onSecondaryAction={complete}
+        />
+      )
     case 'credential-missing':
       break
     /* v8 ignore next -- every current readiness variant is handled above */
@@ -118,6 +179,38 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           submitBusyLabel="onboardingSaving"
           onClose={finishCredential}
         />
+      </div>
+      <div className={styles.actions}>
+        <Button variant="outline" onClick={() => { openSection('models'); complete() }}>
+          {t('onboardingOpenModels')}
+        </Button>
+      </div>
+    </OnboardingModal>
+  )
+}
+
+/** Compact non-destructive recovery or handoff step in the first-run journey. */
+function Recovery({
+  title, description, actionLabel, secondaryActionLabel, error, actionsDisabled = false, onAction, onSecondaryAction,
+}: {
+  title: string
+  description: string
+  actionLabel: string
+  secondaryActionLabel?: string | undefined
+  error?: string | undefined
+  actionsDisabled?: boolean | undefined
+  onAction: () => void
+  onSecondaryAction?: (() => void) | undefined
+}): ReactNode {
+  return (
+    <OnboardingModal title={title} focusTitle>
+      <p className={styles.description}>{description}</p>
+      {error === undefined ? null : <p className={styles.error} role="alert">{error}</p>}
+      <div className={styles.actions}>
+        <Button variant="primary" disabled={actionsDisabled} onClick={onAction}>{actionLabel}</Button>
+        {secondaryActionLabel === undefined || onSecondaryAction === undefined
+          ? null
+          : <Button variant="outline" disabled={actionsDisabled} onClick={onSecondaryAction}>{secondaryActionLabel}</Button>}
       </div>
     </OnboardingModal>
   )

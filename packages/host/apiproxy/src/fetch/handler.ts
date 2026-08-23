@@ -28,6 +28,7 @@ import {
   sessionSearchRequestSchema,
   sessionSelectModelRequestSchema,
   sessionUpdateQueueRequestSchema,
+  sessionUploadAttachmentRequestSchema,
 } from '../api/sessions.schema.ts'
 import {
   hostApplyUpdateRequestSchema, hostCheckUpdateRequestSchema, hostCreateDirectoryRequestSchema,
@@ -37,12 +38,16 @@ import {
 import {
   workspaceArchiveSessionRequestSchema,
   workspaceCreateRequestSchema,
+  workspaceDeleteArchivedSessionsRequestSchema,
   workspaceDeleteRequestSchema,
+  workspaceDeleteSessionRequestSchema,
   workspaceInsertBeforeRequestSchema,
   workspaceInsertSessionBeforeRequestSchema,
   workspaceListRequestSchema,
   workspaceMoveSessionRequestSchema,
   workspaceRenameRequestSchema,
+  workspaceSetSessionPinnedRequestSchema,
+  workspaceUnarchiveSessionRequestSchema,
   workspaceUpdateSettingsRequestSchema,
 } from '../api/workspace.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
@@ -72,6 +77,7 @@ import {
   subagentListRequestSchema,
   subagentPromptRequestSchema,
 } from '../api/subagents.schema.ts'
+import { jobKillRequestSchema, jobOutputRequestSchema } from '../api/jobs.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -100,6 +106,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.fork': { schema: sessionForkRequestSchema, invoke: (api, r) => api.sessions.fork(r) },
   'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r) => api.sessions.prompt(r) },
   'session.attachment': { schema: sessionAttachmentRequestSchema, invoke: (api, r) => api.sessions.attachment(r) },
+  'session.uploadAttachment': { schema: sessionUploadAttachmentRequestSchema, invoke: (api, r) => api.sessions.uploadAttachment(r) },
   'session.updateQueue': { schema: sessionUpdateQueueRequestSchema, invoke: (api, r) => api.sessions.updateQueue(r) },
   'session.cancel': { schema: sessionCancelRequestSchema, invoke: (api, r) => api.sessions.cancel(r) },
   'subagent.list': { schema: subagentListRequestSchema, invoke: (api, r, signal) => api.subagents.list(r, signal) },
@@ -120,6 +127,10 @@ const UNARY_ROUTES: UnaryRoutes = {
   'workspace.insertBefore': { schema: workspaceInsertBeforeRequestSchema, invoke: (api, r) => api.workspace.insertBefore(r) },
   'workspace.insertSessionBefore': { schema: workspaceInsertSessionBeforeRequestSchema, invoke: (api, r) => api.workspace.insertSessionBefore(r) },
   'workspace.archiveSession': { schema: workspaceArchiveSessionRequestSchema, invoke: (api, r) => api.workspace.archiveSession(r) },
+  'workspace.unarchiveSession': { schema: workspaceUnarchiveSessionRequestSchema, invoke: (api, r) => api.workspace.unarchiveSession(r) },
+  'workspace.deleteSession': { schema: workspaceDeleteSessionRequestSchema, invoke: (api, r) => api.workspace.deleteSession(r) },
+  'workspace.deleteArchivedSessions': { schema: workspaceDeleteArchivedSessionsRequestSchema, invoke: (api, r) => api.workspace.deleteArchivedSessions(r) },
+  'workspace.setSessionPinned': { schema: workspaceSetSessionPinnedRequestSchema, invoke: (api, r) => api.workspace.setSessionPinned(r) },
   'workspace.updateSettings': { schema: workspaceUpdateSettingsRequestSchema, invoke: (api, r) => api.workspace.updateSettings(r) },
   'workspace.moveSession': { schema: workspaceMoveSessionRequestSchema, invoke: (api, r) => api.workspace.moveSession(r) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
@@ -146,6 +157,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
+  'job.kill': { schema: jobKillRequestSchema, invoke: (api, r) => api.jobs.kill(r) },
+  'job.output': { schema: jobOutputRequestSchema, invoke: (api, r) => api.jobs.output(r) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */
@@ -180,7 +193,6 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  */
 // K appears once in the signature but ties the UNARY_ROUTES[K] row lookup to its own
 // schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
-// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {

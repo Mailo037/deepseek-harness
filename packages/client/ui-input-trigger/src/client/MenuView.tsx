@@ -9,7 +9,21 @@
  */
 import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  useAnchoredMaxHeight,
+  IconAgentPresetOutline16,
+  IconArchiveOutline20,
+  IconBranchOutline16,
+  IconCodeOutline16,
+  IconDownloadOutline16,
+  IconGoalOutline16,
+  IconLikeOutline16,
+  IconListPenOutline16,
+  IconQuestionOutline14,
+  IconRefreshOutline14,
+  IconSearchOutline16,
+  IconSettingsOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
@@ -19,7 +33,40 @@ import type { MenuKey } from './locales.ts'
 export type MenuViewProps = MenuViewInjected & PropsLocale<'slash.menu'>
 
 /** Design cap on the list height (figma SLASH 39:26572 MenuDropdown). */
-const MAX_HEIGHT = 320
+const MAX_HEIGHT = 240
+
+/** Visual leading icon for known built-in / host commands with fallback. */
+function commandIcon(name: string): React.ReactNode {
+  switch (name.toLowerCase()) {
+    case 'compact':
+      return <IconRefreshOutline14 size={14} />
+    case 'export':
+      return <IconDownloadOutline16 size={14} />
+    case 'feedback':
+      return <IconLikeOutline16 size={14} />
+    case 'goal':
+      return <IconGoalOutline16 size={14} />
+    case 'permission':
+      return <IconSettingsOutline16 size={14} />
+    case 'plan':
+      return <IconListPenOutline16 size={14} />
+    case 'model':
+      return <IconAgentPresetOutline16 size={14} />
+    case 'branch':
+    case 'fork':
+      return <IconBranchOutline16 size={14} />
+    case 'search':
+    case 'web':
+      return <IconSearchOutline16 size={14} />
+    case 'archive':
+      return <IconArchiveOutline20 size={14} />
+    case 'help':
+    case 'info':
+      return <IconQuestionOutline14 size={14} />
+    default:
+      return <IconCodeOutline16 size={14} />
+  }
+}
 
 /** DOM id of one option row (the aria-activedescendant target). */
 function optionId(source: string, index: number): string {
@@ -88,6 +135,11 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
                 ? <div className={css.loading} data-source={group.source}>{t('loading')}</div>
                 : group.items.map((item, index) => {
                   const active = highlight !== null && highlight.source === group.source && highlight.index === index
+                  const icon = item.icon !== undefined
+                    ? item.icon
+                    : (group.source === 'command' || group.source === 'commands')
+                      ? commandIcon(item.name)
+                      : undefined
                   return (
                     <Fragment key={optionId(group.source, index)}>
                       {item.section !== undefined && item.section !== group.items[index - 1]?.section
@@ -107,7 +159,7 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
                           onPick(group.source, index)
                         }}
                       >
-                        {item.icon !== undefined && <span className={css.itemIcon} aria-hidden>{item.icon}</span>}
+                        {icon !== undefined && <span className={css.itemIcon} aria-hidden>{icon}</span>}
                         <span className={css.itemName}>{item.name}</span>
                         {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
                       </button>

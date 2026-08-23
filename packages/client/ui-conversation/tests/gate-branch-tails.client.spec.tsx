@@ -120,7 +120,7 @@ describe('render branch tails', () => {
     const emptyList = createSnapshotStore<SessionListState>(
       { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
     const emptyWorkspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     const view = render(
@@ -135,9 +135,9 @@ describe('render branch tails', () => {
         useInput={(() => { throw new Error('unused') })}
         inputActions={{
           setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
+          addAttachments: () => true,
+          removeAttachment: () => {},
+          pruneAttachments: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}
@@ -176,7 +176,7 @@ describe('render branch tails', () => {
     const emptyList = createSnapshotStore<SessionListState>(
       { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
     const emptyWorkspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     const owners: DetailsToolOwnerProps[] = []
@@ -192,9 +192,9 @@ describe('render branch tails', () => {
         useInput={(() => { throw new Error('unused') })}
         inputActions={{
           setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
+          addAttachments: () => true,
+          removeAttachment: () => {},
+          pruneAttachments: () => {},
           submit: () => {},
         }}
         useStore={bindSnapshotSelector(chat)}

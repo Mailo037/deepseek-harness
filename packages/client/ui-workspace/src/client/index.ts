@@ -1,26 +1,40 @@
 /**
- * Workspace plugin, browser half. Two registrations: WorkspaceBrowser fills
+ * Workspace plugin, browser half. Three registrations: WorkspaceBrowser fills
  * the sidebar shell's `sidebar.workspaces` hole (the whole browsing region),
- * and WorkspacePicker fills the conversation hero's picker hole
- * (`conversation.hero.workspace` — both hero forms). Both read real Host
- * Workspaces through the global useWorkspaces hook, and each declares its
- * own `single` directory-flow child hole for the composed picker package's
- * client half (see the contract module doc). Export discipline:
- * packages/client/AGENTS.md.
+ * WorkspacePicker fills the conversation hero's picker hole
+ * (`conversation.hero.workspace` — both hero forms), and SessionOptionsAction
+ * contributes the conversation header's more-options entry
+ * (`conversation.session.header.utilities`). All read real Host Workspaces
+ * through the global useWorkspaces hook, the options menu drives the export
+ * feature's download controller when the composition mounts one, and the
+ * browser/picker pair each declare their own `single` directory-flow child
+ * hole for the composed picker package's client half (see the contract
+ * module doc). Export discipline: packages/client/AGENTS.md.
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
+// Type-only: pulls the export feature's Context merge (ctx.sessionLogDownload)
+// behind the options menu's download row.
+import type {} from '@deepseek-ai/dsh-session-log-export/client'
+import type { SessionLogDownloadState } from '@deepseek-ai/dsh-session-log-export/client'
+import type {
+  SessionOptionsInjected,
+  WorkspaceBrowserInjected,
+  WorkspacePickerInjected,
+} from './contract/slots.ts'
 import { createWorkspaceViewStore } from './stores.ts'
+import { SessionOptionsAction } from './SessionOptionsAction.tsx'
 import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { WorkspacePickerRequests } from './workspace-picker-requests.ts'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
+  SessionOptionsActionProps, SessionOptionsInjected,
   WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
@@ -54,6 +68,7 @@ export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'connection'
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const hostDescription = connection.hostDescription
+  const workspacePickerRequests = new WorkspacePickerRequests(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
@@ -98,6 +113,10 @@ export function apply(ctx: ClientContext): void {
       await ctx.workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },
     archiveSession: async (sessionId) => { await ctx.workspaces.archiveSession(sessionId) },
+    unarchiveSession: async (sessionId) => { await ctx.workspaces.unarchiveSession(sessionId) },
+    deleteSession: async (sessionId) => { await ctx.workspaces.deleteSession(sessionId) },
+    deleteArchivedSessions: async () => await ctx.workspaces.deleteArchivedSessions(),
+    setSessionPinned: async (sessionId, pinned) => { await ctx.workspaces.setSessionPinned(sessionId, pinned) },
     insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
       await ctx.workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },
@@ -112,7 +131,46 @@ export function apply(ctx: ClientContext): void {
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => ctx.workspaces.create(input),
-    hooks: { directoryFlow: pickerFlowSource },
+    hooks: {
+      directoryFlow: pickerFlowSource,
+      workspacePickerRequest: workspacePickerRequests.store,
+    },
+    settleWorkspacePickerRequest: (completed) => { workspacePickerRequests.settle(completed) },
+  })
+  // The header menu drives the same session verbs as the browser's row menus,
+  // resolved against the current session through the runtime share.
+  // The download row rides the export feature's controller when the
+  // composition mounts one; without it the menu drops that row only.
+  const sessionLogDownload = ctx.get('sessionLogDownload')
+  const EMPTY_DOWNLOADS: SessionLogDownloadState = { bySession: {} }
+  const downloadMirror: HostObservable<SessionLogDownloadState> = sessionLogDownload === undefined
+    ? { getSnapshot: () => EMPTY_DOWNLOADS, subscribe: () => () => {} }
+    : sessionLogDownload.store
+  const optionsInjected = (): SessionOptionsInjected => ({
+    hooks: { sessionLogDownload: downloadMirror },
+    renameSession: async (sessionId, title) => {
+      const session = ctx.sessions.binding(sessionId)?.session
+      if (session === undefined) throw new Error(`unknown session "${sessionId}"`)
+      const result = await session.rename(title)
+      if (!result.ok) throw new Error(result.error.message)
+    },
+    forkSession: (sessionId) => {
+      ctx.sessions.fork({ sessionId, increaseTitle: true })
+        .then((childId) => { ctx.sessions.open(childId) })
+        .catch(() => {
+          // Fork or child-rename failure keeps the current selection.
+        })
+    },
+    archiveSession: async (sessionId) => { await ctx.workspaces.archiveSession(sessionId) },
+    setSessionPinned: async (sessionId, pinned) => { await ctx.workspaces.setSessionPinned(sessionId, pinned) },
+    moveSession: async (sessionId, targetWorkspaceId) => {
+      await ctx.workspaces.moveSession(sessionId, targetWorkspaceId)
+    },
+    ...(sessionLogDownload === undefined
+      ? {}
+      : {
+        downloadSessionLog: (sessionId: SessionId) => { void sessionLogDownload.download(sessionId) },
+      }),
   })
   // Each registration declares its directory-flow child in the same call;
   // slot injection follows both the owner and declaration HMR lifetimes.
@@ -134,5 +192,15 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
     },
     WorkspacePicker,
+  ))
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
+    {
+      name: 'conversation.session.header.utilities',
+      id: 'session-options',
+      children: { 'conversation.session.header.utilities.menuHead': { kind: 'single', scope: 'session' } },
+      inject: optionsInjected,
+      locale: NS,
+    },
+    SessionOptionsAction,
   ))
 }

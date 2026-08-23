@@ -2,7 +2,24 @@
 
 [English](README.md) | 中文
 
-纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Menu/Modal/Input、Toast 短时横幅、OnboardingSurface 首次使用接管层（portal 到 body 的遮罩加不透明展示层，在且仅在自身生命周期内保持 `#root` 为 `inert`）、markdown 家族（MessageText/MarkdownText/JsonBlock）、只读 JsonTree 检查器、`useAnchoredMaxHeight` 钩子（把底部锚定的浮层高度收敛到锚点上方的视口空间，并在 resize、scroll 与调用方提供的依赖变化时重新测量）、`useAnchoredPosition` 钩子（让固定定位的浮动面板跟住锚点：测量、偏移、按视口边距钳制，并在捕获阶段滚动、窗口缩放与面板自身尺寸变化时重新定位）、TerminalBlock、DiffBlock、ReadBlock、SearchBlock，以及 WebBlock。
+纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Menu/Modal/Input/Select、用于紧凑设置与状态组合的 `SurfaceCard`/`LabeledField`/`ComparisonRail`、Toast 短时横幅、OnboardingSurface 首次使用接管层（portal 到 body 的遮罩加不透明展示层，在且仅在自身生命周期内保持 `#root` 为 `inert`）、markdown 家族（MessageText/MarkdownText/JsonBlock）、只读 JsonTree 检查器、`useAnchoredMaxHeight` 钩子（把底部锚定的浮层高度收敛到锚点上方的视口空间，并在 resize、scroll 与调用方提供的依赖变化时重新测量）、`useAnchoredPosition` 钩子（让固定定位的浮动面板跟住锚点：测量、偏移、按视口边距钳制，并在捕获阶段滚动、窗口缩放与面板自身尺寸变化时重新定位）、TerminalBlock、DiffBlock、ReadBlock、SearchBlock，以及 WebBlock。
+
+## 紧凑组合
+
+`SurfaceCard`、`LabeledField` 和 `ComparisonRail` 是设置与状态表层可复用的定制 UI 构件。字段的 `labelFor` 会把标签关联到 `Select` 等定制控件；对比轨道仅用于装饰，卡片标题则成为该区域的无障碍名称。
+
+```tsx
+<SurfaceCard title="AI-assisted updates">
+  <ComparisonRail from="Local build" to="Unofficial Harness" />
+  <LabeledField label="Update source" labelFor="update-source">
+    <Select id="update-source" value={source} options={sources} onChange={setSource} />
+  </LabeledField>
+</SurfaceCard>
+```
+
+## 连接中断覆盖层
+
+`ConnectionLostOverlay` 仅在重连状态持续一整秒后才覆盖应用，因此短暂断线不会使启动画面闪现。连接恢复会立即隐藏已显示的覆盖层，并取消尚未显示的覆盖层。
 
 ## 悬浮卡片
 

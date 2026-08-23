@@ -11,7 +11,7 @@
  * resizes are driven through the ResizeObserver stub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
@@ -79,7 +79,7 @@ function mountFrame() {
     return sel(sessionState)
   }) as never
   const workspaceState: WorkspaceListState = {
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
   }
   const element = () => (
@@ -90,6 +90,7 @@ function mountFrame() {
       useSessions={useSessions}
       useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
+      t={((key: string) => key) as AppFrameProps['t']}
     />
   )
   const utils = render(element())
@@ -335,8 +336,8 @@ describe('AppFrame — mobile drawer overlay', () => {
     frameWidth = 390
     const { frame, instance, slotCalls } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
-    // The grid keeps the rail track: the center stays full width under the drawer.
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    // The grid keeps the zero track: the center never moves when the drawer opens.
+    expect(tracks(frame)).toEqual([0, 0])
     expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
     expect(frame.querySelector('[class*="drawerBackdrop"]')).toBeTruthy()
@@ -353,7 +354,7 @@ describe('AppFrame — mobile drawer overlay', () => {
     expect(drawerWidth(300)).toBeLessThan(SIDEBAR_DRAWER_MAX)
   })
 
-  it('backdrop click closes the drawer back to the rail', () => {
+  it('backdrop click closes the drawer back out of the frame', () => {
     frameWidth = 390
     const { frame, instance, slotCalls } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
@@ -363,9 +364,61 @@ describe('AppFrame — mobile drawer overlay', () => {
     expect(frame.hasAttribute('data-drawer-mode')).toBe(true) // still fading
     act(() => { vi.advanceTimersByTime(200) })
     expect(frame.hasAttribute('data-drawer-mode')).toBe(false)
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.hasAttribute('data-sidebar-offframe')).toBe(true)
     const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
     expect(lastSidebarCall.props).toEqual({ collapsed: true, width: SIDEBAR_COLLAPSED })
+  })
+
+  it('a closed sidebar below the drawer breakpoint leaves the grid entirely, and the corner button opens the drawer', () => {
+    frameWidth = 390
+    const { frame } = mountFrame()
+    // No rail track: the sidebar column contributes nothing to the grid.
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.hasAttribute('data-sidebar-offframe')).toBe(true)
+    const reveal = frame.querySelector('[class*="sidebarReveal"]') as HTMLButtonElement
+    expect(reveal).not.toBeNull()
+    expect(reveal.getAttribute('aria-label')).toBe('sidebar.reveal')
+    act(() => { fireEvent.click(reveal) })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    expect(frame.hasAttribute('data-sidebar-offframe')).toBe(false)
+    expect(frame.querySelector('[class*="sidebarReveal"]')).toBeNull()
+    // The drawer overlays the zero track; the center keeps full width.
+    expect(tracks(frame)).toEqual([0, 0])
+  })
+
+  it('a session switch made while the drawer is open closes the drawer', () => {
+    frameWidth = 390
+    selectedSession.current = 's-1' as SessionId
+    const { frame, instance, rerenderFrame } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(true)
+    // The chat tap navigates; the drawer hands the screen back (through the
+    // 150ms fade, like every other close).
+    selectedSession.current = 's-2' as SessionId
+    act(() => { rerenderFrame() })
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(frame.hasAttribute('data-drawer-mode')).toBe(false)
+    expect(frame.hasAttribute('data-sidebar-offframe')).toBe(true)
+  })
+
+  it('a session switch with the sidebar closed never opens panel state', () => {
+    frameWidth = 390
+    selectedSession.current = 's-1' as SessionId
+    const { frame, rerenderFrame } = mountFrame()
+    selectedSession.current = 's-2' as SessionId
+    act(() => { rerenderFrame() })
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(frame.hasAttribute('data-sidebar-offframe')).toBe(true)
+    expect(tracks(frame)).toEqual([0, 0])
+  })
+
+  it('between the drawer breakpoint and the auto-collapse breakpoint the closed sidebar keeps its rail', () => {
+    frameWidth = SIDEBAR_DRAWER_BREAKPOINT + 60
+    const { frame } = mountFrame()
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    expect(frame.hasAttribute('data-sidebar-offframe')).toBe(false)
+    expect(frame.querySelector('[class*="sidebarReveal"]')).toBeNull()
   })
 
   it('keeps overlay mode through the 150ms collapse fade, then returns to the rail', () => {
@@ -462,7 +515,7 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     expect(tracks(frame)).toEqual([280, 330])
   })
 
-  it('renders ConnectionLostOverlay when connection state is reconnecting', () => {
+  it('renders ConnectionLostOverlay only after reconnecting continuously for one second', () => {
     let state = 'connected' as 'connected' | 'reconnecting'
     const listeners = new Set<() => void>()
     const fakeConnection = {
@@ -487,6 +540,7 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
         useWorkspaces={(() => undefined) as never}
         SessionProvider={SessionProviderStub}
         connection={fakeConnection}
+        t={((key: string) => key) as AppFrameProps['t']}
       />,
     )
     expect(container.querySelector('[data-connection-lost]')).toBeNull()
@@ -495,6 +549,10 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
       state = 'reconnecting'
       for (const fn of listeners) fn()
     })
+    act(() => { vi.advanceTimersByTime(999) })
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+
+    act(() => { vi.advanceTimersByTime(1) })
     expect(container.querySelector('[data-connection-lost]')).not.toBeNull()
     expect(container.textContent).toContain('HARNESS')
     expect(container.textContent).toContain('Connection lost. Trying to connect to server…')

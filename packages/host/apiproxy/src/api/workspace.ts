@@ -41,11 +41,16 @@ export interface WorkspaceView {
 export interface WorkspaceApi {
   /**
    * Lists all workspaces in the registry's durable display order, plus the
-   * registry-global archive set (the reconnect baseline of
-   * `host/archived-sessions-changed`). Archived sessions stay in their
-   * workspace's `sessionIds` account; grouping surfaces hide them.
+   * registry-global archive and ordered pin lists (the reconnect baselines of
+   * their matching Host frames). Both leave each Workspace's `sessionIds`
+   * account intact; grouping surfaces hide archived sessions and project a
+   * pinned session only in the Pinned category.
    */
-  list(request: RpcRequest<{}>): Promise<RpcResponse<{ items: WorkspaceView[]; archivedSessionIds: SessionId[] }>>
+  list(request: RpcRequest<{}>): Promise<RpcResponse<{
+    items: WorkspaceView[]
+    archivedSessionIds: SessionId[]
+    pinnedSessionIds: SessionId[]
+  }>>
 
   /**
    * Creates (or idempotently resolves) a workspace over an EXISTING directory
@@ -114,10 +119,52 @@ export interface WorkspaceApi {
    * Adds one session to the registry-global archive set: the session
    * disappears from every grouping surface but keeps its session log and its
    * workspace accounting slot (a future unarchive restores its position).
+   * Before the archive commits, the session's live activity stops: the main
+   * agent's turn plus queued inbox work is cancelled, its running background
+   * jobs are killed, and every live continuable subagent turn in its
+   * descendant tree is interrupted (best-effort, never blocking the archive).
    * Idempotent for an already archived id. A session neither live nor in
    * session persistence fails with `session-not-found`. Returns the full
    * updated set (same snapshot the changed frame carries).
    */
   archiveSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ archivedSessionIds: SessionId[]; pinnedSessionIds: SessionId[] }>>
+
+  /**
+   * Removes one session from the registry-global archive set. Repeated
+   * restores are idempotent and preserve the session's workspace account.
+   */
+  unarchiveSession(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /**
+   * Permanently deletes one ARCHIVED session: its durable log is removed
+   * host-side and its workspace account slot detaches. A session this host
+   * attached through this gateway is closed first — activity stopped, agent
+   * disposed, live attachment removed — before the deletion retries. A
+   * session outside the archive set fails with `session-not-archived`; a
+   * live session whose teardown capability another entry path owns fails
+   * with `session-live`. Returns the full updated archive set (same snapshot
+   * the changed frame carries); the deletion also emits the normal
+   * `host/session-removed` frame.
+   */
+  deleteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /**
+   * Permanently deletes every archived session whose log can be removed,
+   * closing gateway-attached sessions first and skipping only sessions whose
+   * teardown capability another entry path owns (they stay archived).
+   * Returns the full updated archive set — the remaining members are exactly
+   * the skipped live sessions.
+   */
+  deleteArchivedSessions(request: RpcRequest<{}>):
+  Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /**
+   * Sets one session's durable sidebar pin membership. Pinning appends to the
+   * ordered list; unpinning removes it. Repeated requests are idempotent.
+   */
+  setSessionPinned(request: RpcRequest<{ sessionId: SessionId; pinned: boolean }>):
+  Promise<RpcResponse<{ pinnedSessionIds: SessionId[] }>>
 }

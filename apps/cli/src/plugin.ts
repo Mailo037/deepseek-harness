@@ -12,7 +12,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, extname, join, resolve } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
@@ -112,6 +112,49 @@ function anchorPathSpec(argument: string, cwd: string): string {
 }
 
 /**
+ * Resolve a Windows pnpm shim to its Node entry point without executing its
+ * batch wrapper. `spawn()` cannot directly execute `.cmd` files after Node's
+ * Windows hardening, and routing argv through `cmd.exe` would make shell
+ * metacharacters executable instead of pnpm argument text.
+ * @returns the executable and fixed leading arguments, or undefined when pnpm is absent from PATH.
+ */
+function resolveWindowsPnpm(): readonly [command: string, args: readonly string[]] | undefined {
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows'
+  const where = spawnSync(join(systemRoot, 'System32', 'where.exe'), ['pnpm'], {
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  })
+  if (where.status !== 0) return undefined
+  const candidates = where.stdout.split(/\r?\n/u).filter(Boolean)
+  for (const candidate of candidates) {
+    if (extname(candidate).toLowerCase() === '.exe') return [candidate, []]
+    const shimDir = dirname(candidate)
+    for (const entry of [
+      join(shimDir, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+      join(shimDir, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+      join(shimDir, 'node_modules', 'corepack', 'dist', 'pnpm.js'),
+    ]) {
+      if (existsSync(entry)) return [process.execPath, [entry]]
+    }
+  }
+  return undefined
+}
+
+/**
+ * Launch pnpm with argv preserved without a Windows command shell.
+ * @param cwd - the profile directory.
+ * @param args - pnpm arguments after path-spec anchoring.
+ * @returns the pnpm process result, or undefined when Windows has no usable pnpm entry point.
+ */
+function launchWindowsPnpm(cwd: string, args: readonly string[]) {
+  const launcher = resolveWindowsPnpm()
+  if (launcher === undefined) return undefined
+  const [command, prefix] = launcher
+  return spawnSync(command, [...prefix, ...args], { cwd, stdio: 'inherit', shell: false })
+}
+
+/**
  * Run one `dsh plugin` invocation: init if needed, forward to pnpm, reconcile.
  * @param profile - the profile name.
  * @param args - pnpm arguments with relative path specs anchored to the invoking directory.
@@ -124,13 +167,14 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
   }
   const before = readProfileManifest(NAME, dir)
-  // Windows resolves pnpm through its .cmd shim, which spawn() refuses
-  // without a shell since the CVE-2024-27980 hardening.
-  const result = spawnSync('pnpm', args.map(argument => anchorPathSpec(argument, process.cwd())), {
-    cwd: dir,
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  })
+  const pnpmArgs = args.map(argument => anchorPathSpec(argument, process.cwd()))
+  const result = process.platform === 'win32'
+    ? launchWindowsPnpm(dir, pnpmArgs)
+    : spawnSync('pnpm', pnpmArgs, { cwd: dir, stdio: 'inherit', shell: false })
+  if (result === undefined) {
+    process.stderr.write(`${NAME}: pnpm not found on PATH — install pnpm to manage profile plugins\n`)
+    return 127
+  }
   if (result.error !== undefined) {
     const code = (result.error as NodeJS.ErrnoException).code
     if (code === 'ENOENT') {

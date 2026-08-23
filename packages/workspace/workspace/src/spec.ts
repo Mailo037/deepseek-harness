@@ -47,12 +47,15 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
  * the registry-global archive set layered over workspace accounting: an
  * archived session keeps its `sessionIds` slot (unarchiving must restore the
  * position), so the set never participates in the one-owner accounting
- * invariant. Defaulted so records written before the field parse unchanged.
+ * invariant. `pinnedSessionIds` is the ordered, registry-global sidebar pin
+ * list; pinning likewise leaves workspace accounting unchanged. Both fields
+ * default so records written before either field parse with an empty list.
  */
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(SessionId)).default([]),
+  pinnedSessionIds: z.array(z.string().transform(SessionId)).default([]),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -70,7 +73,7 @@ export const workspaceDomainSpec = defineDomain({
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

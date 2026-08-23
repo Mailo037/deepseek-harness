@@ -155,7 +155,19 @@ let providerIndex: Map<string, Provider> | undefined
  * @returns the catalog provider index.
  */
 function catalogProviders(): Map<string, Provider> {
-  providerIndex ??= new Map(builtinProviders().map(provider => [provider.id, provider]))
+  if (providerIndex === undefined) {
+    providerIndex = new Map(builtinProviders().map(provider => [provider.id, provider]))
+    if (!providerIndex.has('b.ai')) {
+      const template = providerIndex.get('openrouter') ?? providerIndex.get('openai')
+      if (template !== undefined) {
+        providerIndex.set('b.ai', {
+          ...template,
+          id: 'b.ai',
+          name: 'B.AI',
+        })
+      }
+    }
+  }
   return providerIndex
 }
 
@@ -173,7 +185,8 @@ export function catalogProvider(provider: string): Provider | undefined {
  * @returns the catalog provider ids.
  */
 export function catalogProviderIds(): readonly string[] {
-  return getBuiltinProviders()
+  const builtin = getBuiltinProviders()
+  return builtin.includes('b.ai' as BuiltinProvider) ? builtin : [...builtin, 'b.ai']
 }
 
 /**
@@ -203,6 +216,74 @@ export function catalogProviderTakesApiKey(provider: string): boolean {
  */
 export function catalogModels(provider: string): Map<string, Model<Api>> {
   if (!catalogProviders().has(provider)) return new Map()
+  if (provider === 'b.ai' || provider === 'bai') {
+    const map = new Map<string, Model<Api>>()
+    const defaultBaiModels = [
+      {
+        id: 'deepseek-ai/deepseek-r1',
+        name: 'DeepSeek R1',
+        contextWindow: 128000,
+        maxTokens: 32768,
+        input: ['text'] as PiAiModality[],
+        reasoning: true,
+      },
+      {
+        id: 'deepseek-ai/deepseek-v3',
+        name: 'DeepSeek V3',
+        contextWindow: 128000,
+        maxTokens: 32768,
+        input: ['text'] as PiAiModality[],
+        reasoning: false,
+      },
+      {
+        id: 'deepseek-v4-flash-vision-exp',
+        name: 'DeepSeek V4 Vision (Exp)',
+        contextWindow: 1000000,
+        maxTokens: 131072,
+        input: ['text', 'image'] as PiAiModality[],
+        reasoning: true,
+      },
+      {
+        id: 'gpt-4o',
+        name: 'GPT-4o',
+        contextWindow: 128000,
+        maxTokens: 16384,
+        input: ['text', 'image'] as PiAiModality[],
+        reasoning: false,
+      },
+      {
+        id: 'claude-3-5-sonnet-20241022',
+        name: 'Claude 3.5 Sonnet',
+        contextWindow: 200000,
+        maxTokens: 8192,
+        input: ['text', 'image'] as PiAiModality[],
+        reasoning: false,
+      },
+      {
+        id: 'gemini-2.0-flash',
+        name: 'Gemini 2.0 Flash',
+        contextWindow: 1048576,
+        maxTokens: 8192,
+        input: ['text', 'image'] as PiAiModality[],
+        reasoning: false,
+      },
+    ]
+    for (const m of defaultBaiModels) {
+      map.set(m.id, {
+        id: m.id,
+        name: m.name,
+        provider: 'b.ai',
+        api: 'openai-completions',
+        baseUrl: 'https://api.b.ai/v1',
+        contextWindow: m.contextWindow,
+        maxTokens: m.maxTokens,
+        input: m.input,
+        reasoning: m.reasoning,
+        cost: NO_COST,
+      } as Model<Api>)
+    }
+    return map
+  }
   const models = getBuiltinModels(provider as BuiltinProvider) as Model<Api>[]
   const map = new Map(models.map(model => [model.id, model]))
   if (provider === 'openrouter') {

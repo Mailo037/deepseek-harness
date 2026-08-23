@@ -10,6 +10,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: the lexicon roll member face shared with the slash pipeline.
+import type { TriggerLexiconMember } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { ViewTab } from './contract/views.ts'
 import type {
   ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
@@ -18,7 +20,10 @@ import type {
 } from './contract/slots.ts'
 import type { InputNotice } from './input/contract.ts'
 import { createChatStore } from './stores.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
+import {
+  ConversationController, INLINE_TEXT_MAX_BYTES, isImageMediaType, readDraftFileText,
+  UnsupportedImageMediaTypeError,
+} from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './input/blocks.ts'
@@ -65,7 +70,7 @@ const ABSENT_BLOCK = {
   getSnapshot: (): ComposerBlock | undefined => undefined,
   subscribe: () => () => {},
 }
-const EMPTY_LEXICON: ReadonlyMap<'/' | '@' | '!', readonly string[]> = new Map()
+const EMPTY_LEXICON: ReadonlyMap<'/' | '@' | '!', readonly TriggerLexiconMember[]> = new Map()
 const ABSENT_LEXICON = {
   getSnapshot: () => EMPTY_LEXICON,
   subscribe: () => () => {},
@@ -217,15 +222,15 @@ export function apply(ctx: Context): void {
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           const draft = from.snapshot.draft
-          const imageIds = from.snapshot.imageIds
+          const attachmentIds = from.snapshot.attachmentIds
           const next = inputHub.shell(nextId)
-          if (imageIds.length === 0 || next.addImages(imageIds)) {
+          if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
             if (draft !== '') {
               next.setDraft(draft)
               from.setDraft('')
             }
-            if (imageIds.length > 0) {
-              for (const id of imageIds) from.removeImage(id)
+            if (attachmentIds.length > 0) {
+              for (const id of attachmentIds) from.removeAttachment(id)
             }
           }
         }
@@ -291,12 +296,12 @@ export function apply(ctx: Context): void {
       if (sessionId === undefined) {
         return {
           keyboard: undefined,
-          addImages: undefined,
-          removeImage: undefined,
-          draftImages: undefined,
+          addFiles: undefined,
+          addTextAttachment: undefined,
+          removeAttachment: undefined,
+          draftAttachments: undefined,
           resolveSubmitMode: (running, gesture, steeringAvailable) =>
             submissionPolicy.resolve(running, gesture, steeringAvailable),
-          toggleCommandMenu: undefined,
           stop: undefined,
           command: undefined,
           hooks: { notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER },
@@ -305,44 +310,65 @@ export function apply(ctx: Context): void {
       const conversation = concreteConversation(ctx)
       const shell = inputHub.shell(sessionId)
       const inputTriggers = inputHub.inputTriggers(sessionId)
+      // Admit one image batch through the composer's validation path; a
+      // refusal (MIME, or the machine refusing ids while busy) releases the
+      // created previews and returns the localized reason.
+      const admitImages = (files: readonly File[]): string | null => {
+        try {
+          const images = conversation.createDraftAttachments(files)
+          if (!shell.addAttachments(images.map(image => image.id))) {
+            conversation.releaseDraftAttachments(images)
+          }
+          return null
+        } catch (error: unknown) {
+          if (error instanceof UnsupportedImageMediaTypeError) {
+            // Positive copy: the supported list is fixed in imageMediaType,
+            // and naming it beats echoing the rejected MIME type back.
+            return t('image.unsupportedType')
+          }
+          return error instanceof Error ? error.message : String(error)
+        }
+      }
       return {
         keyboard: shell,
-        addImages: (files) => {
-          try {
-            const images = conversation.createDraftImages(files)
-            if (!shell.addImages(images.map(image => image.id))) {
-              conversation.releaseDraftImages(images)
+        addFiles: async (files) => {
+          const images = files.filter(file => isImageMediaType(file.type))
+          const others = files.filter(file => !isImageMediaType(file.type))
+          const imageRejection = images.length > 0 ? admitImages(images) : null
+          for (const file of others) {
+            try {
+              // Text-decodable files up to the inline cap ride as prompt text;
+              // everything else uploads into the session's project directory
+              // and rides as a path reference the agent reads itself.
+              const text = await readDraftFileText(file)
+              if (text !== null && file.size <= INLINE_TEXT_MAX_BYTES) {
+                const attachment = conversation.createTextAttachment(file.name, text, false)
+                if (!shell.addAttachments([attachment.id])) conversation.releaseDraftAttachment(attachment.id)
+              } else {
+                const attachment = await conversation.uploadDraftFile(sessionId, file)
+                if (!shell.addAttachments([attachment.id])) conversation.releaseDraftAttachment(attachment.id)
+              }
+            } catch (error: unknown) {
+              return t('file.attachFailed', {
+                name: file.name,
+                message: error instanceof Error ? error.message : String(error),
+              })
             }
-            return null
-          } catch (error: unknown) {
-            if (error instanceof UnsupportedImageMediaTypeError) {
-              // Positive copy: the supported list is fixed in imageMediaType,
-              // and naming it beats echoing the rejected MIME type back.
-              return t('image.unsupportedType')
-            }
-            return error instanceof Error ? error.message : String(error)
           }
+          return imageRejection
         },
-        removeImage: (id) => {
-          conversation.releaseDraftImage(id)
-          shell.removeImage(id)
+        addTextAttachment: (name, content) => {
+          const attachment = conversation.createTextAttachment(name, content, true)
+          if (!shell.addAttachments([attachment.id])) conversation.releaseDraftAttachment(attachment.id)
+          return null
         },
-        draftImages: ids => conversation.draftImages(ids),
+        removeAttachment: (id) => {
+          conversation.releaseDraftAttachment(id)
+          shell.removeAttachment(id)
+        },
+        draftAttachments: ids => conversation.draftAttachments(ids),
         resolveSubmitMode: (running, gesture, steeringAvailable) =>
           submissionPolicy.resolve(running, gesture, steeringAvailable),
-        toggleCommandMenu: inputTriggers === undefined
-          ? undefined
-          : (selection) => {
-            shell.dismissPopup()
-            const snapshot = shell.snapshot
-            inputTriggers.toggleSource('command', {
-              trigger: '/',
-              query: '',
-              quoted: false,
-              position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
-              span: { ...selection, draftRev: snapshot.draftRev },
-            })
-          },
         stop: () => {
           scopedConversation(sessions, sessionId).cancel().catch(() => {
             // Stop failure surfaces via snapshot.promptError; nothing to restore.

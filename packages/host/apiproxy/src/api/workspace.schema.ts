@@ -30,6 +30,7 @@ export const workspaceListRequestSchema = z.object({}) satisfies z.ZodType<Wire<
 export const workspaceListValueSchema = z.object({
   items: z.array(workspaceViewSchema),
   archivedSessionIds: z.array(sessionIdSchema),
+  pinnedSessionIds: z.array(sessionIdSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.list'>>>
 
 /** workspace.create request payload: the existing directory to adopt. */
@@ -120,4 +121,44 @@ export const workspaceArchiveSessionRequestSchema = z.object({
 /** workspace.archiveSession response value: the full updated archive set. */
 export const workspaceArchiveSessionValueSchema = z.object({
   archivedSessionIds: z.array(sessionIdSchema),
+  pinnedSessionIds: z.array(sessionIdSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.archiveSession'>>>
+
+/** workspace.unarchiveSession request payload. */
+export const workspaceUnarchiveSessionRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.unarchiveSession'>>>
+
+/** workspace.unarchiveSession response value: the complete updated archive set. */
+export const workspaceUnarchiveSessionValueSchema = z.object({
+  archivedSessionIds: z.array(sessionIdSchema),
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.unarchiveSession'>>>
+
+/** workspace.deleteSession request payload. */
+export const workspaceDeleteSessionRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.deleteSession'>>>
+
+/** workspace.deleteSession response value: the complete updated archive set. */
+export const workspaceDeleteSessionValueSchema = z.object({
+  archivedSessionIds: z.array(sessionIdSchema),
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.deleteSession'>>>
+
+/** workspace.deleteArchivedSessions request payload. */
+export const workspaceDeleteArchivedSessionsRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'workspace.deleteArchivedSessions'> >>
+
+/** workspace.deleteArchivedSessions response value: the complete remaining archive set. */
+export const workspaceDeleteArchivedSessionsValueSchema = z.object({
+  archivedSessionIds: z.array(sessionIdSchema),
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.deleteArchivedSessions'>>>
+
+/** workspace.setSessionPinned request payload. */
+export const workspaceSetSessionPinnedRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  pinned: z.boolean(),
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.setSessionPinned'>>>
+
+/** workspace.setSessionPinned response value: the full ordered pin list. */
+export const workspaceSetSessionPinnedValueSchema = z.object({
+  pinnedSessionIds: z.array(sessionIdSchema),
+}) satisfies z.ZodType<Wire<ResponseValue<'workspace.setSessionPinned'>>>

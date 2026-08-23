@@ -86,6 +86,8 @@ describe('MenuView', () => {
     const options = screen.getAllByRole('option')
     expect(options.map(o => o.textContent)).toEqual(['⚑goalSet up a goal', 'plan'])
     expect(screen.queryByText('正在加载…')).not.toBeNull()
+    // Plan option receives the built-in SVG command icon
+    expect(options[1]!.querySelector('svg')).not.toBeNull()
   })
 
   it('keeps an opted-out source title hidden while its candidates are pending', () => {
@@ -162,7 +164,7 @@ describe('MenuView', () => {
   it('caps the list height at the design maximum when the composer sits low enough', () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ bottom: 800 } as DOMRect)
     mount(openState())
-    expect(screen.getByRole('listbox').style.maxHeight).toBe('320px')
+    expect(screen.getByRole('listbox').style.maxHeight).toBe('240px')
   })
 
   it('clamps the list height to the space above the composer minus the safe margin', () => {
@@ -175,7 +177,7 @@ describe('MenuView', () => {
     const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect')
     rect.mockReturnValue({ bottom: 800 } as DOMRect)
     mount(openState())
-    expect(screen.getByRole('listbox').style.maxHeight).toBe('320px')
+    expect(screen.getByRole('listbox').style.maxHeight).toBe('240px')
     rect.mockReturnValue({ bottom: 100 } as DOMRect)
     act(() => { window.dispatchEvent(new Event('resize')) })
     expect(screen.getByRole('listbox').style.maxHeight).toBe('88px')

@@ -7,6 +7,7 @@
  * call this, so the hunks they show are derived once.
  * @module
  */
+import { diffLineCounts } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DiffBlockLabels, DiffBlockProps, DiffHunk } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallBlock } from './tool-call-model.ts'
@@ -53,6 +54,8 @@ export interface DiffCardModel {
    * neighbouring field into it.
    */
   card: Pick<DiffBlockProps, 'diffs'>
+  /** The hunks' +/- line totals, the collapsed row's trailing count (the expanded card's footer figures). */
+  stats: { added: number; removed: number }
 }
 
 /**
@@ -106,12 +109,12 @@ export function diffCardModel(block: ToolCallBlock): DiffCardModel | null {
     // Running: the call view may carry the intended diff; the result is absent.
     const call = block.callView?.card === 'diff' ? block.callView : null
     const diffs = call === null ? null : narrowDiffs(call.diffs)
-    return diffs === null ? null : { card: { diffs } }
+    return diffs === null ? null : { card: { diffs }, stats: diffLineCounts(diffs) }
   }
   // Settled: the result view's applied hunks replace the call-time diff. A
   // window that dropped the call head leaves only the result, which still
   // renders — the result view carries the whole change.
   const result = block.resultView?.card === 'diff' ? block.resultView : null
   const diffs = result === null ? null : narrowDiffs(result.diffs)
-  return diffs === null ? null : { card: { diffs } }
+  return diffs === null ? null : { card: { diffs }, stats: diffLineCounts(diffs) }
 }

@@ -1,12 +1,12 @@
 /** Browser plugin owning Session export download state and its shared modal. */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SessionLogDownloadController } from './controller.ts'
+import { SessionLogDownloadDialog } from './Dialog.tsx'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
-import { SessionLogDownloadHeaderAction } from './HeaderAction.tsx'
 import { en, NS, zh, type SessionLogDownloadKey } from './locales.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -37,16 +37,20 @@ export function apply(ctx: ClientContext): void {
   ctx.on('command/executed', (sessionId, commandName, result) => {
     if (commandName === 'export' && result.kind === 'success') void controller.download(sessionId)
   })
+  // The download trigger lives in the header's more-options menu
+  // (dsh-client-ui-workspace drives `sessionLogDownload.download`); this
+  // entry mounts only the shared result dialog, so a download started from
+  // any surface reports preparing/success/error in one place.
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'session-log-download',
     locale: NS,
     inject: (): SessionLogDownloadDialogInjected => ({
       hooks: { sessionLogDownload: controller.store },
-      request: (sessionId: SessionId) => controller.download(sessionId),
-      dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
+      request: sessionId => controller.download(sessionId),
+      dismiss: (sessionId) => { controller.dismiss(sessionId) },
     }),
-  }, SessionLogDownloadHeaderAction))
+  }, SessionLogDownloadDialog))
 }
 
 export type { SessionLogDownloadDialogInjected, SessionLogDownloadDialogProps } from './Dialog.tsx'

@@ -206,8 +206,17 @@
 }
 
 .hlToken {
+  border-radius: 4px;
   background-color: transparent;
   color: var(--dsw-alias-state-warn-label);
+  padding: 0 4px;
+  margin: 0 1px;
+  transition: background-color 100ms ease;
+}
+
+.hlToken:hover,
+.tokenHovered {
+  background-color: var(--dsw-alias-state-business-tertiary);
 }
 
 .hlSegment {
@@ -389,6 +398,11 @@
   cursor: default;
 }
 
+/* Hidden multi-file picker behind the attachment menu's upload entry. */
+.fileInput {
+  display: none;
+}
+
 /* Plan / Read-only / model — native <select>, chip-like closed chrome
    (figma ToggleButton: 13/20 medium secondary, 12px chevron). */
 .select {
@@ -477,46 +491,47 @@
   display: none;
 }
 
-.textRefTrigger {
-  position: relative;
-}
-
-.textRefTriggerGlyph {
-  color: transparent;
-}
-
-.textRefIcon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-/* Structured references use the same inline-backdrop technique as /skill:
-   their complete display text remains in the textarea, so wrapping and caret
-   geometry come from the browser's native glyph metrics. The leading marker
-   reserves the icon's advance while the backdrop paints the domain glyph. */
-.chip {
-  position: relative;
+/* Token Pill styling: clean inline presentation at rest, rounded pill background on hover */
+.tokenPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px;
+  margin-right: -14px;
+  border-radius: 999px;
+  background-color: transparent;
   color: var(--dsw-alias-state-business-primary);
-  background: transparent;
-  -webkit-box-decoration-break: clone;
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
   box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-color 100ms ease;
+  user-select: none;
 }
 
-.chipTrigger {
-  position: relative;
+.tokenPill:hover,
+.tokenPillHovered {
+  background-color: var(--dsw-alias-state-business-tertiary);
 }
 
-.chipTriggerGlyph {
-  color: transparent;
+.tokenIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle;
 }
 
-.chipIcon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+.tokenIconGlyph {
+  flex: none;
+}
+
+.tokenLabel {
+  display: inline-block;
+  white-space: pre;
 }
 
 .chipInvalid {

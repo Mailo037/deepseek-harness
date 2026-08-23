@@ -23,6 +23,9 @@
     "build": "tsc -b",
     "dev": "tsc -b && electron .",
     "smoke": "tsc -b && node scripts/smoke-launch.mjs",
+    "package:dir": "pnpm --dir ../.. run build:official && node scripts/package.mjs --dir --win --x64",
+    "package:win": "pnpm --dir ../.. run build:official && node scripts/package.mjs --win --x64",
+    "smoke:package": "pnpm run package:dir && node scripts/smoke-launch.mjs --packaged",
     "test": "vitest run"
   },
   "license": "MIT",
@@ -87,9 +90,11 @@
     "@deepseek-ai/dsh-web-app": "workspace:^",
     "@deepseek-ai/dsh-web-frontend": "workspace:^",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
+    "electron-updater": "^6.8.3",
     "node-addon-require-builtin": "^0.1.4"
   },
   "devDependencies": {
-    "electron": "^37.0.0"
+    "electron": "^37.0.0",
+    "electron-builder": "^26.8.1"
   }
 }

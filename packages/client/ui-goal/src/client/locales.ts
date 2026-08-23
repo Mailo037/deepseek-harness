@@ -15,6 +15,7 @@ export const zh = {
   'action.clear': '清除目标',
   'action.expand': '展开完整目标',
   'action.collapse': '收起目标',
+  'menu.open': '更多操作',
 } satisfies Record<string, string>
 
 /** The goal namespace key union. */
@@ -35,4 +36,5 @@ export const en = {
   'action.clear': 'Clear goal',
   'action.expand': 'Expand full goal',
   'action.collapse': 'Collapse goal',
+  'menu.open': 'More actions',
 } satisfies Record<GoalKey, string>

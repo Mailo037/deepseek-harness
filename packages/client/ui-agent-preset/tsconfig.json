@@ -30,6 +30,9 @@
       "path": "../ui-settings"
     },
     {
+      "path": "../ui-workspace"
+    },
+    {
       "path": "../ui-slots"
     },
     {

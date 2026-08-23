@@ -38,8 +38,12 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
-const workspaceState = (items: readonly WorkspaceView[], archivedSessionIds: readonly SessionId[] = []): WorkspaceListState => ({
-  items, archivedSessionIds, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
+const workspaceState = (
+  items: readonly WorkspaceView[],
+  archivedSessionIds: readonly SessionId[] = [],
+  pinnedSessionIds: readonly SessionId[] = [],
+): WorkspaceListState => ({
+  items, archivedSessionIds, pinnedSessionIds, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
   recentWorkspaceId: items[0]?.workspaceId,
 })
 function hook<T>(snapshot: T) {
@@ -87,6 +91,10 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    unarchiveSession: vi.fn(async () => {}),
+    deleteSession: vi.fn(async () => {}),
+    deleteArchivedSessions: vi.fn(async () => []),
+    setSessionPinned: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -191,9 +199,9 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getByRole('separator')).toBeTruthy()
+    expect(screen.getAllByRole('separator')).toHaveLength(3)
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新',
+      '按工作区', '单列表', '手动排序', '最近更新', '仅显示当前工作区', '全部会话', '需要关注', '已归档',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -396,26 +404,95 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('gone-s')).toBeNull()
   })
 
-  it('logs and keeps the tree when the archive call rejects', async () => {
+  it('keeps an archive failure visible and retries it', async () => {
     const rejection = new Error('archive exploded')
-    const archiveSession = vi.fn(async () => { throw rejection })
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      mount({
-        useSessions: hook(sessionState([summary('alpha-s', 1)])),
-        useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
-        archiveSession,
-      })
-      fireEvent.click(screen.getByText('alpha'))
-      fireEvent.click(screen.getByRole('button', { name: '会话“alpha-s”的操作' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(warn).toHaveBeenCalledWith('session archive rejected:', rejection)
-      expect(screen.getByText('alpha-s')).toBeTruthy()
-    } finally {
-      warn.mockRestore()
-    }
+    const archiveSession = vi.fn().mockRejectedValueOnce(rejection).mockResolvedValue(undefined)
+    mount({
+      useSessions: hook(sessionState([summary('alpha-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
+      archiveSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“alpha-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole('alert').textContent).toContain('archive exploded')
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => { expect(archiveSession).toHaveBeenCalledTimes(2) })
+  })
+
+  it('opens attention and archived views, restores from archive, and offers immediate Undo', async () => {
+    const unarchiveSession = vi.fn(async () => {})
+    const b = mount({
+      useSessions: hook(sessionState([
+        { ...summary('needs-input', 3), pendingInteraction: 'approval' },
+        { ...summary('archived-s', 2), completed: true },
+      ])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['needs-input', 'archived-s'])], [sid('archived-s')])),
+      unarchiveSession,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '需要关注' }))
+    expect(screen.getByText('needs-input')).toBeTruthy()
+    expect(screen.queryByText('archived-s')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '已归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '会话“archived-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '恢复会话' }))
+    await waitFor(() => { expect(unarchiveSession).toHaveBeenCalledWith(sid('archived-s')) })
+    b.view.unmount()
+  })
+
+  it('deletes an individual archived session with confirmation dialog', async () => {
+    const deleteSession = vi.fn(async () => {})
+    const b = mount({
+      useSessions: hook(sessionState([
+        { ...summary('archived-s', 2), completed: true },
+      ])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['archived-s'])], [sid('archived-s')])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '已归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '会话“archived-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    expect(screen.getByText('将永久删除会话“archived-s”及其所有会话记录。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
+    await waitFor(() => { expect(deleteSession).toHaveBeenCalledWith(sid('archived-s')) })
+    b.view.unmount()
+  })
+
+  it('deletes all archived sessions with confirmation dialog', async () => {
+    const deleteArchivedSessions = vi.fn(async () => [])
+    const b = mount({
+      useSessions: hook(sessionState([
+        { ...summary('archived-1', 2), completed: true },
+        { ...summary('archived-2', 1), completed: true },
+      ])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['archived-1', 'archived-2'])], [sid('archived-1'), sid('archived-2')])),
+      deleteArchivedSessions,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '已归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '清空所有归档会话' }))
+    expect(screen.getByText('将永久删除所有已归档会话及其会话记录。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '删除全部' }))
+    await waitFor(() => { expect(deleteArchivedSessions).toHaveBeenCalled() })
+    b.view.unmount()
+  })
+
+  it('retains an authoritative session projection while archive clearing removes its active row', () => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('archived-s', 2)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['archived-s'])])),
+    })
+    rerender(b, {
+      useSessions: hook(sessionState([])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['archived-s'])], [sid('archived-s')])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '已归档' }))
+    expect(screen.getByText('archived-s')).toBeTruthy()
   })
 
   it('renders a fork child as a top-level row without a session twist', () => {
@@ -448,18 +525,46 @@ describe('WorkspaceBrowser', () => {
     expect(startSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
-  it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ is inert', () => {
+  it('renders Ungrouped as a peer category without Workspace actions', () => {
     const startSession = vi.fn()
     mount({
       useSessions: hook(sessionState([summary('loose', 1)], { current: sid('loose') })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
       startSession,
     })
-    // The loose session's group is UNGROUPED_KEY: expanded by the effect.
+    // Ungrouped is a category label, not a synthetic Workspace folder.
     expect(screen.getByText('loose')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '工作区“未分组”的操作' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '在“未分组”中新建会话' }))
+    expect(screen.queryByRole('button', { name: '在“未分组”中新建会话' })).toBeNull()
     expect(startSession).not.toHaveBeenCalled()
+  })
+
+  it('renders pinned sessions above the Workspace and Ungrouped peer categories', async () => {
+    const setSessionPinned = vi.fn(async () => {})
+    mount({
+      useSessions: hook(sessionState([
+        summary('alpha-s', 2, { displayTitle: 'Pinned chat' }),
+        summary('loose', 1, { displayTitle: 'Loose chat' }),
+      ], { current: sid('loose') })),
+      useWorkspaces: hook(workspaceState(
+        [workspace('alpha', ['alpha-s'], 'Alpha')],
+        [],
+        [sid('alpha-s')],
+      )),
+      setSessionPinned,
+    })
+
+    const listText = screen.getByRole('tree').textContent ?? ''
+    expect(listText.indexOf('已固定')).toBeLessThan(listText.indexOf('工作区'))
+    expect(listText.indexOf('工作区')).toBeLessThan(listText.indexOf('未分组'))
+    expect(screen.getAllByText('Pinned chat')).toHaveLength(1)
+    expect(screen.getByText('Loose chat')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '会话“Pinned chat”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消固定会话' }))
+    await waitFor(() => {
+      expect(setSessionPinned).toHaveBeenCalledWith(sid('alpha-s'), false)
+    })
   })
 
   it('keeps an already-expanded group when the selection moves within it', () => {
@@ -964,7 +1069,7 @@ describe('WorkspaceBrowser', () => {
       insertSessionBefore,
     })
     expect(restored.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['two', 'three', 'one'])
-    expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+    expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
       expect.stringContaining('two'),
       expect.stringContaining('three'),
       expect.stringContaining('one'),

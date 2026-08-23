@@ -5,6 +5,7 @@
 // Unfolding restores the rows exactly as they streamed; individual tool rows
 // keep their own collapsed bodies.
 
+import clsx from 'clsx'
 import { memo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -33,7 +34,7 @@ export const TurnWorkSummary = memo(function TurnWorkSummary({
         onClick={() => setOpen(value => !value)}
       >
         <span>{label}</span>
-        <IconChevronDownOutline14 className={css.turnSummaryChevron} />
+        <IconChevronDownOutline14 className={clsx(css.turnSummaryChevron, open && css.turnSummaryChevronOpen)} />
       </button>
       {open && children}
     </section>

@@ -31,16 +31,21 @@ import {
   sessionSearchValueSchema,
   sessionSelectModelValueSchema,
   sessionUpdateQueueValueSchema,
+  sessionUploadAttachmentValueSchema,
 } from '../api/sessions.schema.ts'
 import {
   workspaceArchiveSessionValueSchema,
   workspaceCreateValueSchema,
+  workspaceDeleteArchivedSessionsValueSchema,
+  workspaceDeleteSessionValueSchema,
   workspaceDeleteValueSchema,
   workspaceInsertBeforeValueSchema,
   workspaceInsertSessionBeforeValueSchema,
   workspaceListValueSchema,
   workspaceMoveSessionValueSchema,
   workspaceRenameValueSchema,
+  workspaceSetSessionPinnedValueSchema,
+  workspaceUnarchiveSessionValueSchema,
   workspaceUpdateSettingsValueSchema,
 } from '../api/workspace.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
@@ -70,6 +75,7 @@ import {
   subagentListValueSchema,
   subagentPromptValueSchema,
 } from '../api/subagents.schema.ts'
+import { jobKillValueSchema, jobOutputValueSchema } from '../api/jobs.schema.ts'
 
 /**
  * Client consumption face of the contract (shape a): same domain tree as ApiProxy, but unary
@@ -99,6 +105,7 @@ export interface IApiClient {
     fork(payload: RequestPayload<'session.fork'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.fork'>>>
     prompt(payload: RequestPayload<'session.prompt'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.prompt'>>>
     attachment(payload: RequestPayload<'session.attachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.attachment'>>>
+    uploadAttachment(payload: RequestPayload<'session.uploadAttachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.uploadAttachment'>>>
     updateQueue(payload: RequestPayload<'session.updateQueue'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.updateQueue'>>>
     cancel(payload: RequestPayload<'session.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.cancel'>>>
   }
@@ -125,6 +132,10 @@ export interface IApiClient {
     insertBefore(payload: RequestPayload<'workspace.insertBefore'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.insertBefore'>>>
     insertSessionBefore(payload: RequestPayload<'workspace.insertSessionBefore'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.insertSessionBefore'>>>
     archiveSession(payload: RequestPayload<'workspace.archiveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.archiveSession'>>>
+    unarchiveSession(payload: RequestPayload<'workspace.unarchiveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.unarchiveSession'>>>
+    deleteSession(payload: RequestPayload<'workspace.deleteSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.deleteSession'>>>
+    deleteArchivedSessions(payload: RequestPayload<'workspace.deleteArchivedSessions'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.deleteArchivedSessions'>>>
+    setSessionPinned(payload: RequestPayload<'workspace.setSessionPinned'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.setSessionPinned'>>>
     updateSettings(payload: RequestPayload<'workspace.updateSettings'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.updateSettings'>>>
     moveSession(payload: RequestPayload<'workspace.moveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.moveSession'>>>
   }
@@ -168,6 +179,10 @@ export interface IApiClient {
     models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
     discoverModels(payload: RequestPayload<'llm.discoverModels'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.discoverModels'>>>
   }
+  jobs: {
+    kill(payload: RequestPayload<'job.kill'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'job.kill'>>>
+    output(payload: RequestPayload<'job.output'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'job.output'>>>
+  }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
   respond(message: ClientResponse, signal?: AbortSignal): Promise<RpcReceipt>
 }
@@ -187,6 +202,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'session.fork': sessionForkValueSchema,
   'session.prompt': sessionPromptValueSchema,
   'session.attachment': sessionAttachmentValueSchema,
+  'session.uploadAttachment': sessionUploadAttachmentValueSchema,
   'session.updateQueue': sessionUpdateQueueValueSchema,
   'session.cancel': sessionCancelValueSchema,
   'subagent.list': subagentListValueSchema,
@@ -207,6 +223,10 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.insertBefore': workspaceInsertBeforeValueSchema,
   'workspace.insertSessionBefore': workspaceInsertSessionBeforeValueSchema,
   'workspace.archiveSession': workspaceArchiveSessionValueSchema,
+  'workspace.unarchiveSession': workspaceUnarchiveSessionValueSchema,
+  'workspace.deleteSession': workspaceDeleteSessionValueSchema,
+  'workspace.deleteArchivedSessions': workspaceDeleteArchivedSessionsValueSchema,
+  'workspace.setSessionPinned': workspaceSetSessionPinnedValueSchema,
   'workspace.updateSettings': workspaceUpdateSettingsValueSchema,
   'workspace.moveSession': workspaceMoveSessionValueSchema,
   'skill.list': skillListValueSchema,
@@ -233,6 +253,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+  'job.kill': jobKillValueSchema,
+  'job.output': jobOutputValueSchema,
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -431,6 +453,7 @@ export abstract class AbstractApiClient implements IApiClient {
     fork: (payload, signal) => this.callUnary('session.fork', payload, signal),
     prompt: (payload, signal) => this.callUnary('session.prompt', payload, signal),
     attachment: (payload, signal) => this.callUnary('session.attachment', payload, signal),
+    uploadAttachment: (payload, signal) => this.callUnary('session.uploadAttachment', payload, signal),
     updateQueue: (payload, signal) => this.callUnary('session.updateQueue', payload, signal),
     cancel: (payload, signal) => this.callUnary('session.cancel', payload, signal),
   }
@@ -469,6 +492,10 @@ export abstract class AbstractApiClient implements IApiClient {
     insertBefore: (payload, signal) => this.callUnary('workspace.insertBefore', payload, signal),
     insertSessionBefore: (payload, signal) => this.callUnary('workspace.insertSessionBefore', payload, signal),
     archiveSession: (payload, signal) => this.callUnary('workspace.archiveSession', payload, signal),
+    unarchiveSession: (payload, signal) => this.callUnary('workspace.unarchiveSession', payload, signal),
+    deleteSession: (payload, signal) => this.callUnary('workspace.deleteSession', payload, signal),
+    deleteArchivedSessions: (payload, signal) => this.callUnary('workspace.deleteArchivedSessions', payload, signal),
+    setSessionPinned: (payload, signal) => this.callUnary('workspace.setSessionPinned', payload, signal),
     updateSettings: (payload, signal) => this.callUnary('workspace.updateSettings', payload, signal),
     moveSession: (payload, signal) => this.callUnary('workspace.moveSession', payload, signal),
   }
@@ -518,6 +545,11 @@ export abstract class AbstractApiClient implements IApiClient {
     providers: (payload, signal) => this.callUnary('llm.providers', payload, signal),
     models: (payload, signal) => this.callUnary('llm.models', payload, signal),
     discoverModels: (payload, signal) => this.callUnary('llm.discoverModels', payload, signal),
+  }
+
+  readonly jobs: IApiClient['jobs'] = {
+    kill: (payload, signal) => this.callUnary('job.kill', payload, signal),
+    output: (payload, signal) => this.callUnary('job.output', payload, signal),
   }
 
   readonly events: IApiClient['events'] = {

@@ -103,6 +103,30 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Diff-card line counts beside the path: gray at rest like the summary, and
+   the change's own colors on row hover — added on the success token, removed
+   on the error token, the same pairing the expanded DiffBlock body draws. */
+.diffStats {
+  flex: none;
+  margin-left: 4px;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 24px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.diffAdded {
+  margin-right: 4px;
+}
+
+.root:hover .diffAdded {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.root:hover .diffRemoved {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 /* File-tool path: same geometry as .summary, with a persistent link affordance. */
 .fileLink {
   flex: 1 1 auto;

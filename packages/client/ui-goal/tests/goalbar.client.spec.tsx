@@ -235,4 +235,18 @@ describe('GoalBar', () => {
     expect(screen.queryByRole('button', { name: '收起目标' })).toBeNull()
     expect(screen.getByRole('button', { name: '展开完整目标' }).getAttribute('aria-expanded')).toBe('false')
   })
+
+  it('the overflow menu lists the phase verbs and dispatches from its rows', () => {
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ phase: 'paused' })} {...actions} t={t} />)
+    // Closed by default: no menu list in the tree.
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    const names = [...screen.getAllByRole('menuitem').map(item => item.textContent)]
+    expect(names).toEqual(['展开完整目标', '恢复目标', '编辑目标', '清除目标'])
+    fireEvent.click(screen.getByRole('menuitem', { name: '清除目标' }))
+    expect(actions.onClear).toHaveBeenCalledTimes(1)
+    // Selection closes the menu.
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
 })

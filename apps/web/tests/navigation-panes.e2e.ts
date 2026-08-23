@@ -291,7 +291,9 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
-    const exportButton = page.getByRole('button', { name: 'Session log' })
+    // The download trigger lives in the header's more-options menu.
+    const optionsButton = page.getByRole('button', { name: /^Session actions for / })
+    const exportButton = optionsButton
     expect(await exportButton.isDisabled()).toBe(false)
     const header = exportButton.locator('xpath=ancestor::header[1]')
     const [buttonBox, headerBox] = await Promise.all([
@@ -306,6 +308,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
     await exportButton.click()
+    await page.getByRole('menuitem', { name: 'Download session log' }).click()
     const response = await responsePromise
     expect(response.status()).toBe(200)
     const download = await downloadPromise

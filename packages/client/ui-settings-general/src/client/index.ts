@@ -7,7 +7,7 @@
  * Feature-owned rows and sections stay with their features.
  * Export discipline: packages/client/AGENTS.md.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, ISessions, IWorkspaces } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings slot declarations plus the ctx.settingsScope Context
@@ -29,6 +29,7 @@ import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
 import { UpdateStore, updatePlaneAvailable } from './update-store.ts'
+import { HarnessSyncStore } from './harness-sync-store.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
 
 export type {
@@ -43,6 +44,9 @@ export type { SettingsDocumentState } from './settings-document-store.ts'
 export { SettingsDocumentStore } from './settings-document-store.ts'
 export type { UpdatePhase, UpdateState, UpdateCheckView } from './update-store.ts'
 export { UpdateStore, updatePlaneAvailable } from './update-store.ts'
+export type {
+  HarnessSyncModelOption, HarnessSyncPhase, HarnessSyncState, HarnessUpdateSource,
+} from './harness-sync-store.ts'
 export type { SettingsKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -60,7 +64,7 @@ const NS = 'settings'
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registrations depend on their slots through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'settingsScope', 'sessions', 'workspaces']
 
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
@@ -92,6 +96,11 @@ export function apply(ctx: ClientContext): void {
   // usable (a git checkout behind an installation whose launcher can respawn)
   // and this client is on loopback — the wire methods are loopback-pinned.
   const updateController = new UpdateStore(connection.api)
+  const syncController = new HarnessSyncStore(
+    connection.api,
+    ctx.get('sessions') as ISessions,
+    ctx.get('workspaces') as IWorkspaces,
+  )
   const updateStopAuto = connection.hostDescription.subscribe(() => {
     if (connection.isLoopback && updatePlaneAvailable(connection.hostDescription.getSnapshot())) {
       updateController.startAutoCheck()
@@ -106,9 +115,11 @@ export function apply(ctx: ClientContext): void {
   })
   const aboutInjected = (): AboutSectionInjected => ({
     controller: updateController,
+    syncController,
     hooks: {
       snapshot: updateController.store,
       describe: connection.hostDescription,
+      syncSnapshot: syncController.store,
     },
   })
   // The settings shell: this package occupies the sidebar-owned hole and

@@ -233,6 +233,74 @@ export class TestWorkspaces implements IWorkspaces {
     }
     await this.update((draft) => {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
+      draft.pinnedSessionIds = draft.pinnedSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
+  /**
+   * Restore an archived session (recorded).
+   * @param sessionId - session to restore.
+   */
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unarchiveSession', args: [sessionId] })
+    const stub = this.stubs.get('unarchiveSession')
+    if (stub !== undefined) {
+      await (stub(sessionId) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
+  /**
+   * Permanently delete one archived session (recorded).
+   * @param sessionId - archived session to delete.
+   */
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'deleteSession', args: [sessionId] })
+    const stub = this.stubs.get('deleteSession')
+    if (stub !== undefined) {
+      await (stub(sessionId) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+      draft.pinnedSessionIds = draft.pinnedSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
+  /**
+   * Permanently delete every deletable archived session (recorded).
+   * @returns the remaining archived session ids.
+   */
+  async deleteArchivedSessions(): Promise<readonly SessionId[]> {
+    this.calls.push({ method: 'deleteArchivedSessions', args: [] })
+    const stub = this.stubs.get('deleteArchivedSessions')
+    if (stub !== undefined) {
+      return await (stub() as Promise<readonly SessionId[]>)
+    }
+    await this.update((draft) => {
+      draft.archivedSessionIds = []
+    })
+    return []
+  }
+
+  /**
+   * Set a session's durable pin membership (recorded).
+   * @param sessionId - session to update.
+   * @param pinned - whether the session belongs to the pinned set.
+   */
+  async setSessionPinned(sessionId: SessionId, pinned: boolean): Promise<void> {
+    this.calls.push({ method: 'setSessionPinned', args: [sessionId, pinned] })
+    const stub = this.stubs.get('setSessionPinned')
+    if (stub !== undefined) {
+      await (stub(sessionId, pinned) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      const without = draft.pinnedSessionIds.filter(id => id !== sessionId)
+      draft.pinnedSessionIds = pinned ? [...without, sessionId] : without
     })
   }
 }

@@ -292,6 +292,24 @@ export class Session implements SessionFace {
     }
   }
 
+  /**
+   * Upload one browser file into the session's project directory (`.uploads/`).
+   * @param name - proposed file name (host sanitizes it).
+   * @param dataBase64 - base64-encoded file bytes.
+   * @returns the workspace-relative path and byte length, or the business error.
+   */
+  async uploadAttachment(name: string, dataBase64: string): Promise<RpcResult<{ path: string; bytes: number }>> {
+    try {
+      return (await this.api.sessions.uploadAttachment({
+        sessionId: this.sessionId,
+        name,
+        data: dataBase64,
+      })).result
+    } catch (error) {
+      return transportError(error)
+    }
+  }
+
   /** Apply one operation to a still-pending queue occurrence. */
   async updateQueue(itemId: MessageId, action: QueueAction): Promise<RpcResult<{ accepted: true }>> {
     try {

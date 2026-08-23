@@ -16,7 +16,7 @@
  * may add node types this renderer has no mapping for.
  */
 
-import { Fragment, createElement } from 'react'
+import { Fragment, createElement, useState } from 'react'
 import type { Key, ReactNode } from 'react'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
@@ -24,6 +24,8 @@ import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
 import type { PositionedBlock } from './incremental.ts'
+import { FileTypeIcon, fileTypeIconKind } from '../FileTypeIcon.tsx'
+import { IconLinkOutline16 } from '../icons/index.tsx'
 import css from './MarkdownText.module.css'
 
 /** Copy-button labels forwarded to fence CodeBlocks (this package is cordis-free, so copy arrives via props). */
@@ -125,6 +127,12 @@ export interface MarkdownRenderContext {
   readonly codeLabels: MarkdownCodeLabels | undefined
   /** Inline-code file mentions; absent wherever no opener vocabulary exists. */
   readonly fileMentions: MarkdownFileMentions | undefined
+  /**
+   * Prepend the site's favicon beside external anchors (the chat surfaces'
+   * link-token look). Off by default, so parity fixtures and other consumers
+   * keep their exact anchor DOM.
+   */
+  readonly linkFavicons?: boolean
   /** Inside an anchor's children: interactive mentions must not nest there. */
   readonly inLink?: boolean
   /** Reference targets visible to this pass. */
@@ -237,13 +245,15 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
       // path, and query render unchanged.
       const href = inlineCodeHttpUrl(value)
       if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link')}</code>
+      const cleanValue = value.replace(/^[#@]\s*/u, '')
       // A token the owner's file-mention vocabulary recognizes opens that
       // file; the resolver, not this renderer, decides what names a file.
-      // Inside an anchor the token stays inert — a button cannot nest there.
-      const mention = context.inLink === true ? undefined : context.fileMentions?.resolve(value)
+      const mention = context.inLink === true
+        ? undefined
+        : (context.fileMentions?.resolve(cleanValue) ?? context.fileMentions?.resolve(value))
       if (mention !== undefined) {
         return (
-          <code key={key}>
+          <code key={key} className={css.fileMentionCode}>
             <button
               type="button"
               className={css.fileMention}
@@ -251,10 +261,24 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
               aria-label={mention.label}
               onClick={mention.open}
             >
-              {value}
+              <FileTypeIcon kind={fileTypeIconKind(mention.title)} size={14} className={css.fileMentionIcon} />
+              {cleanValue}
             </button>
           </code>
         )
+      }
+      if (value.startsWith('# ') || value.startsWith('#') || value.startsWith('@')) {
+        const pathCandidate = cleanValue
+        if (pathCandidate.includes('/') || pathCandidate.includes('\\') || /\.[a-zA-Z0-9_-]+$/u.test(pathCandidate)) {
+          return (
+            <code key={key} className={css.fileMentionCode}>
+              <span className={css.fileMention}>
+                <FileTypeIcon kind={fileTypeIconKind(pathCandidate)} size={14} className={css.fileMentionIcon} />
+                {pathCandidate}
+              </span>
+            </code>
+          )
+        }
       }
       return <code key={key}>{value}</code>
     }
@@ -275,7 +299,14 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'table':
       return renderTable(node, key, context)
     case 'link':
-      return renderAnchor(node.url, renderChildren(node.children, { ...context, inLink: true }), key)
+      // A link whose only content is an image is a linked picture, not a text
+      // token: the favicon would sit beside a thumbnail for no reading gain.
+      return renderAnchor(
+        node.url,
+        renderChildren(node.children, { ...context, inLink: true }),
+        key,
+        context.linkFavicons === true && !(node.children.length === 1 && node.children[0]?.type === 'image'),
+      )
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
@@ -432,25 +463,64 @@ function renderTableRow(
   return <tr key={key}>{cells}</tr>
 }
 
-/** Anchor over an already-authored href: allowlisted or unwrapped, external links get the safe attributes. */
-function renderSafeLink(href: string, children: ReactNode[], key: Key): ReactNode {
+/**
+ * One external link's favicon: the site's own `/favicon.ico`, falling back to
+ * the generic link glyph when it fails to load (many sites answer 404). The
+ * request carries no referrer, matching the renderer's remote-image policy.
+ */
+function LinkFavicon({ href }: { href: string }) {
+  const [loaded, setLoaded] = useState(false)
+  const origin = new URL(href).origin
+  return (
+    <>
+      <img
+        className={css.linkIcon}
+        src={`${origin}/favicon.ico`}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onLoad={() => { setLoaded(true) }}
+        style={loaded ? undefined : { display: 'none' }}
+      />
+      {!loaded && <IconLinkOutline16 size={14} className={css.linkIcon} />}
+    </>
+  )
+}
+
+/** Anchor over an already-authored href; `favicon` decorates an external anchor with the site glyph. */
+function renderSafeLink(href: string, children: ReactNode[], key: Key, favicon = false): ReactNode {
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
-  const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
+  let external = false
+  try {
+    external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
+  } catch {
+    // sanitizeUrl already reduced the value to a safe URL string; a residual
+    // unparseable form stays a plain relative anchor.
+  }
+  if (!favicon || !external) {
+    return (
+      <a
+        key={key}
+        href={safeHref}
+        {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        {children}
+      </a>
+    )
+  }
   return (
-    <a
-      key={key}
-      href={safeHref}
-      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-    >
+    <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className={css.linkWithIcon}>
+      <LinkFavicon href={safeHref} />
       {children}
     </a>
   )
 }
 
 /** Anchor over a parsed markdown destination, which hast normalized before the allowlist saw it. */
-function renderAnchor(url: string, children: ReactNode[], key: Key): ReactNode {
-  return renderSafeLink(normalizeUri(url), children, key)
+function renderAnchor(url: string, children: ReactNode[], key: Key, favicon = false): ReactNode {
+  return renderSafeLink(normalizeUri(url), children, key, favicon)
 }
 
 /**
@@ -506,7 +576,12 @@ function renderLinkReference(
     // not an anchor, so mentions inside it stay live.
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
-  return renderAnchor(definition.url, renderChildren(node.children, { ...context, inLink: true }), key)
+  return renderAnchor(
+    definition.url,
+    renderChildren(node.children, { ...context, inLink: true }),
+    key,
+    context.linkFavicons === true && !(node.children.length === 1 && node.children[0]?.type === 'image'),
+  )
 }
 
 function renderImageReference(

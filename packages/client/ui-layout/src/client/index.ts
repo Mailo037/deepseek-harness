@@ -9,11 +9,21 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
+// Type-only: pulls the locale plugin's Context merge (ctx.locale).
+import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PanelActions } from './service.ts'
 import { AppFrame } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
+import { en, NS, zh } from './locales.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Frame chrome copy (the phone sidebar-reveal control). */
+    layout: import('./locales.ts').LayoutKey
+  }
+}
 
 // Contract exports only (export-convergence rule: cross-package consumers
 // keep a symbol exported; test-only/package-internal symbols live off /src).
@@ -105,7 +115,7 @@ export interface ConvOwnerProps {}
 export interface DetailsOwnerProps {}
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme', 'connection']
+export const inject = ['slots', 'theme', 'locale', 'connection']
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
@@ -117,6 +127,7 @@ export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
   ctx.effect(() => {
     const disposeService = ctx.reflect.provide('layout', layout)
+    const disposeDictionaries = ctx.locale.register(NS, { zh, en })
     const disposeRegistration = ctx.slots.register({
       name: 'root',
       children: {
@@ -128,6 +139,7 @@ export function apply(ctx: ClientContext): void {
       // Exclusive store: the factory itself — the framework instantiates per
       // entry and delivers useStore/actions to AppFrame as standard props.
       store: createLayoutStore,
+      locale: NS,
       // The hook's only side effect connects the root store to ctx.layout;
       // conversation business actions belong to their registrants.
       inject: (actions: PanelActions) => {
@@ -139,6 +151,7 @@ export function apply(ctx: ClientContext): void {
     }, AppFrame)
     return () => {
       disposeRegistration()
+      disposeDictionaries()
       // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.
       void disposeService()
     }

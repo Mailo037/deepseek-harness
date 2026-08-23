@@ -20,8 +20,12 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pulls the ui-workspace SlotMap merge (the more-options menu head
+// hole the phone viewport reports the preset through).
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { AgentPresetLabel } from './AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from './AgentPresetLabel.tsx'
+import { AgentPresetMenuHead } from './AgentPresetMenuHead.tsx'
 import { AgentPresetRow } from './AgentPresetRow.tsx'
 import type { AgentPresetRowInjected } from './AgentPresetRow.tsx'
 import { AgentPresetSeat } from './AgentPresetSeat.tsx'
@@ -175,6 +179,14 @@ export function apply(ctx: ClientContext): void {
         locale: 'settings.agentPreset',
         inject: labelInjected,
       }, AgentPresetLabel)
+      // The more-options menu's pinned head: on phone viewports (where the
+      // header drops its action row) the preset reports from the menu; the
+      // head hides itself on wide layouts, where the label above reports it.
+      const menuHead = scope.slots.inject('conversation.session.header.utilities.menuHead', () => scope.slots.register({
+        name: 'conversation.session.header.utilities.menuHead',
+        locale: 'settings.agentPreset',
+        inject: labelInjected,
+      }, AgentPresetMenuHead))
       return () => {
         stop()
         settingsMoved()
@@ -183,6 +195,7 @@ export function apply(ctx: ClientContext): void {
         creatorDraft = undefined
         chip()
         label()
+        menuHead()
       }
     }, 'ui-agent-preset: new-session chip and header label')
   })

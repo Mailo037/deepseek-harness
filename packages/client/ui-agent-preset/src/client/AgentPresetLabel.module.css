@@ -21,3 +21,12 @@
   flex: none;
   opacity: 0.7;
 }
+
+/* Phone viewports report the preset through the more-options menu's pinned
+ * head instead (AgentPresetMenuHead): the dropped action row must not spend
+ * its scarce width restating it. */
+@media (max-width: 639px) {
+  .label {
+    display: none;
+  }
+}

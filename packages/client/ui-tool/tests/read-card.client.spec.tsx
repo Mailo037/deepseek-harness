@@ -281,7 +281,7 @@ describe('DetailsPanel Output section (read)', () => {
         currentAddress: undefined,
       })
     const workspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     return render(
@@ -296,9 +296,9 @@ describe('DetailsPanel Output section (read)', () => {
         useInput={(() => { throw new Error('unused') })}
         inputActions={{
           setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
+          addAttachments: () => true,
+          removeAttachment: () => {},
+          pruneAttachments: () => {},
           submit: () => {},
         }}
         useProjection={(() => undefined)}

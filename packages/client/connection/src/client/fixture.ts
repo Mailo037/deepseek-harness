@@ -1583,6 +1583,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // Registry-global archive set mirroring the host: archived sessions keep
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
+  // Ordered durable sidebar pins, independent of Workspace accounting.
+  const pinnedSessionIds: SessionId[] = []
 
   // In-memory browse tree behind the fixture's `browse` picker capability —
   // deterministic content mirroring the design mock so assembled Web tests
@@ -1687,7 +1689,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const summary = summaryOf(id)
     if (summary === undefined || summary.running === running) return
     summary.running = running
-    emitHost({ type: 'host/session-status', sessionId: id, running })
+    emitHost({ type: 'host/session-status', sessionId: id, running, attention: null })
   }
   const logOf = (id: SessionId): SessionEvent[] => {
     let log = logs.get(id)
@@ -2585,6 +2587,42 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         return ok(request, stored)
       },
+      uploadAttachment: (request) => {
+        const bytes = Uint8Array.from(atob(request.payload.data), char => char.charCodeAt(0))
+        // Loose fixture mirror of the host bounds: accept the same payload
+        // shape and reject invalid names / empty / oversized files the same way.
+        const segments = request.payload.name.replace(/\\/g, '/').split('/')
+        if (segments.some(segment => segment === '.' || segment === '..')) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'fixture upload rejected invalid file name',
+            details: { reason: 'INVALID_NAME' },
+          })
+        }
+        const name = segments[segments.length - 1] ?? ''
+        if (name === '') {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'fixture upload rejected invalid file name',
+            details: { reason: 'INVALID_NAME' },
+          })
+        }
+        if (bytes.length === 0) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'fixture upload rejected empty file',
+            details: { reason: 'EMPTY_FILE' },
+          })
+        }
+        if (bytes.length > 26_214_400) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'fixture upload rejected oversized file',
+            details: { reason: 'FILE_TOO_LARGE' },
+          })
+        }
+        return ok(request, { path: `.uploads/fixture-${name}`, bytes: bytes.length })
+      },
       updateQueue: request => err(request, {
         code: 'queue-item-not-found',
         message: 'fixture has no pending queue item',
@@ -2683,6 +2721,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
         archivedSessionIds: [...archivedSessionIds],
+        pinnedSessionIds: [...pinnedSessionIds],
       }),
       create: (request) => {
         const { path } = request.payload
@@ -2806,9 +2845,72 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const { sessionId } = request.payload
         if (!archivedSessionIds.includes(sessionId)) {
           archivedSessionIds.push(sessionId)
+          const pinnedAt = pinnedSessionIds.indexOf(sessionId)
+          if (pinnedAt !== -1) {
+            pinnedSessionIds.splice(pinnedAt, 1)
+            emitHost({ type: 'host/pinned-sessions-changed', pinnedSessionIds: [...pinnedSessionIds] })
+          }
+          emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        }
+        return ok(request, {
+          archivedSessionIds: [...archivedSessionIds],
+          pinnedSessionIds: [...pinnedSessionIds],
+        })
+      },
+      unarchiveSession: (request) => {
+        const { sessionId } = request.payload
+        const archivedAt = archivedSessionIds.indexOf(sessionId)
+        if (archivedAt !== -1) {
+          archivedSessionIds.splice(archivedAt, 1)
           emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
         }
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      deleteSession: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const { sessionId } = request.payload
+        const archivedAt = archivedSessionIds.indexOf(sessionId)
+        if (archivedAt === -1) {
+          return err(request, {
+            code: 'session-not-archived',
+            message: `session ${sessionId} is not archived`,
+            details: { sessionId },
+          })
+        }
+        archivedSessionIds.splice(archivedAt, 1)
+        const summaryAt = sessions.findIndex(s => s.sessionId === sessionId)
+        if (summaryAt !== -1) sessions.splice(summaryAt, 1)
+        logs.delete(sessionId)
+        emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        emitHost({ type: 'host/session-removed', sessionId })
+        return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      deleteArchivedSessions: (request) => {
+        for (const sessionId of [...archivedSessionIds]) {
+          const summary = summaryOf(sessionId)
+          // Live summaries stay (the host refuses live deletions the same way).
+          if (summary?.running === true) continue
+          archivedSessionIds.splice(archivedSessionIds.indexOf(sessionId), 1)
+          const summaryAt = sessions.findIndex(s => s.sessionId === sessionId)
+          if (summaryAt !== -1) sessions.splice(summaryAt, 1)
+          logs.delete(sessionId)
+          emitHost({ type: 'host/session-removed', sessionId })
+        }
+        emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      setSessionPinned: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const { sessionId, pinned } = request.payload
+        const present = pinnedSessionIds.includes(sessionId)
+        if (present !== pinned) {
+          if (pinned) pinnedSessionIds.push(sessionId)
+          else pinnedSessionIds.splice(pinnedSessionIds.indexOf(sessionId), 1)
+          emitHost({ type: 'host/pinned-sessions-changed', pinnedSessionIds: [...pinnedSessionIds] })
+        }
+        return ok(request, { pinnedSessionIds: [...pinnedSessionIds] })
       },
       updateSettings: (request) => {
         const { workspaceId, settings } = request.payload
@@ -3117,6 +3219,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         models: fixtureModelGroups().flatMap(group => group.models.map(model => ({ id: model.id, name: model.name }))),
       }),
     },
+    jobs: {
+      kill: request => ok(request, { result: 'requested' as const }),
+      output: request => ok(request, { text: '', status: 'running' as const }),
+    },
     respond(message: ClientResponse): Promise<RpcReceipt> {
       // Same routing discipline as the host: rpcId first, then the payload's
       // audit correlation; a settled or unknown id is not-pending.
@@ -3246,6 +3352,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'session.fork': return this.api.sessions.fork(request)
       case 'session.prompt': return this.api.sessions.prompt(request)
       case 'session.attachment': return this.api.sessions.attachment(request)
+      case 'session.uploadAttachment': return this.api.sessions.uploadAttachment(request)
       case 'session.updateQueue': return this.api.sessions.updateQueue(request)
       case 'session.cancel': return this.api.sessions.cancel(request)
       case 'subagent.list': return this.api.subagents.list(request)
@@ -3266,6 +3373,10 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertBefore': return this.api.workspace.insertBefore(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
+      case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
+      case 'workspace.deleteSession': return this.api.workspace.deleteSession(request)
+      case 'workspace.deleteArchivedSessions': return this.api.workspace.deleteArchivedSessions(request)
+      case 'workspace.setSessionPinned': return this.api.workspace.setSessionPinned(request)
       case 'workspace.updateSettings': return this.api.workspace.updateSettings(request)
       case 'workspace.moveSession': return this.api.workspace.moveSession(request)
       case 'skill.list': return this.api.skills.list(request)
@@ -3292,6 +3403,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
+      case 'job.kill': return this.api.jobs.kill(request)
+      case 'job.output': return this.api.jobs.output(request)
     }
   }
 

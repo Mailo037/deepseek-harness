@@ -4,7 +4,9 @@
  * per push.
  */
 
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
+import type { RpcRequest, RpcResponse } from './rpc.ts'
 
 /**
  * One background job as the client sees it.
@@ -33,4 +35,16 @@ export interface JobView {
   startedAt: number
   /** Epoch ms when the task settled; absent while live. */
   finishedAt?: number
+}
+
+/** Background-job unary methods (the map keys job.* of RpcMethodMap). */
+export interface JobsApi {
+  /** Request cancellation of a live background job. */
+  kill(
+    request: RpcRequest<{ sessionId: SessionId; jobId: JobId; reason?: string }>,
+  ): Promise<RpcResponse<{ result: 'requested' | 'already-finished' }>>
+  /** Read latest output or final output and status of a background job. */
+  output(
+    request: RpcRequest<{ sessionId: SessionId; jobId: JobId }>,
+  ): Promise<RpcResponse<{ text: string; status: JobView['status']; detail?: string }>>
 }

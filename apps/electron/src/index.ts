@@ -18,6 +18,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { bootWebHost, type WebHost } from './host.ts'
 import { DEFAULT_GRACE_MS, GraceTimer } from './grace.ts'
+import { createDesktopUpdater, type DesktopUpdater } from './updater.ts'
 
 /** Window geometry: a sensible desktop default, matching the web surface. */
 const WINDOW_WIDTH = 1280
@@ -28,11 +29,12 @@ interface AppState {
   host: WebHost | undefined
   window: BrowserWindow | undefined
   grace: GraceTimer | undefined
+  updater: DesktopUpdater | undefined
   /** True once a shutdown has been requested; prevents double teardown. */
   shuttingDown: boolean
 }
 
-const state: AppState = { host: undefined, window: undefined, grace: undefined, shuttingDown: false }
+const state: AppState = { host: undefined, window: undefined, grace: undefined, updater: undefined, shuttingDown: false }
 
 /** Grace window override for tests and tuning (`DSH_ELECTRON_GRACE_MS`). */
 function graceMs(): number {
@@ -104,6 +106,8 @@ async function shutdown(code = 0): Promise<void> {
   state.grace?.dispose()
   state.grace = undefined
   try {
+    state.updater?.dispose()
+    state.updater = undefined
     await state.host?.shutdown()
   } finally {
     state.host = undefined
@@ -156,5 +160,15 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => startHost()).catch((error) => {
     console.error('dsh-electron: host boot failed:', error)
     void shutdown(1)
+  })
+  app.whenReady().then(() => {
+    // Development and unpacked test runs have no signed update metadata. Only
+    // installed packages enter the electron-builder updater path.
+    if (app.isPackaged && process.env.DSH_ELECTRON_DISABLE_AUTO_UPDATE !== '1') {
+      state.updater = createDesktopUpdater(() => state.window)
+      state.updater.start()
+    }
+  }).catch((error) => {
+    console.error('dsh-electron: updater initialization failed:', error)
   })
 }

@@ -172,6 +172,9 @@ export function ToolRow({
   const suffix = failureLine === null ? summarySuffix ?? null : null
   // The failure line is error prose, not the path: no open-file affordance.
   const fileLink = filePath !== undefined && onOpenFile !== undefined && failureLine === null
+  // A diff card's collapsed row carries the change's size beside the path:
+  // gray at rest, the +/- colors on row hover (see .diffStats).
+  const diffStats = diffBody !== null ? diffBody.stats : null
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
@@ -226,6 +229,12 @@ export function ToolRow({
                 className={clsx(css.summary, failureLine !== null && css.errorSummary)}
               >
                 {summaryText}
+              </span>
+            )}
+            {diffStats !== null && (
+              <span className={css.diffStats}>
+                <span className={css.diffAdded}>+{diffStats.added}</span>
+                <span className={css.diffRemoved}>-{diffStats.removed}</span>
               </span>
             )}
             {suffix !== null && <span className={css.summarySuffix}>{suffix}</span>}

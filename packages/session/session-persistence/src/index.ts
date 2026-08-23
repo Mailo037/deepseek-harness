@@ -40,6 +40,17 @@ export interface SessionRawArtifact {
   readonly content: string
 }
 
+/**
+ * The composed backend cannot delete stored logs. Consumers surface this as a
+ * business refusal rather than a storage fault.
+ */
+export class SessionDeletionUnsupportedError extends Error {
+  constructor() {
+    super('this session persistence backend does not support deletion')
+    this.name = 'SessionDeletionUnsupportedError'
+  }
+}
+
 // The backend-agnostic write-path orchestration first-party backends compose.
 export {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE,
@@ -226,6 +237,23 @@ export abstract class SessionPersistence extends Service {
    * @returns one header per materialized session.
    */
   abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
+
+  /**
+   * Durably remove one session's stored log and metadata. The operation is
+   * serialized against the session's own reads and writes; a live Session
+   * rejects, a retained cold preparation is discarded, and an absent id
+   * resolves to `false`. A backend that cannot delete rejects with its own
+   * error.
+   * @param _id - the persisted session whose log is removed (unused by the default).
+   * @param signal - optional cancellation for backend deletion work.
+   * @returns whether a materialized log was removed.
+   */
+  delete(_id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted === true) {
+      return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'))
+    }
+    return Promise.reject(new SessionDeletionUnsupportedError())
+  }
 
   /**
    * List materialized sessions with cheap per-log change tokens.

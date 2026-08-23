@@ -19,6 +19,7 @@ interface KoffiLibrary { func(convention: string, name: string, result: string, 
 interface Koffi {
   load(path: string): KoffiLibrary
   proto(declaration: string): unknown
+  proto(convention: string, name: string | null, result: string, args: string[]): unknown
   pointer(type: unknown): unknown
   call(pointer: unknown, proto: unknown, ...args: unknown[]): unknown
   decode(value: unknown, offsetOrType: unknown, type?: unknown): unknown
@@ -53,6 +54,10 @@ const SIGDN_FILESYSPATH = 0x80058000 | 0
  */
 const DPI_AWARENESS_CONTEXTS = [-4, -3, -2]
 const WM_CLOSE = 0x10
+/** `HWND_TOPMOST` insertion target for the raise pin. */
+const HWND_TOPMOST = -1
+/** `SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW` — z-order-only reinsertion. */
+const SWP_FLAGS = 0x0001 | 0x0002 | 0x0040
 
 /** IFileOpenDialog vtable slots (IUnknown 0-2, IModalWindow 3, IFileDialog 4+). */
 const SLOT_RELEASE = 2
@@ -182,7 +187,7 @@ export async function closeThreadWindows(threadId: number): Promise<void> {
   const user32 = koffi.load('user32.dll')
   const enumThreadWindows = user32.func('__stdcall', 'EnumThreadWindows', 'int', ['uint32', 'void *', 'intptr'])
   const postMessageW = user32.func('__stdcall', 'PostMessageW', 'int', ['void *', 'uint32', 'uintptr', 'intptr'])
-  const protoEnumProc = koffi.proto('int __stdcall DshEnumThreadWndProc(void *hwnd, intptr lparam)')
+  const protoEnumProc = koffi.proto('__stdcall', null, 'int', ['void *', 'intptr'])
   const callback = koffi.register((hwnd: unknown) => {
     postMessageW(hwnd, WM_CLOSE, 0, 0)
     return 1
@@ -192,4 +197,93 @@ export async function closeThreadWindows(threadId: number): Promise<void> {
   } finally {
     koffi.unregister(callback)
   }
+}
+
+/**
+ * `WS_EX_APPWINDOW` — forces a taskbar button so the picker stays findable
+ * even where the activation pass loses (an ownerless common dialog otherwise
+ * shows no taskbar entry, and the user reads the whole pick as dead).
+ */
+const WS_EX_APPWINDOW = 0x40000
+/** `WS_EX_TOOLWINDOW` — transient helper windows must not end the dialog-raise retry. */
+const WS_EX_TOOLWINDOW = 0x80
+/** `GWL_EXSTYLE`. */
+const GWL_EXSTYLE = -20
+
+/**
+ * Raise, pin, and activate the visible common dialog of a native thread — the
+ * driver's answer to the foreground lock: the picker's trigger arrives over
+ * RPC at a background server process, so Windows never grants it foreground
+ * rights and a freshly shown dialog stays behind the browser with no taskbar
+ * presence, which reads as "nothing happened". The raise pins the window
+ * `HWND_TOPMOST` (no demotion: a demoted dialog sinks beneath any other
+ * topmost layer again) and adds `WS_EX_APPWINDOW`, both rights-free; an
+ * `AttachThreadInput` + `SetForegroundWindow` pass then tries to give it
+ * keyboard focus, best-effort because that path does need the foreground
+ * permission. Failures are deliberately silent — the topmost pin alone
+ * already makes the dialog visible.
+ * @param threadId - the dialog thread's native id (from the `showing` notice).
+ * @returns whether the visible `#32770` dialog was raised; false while the
+ *   thread has only helper windows (the notice precedes the blocking `Show`,
+ *   so the common dialog may still be under creation).
+ */
+export async function raiseThreadWindows(threadId: number): Promise<boolean> {
+  const koffi = (await import('koffi')).default as unknown as Koffi
+  const user32 = koffi.load('user32.dll')
+  const kernel32 = koffi.load('kernel32.dll')
+  const enumThreadWindows = user32.func('__stdcall', 'EnumThreadWindows', 'int', ['uint32', 'void *', 'intptr'])
+  const isWindowVisible = user32.func('__stdcall', 'IsWindowVisible', 'int', ['void *'])
+  const getClassNameW = user32.func('__stdcall', 'GetClassNameW', 'int', ['void *', 'void *', 'int'])
+  const setWindowPos = user32.func('__stdcall', 'SetWindowPos', 'int', ['void *', 'void *', 'int', 'int', 'int', 'int', 'uint32'])
+  const getWindowLongW = user32.func('__stdcall', 'GetWindowLongW', 'int32', ['void *', 'int'])
+  const setWindowLongW = user32.func('__stdcall', 'SetWindowLongW', 'int32', ['void *', 'int', 'int32'])
+  const setForegroundWindow = user32.func('__stdcall', 'SetForegroundWindow', 'int', ['void *'])
+  const attachThreadInput = user32.func('__stdcall', 'AttachThreadInput', 'int', ['uint32', 'uint32', 'int'])
+  const getForegroundWindow = user32.func('__stdcall', 'GetForegroundWindow', 'void *', [])
+  const getWindowThreadProcessId = user32.func('__stdcall', 'GetWindowThreadProcessId', 'uint32', ['void *', 'void *'])
+  const getCurrentThreadId = kernel32.func('__stdcall', 'GetCurrentThreadId', 'uint32', [])
+  // Anonymous callback types are required here: this function is retried, and
+  // Koffi rejects redeclaring a named prototype in the same process.
+  const protoEnumProc = koffi.proto('__stdcall', null, 'int', ['void *', 'intptr'])
+  let raised = false
+  const callback = koffi.register((hwnd: unknown) => {
+    if (isWindowVisible(hwnd) === 0) return 1
+    const classNameBuffer = Buffer.alloc(64)
+    const classNameLength = getClassNameW(hwnd, classNameBuffer, classNameBuffer.length / 2) as number
+    const className = classNameLength > 0
+      ? classNameBuffer.toString('utf16le', 0, classNameLength * 2)
+      : ''
+    const exStyle = getWindowLongW(hwnd, GWL_EXSTYLE) as number
+    // IFileOpenDialog creates several helper windows before its real common
+    // dialog. Some are not WS_EX_TOOLWINDOW, so the class check is authoritative;
+    // treating any helper as success stops the retry before #32770 is visible.
+    if (className !== '#32770' || (exStyle & WS_EX_TOOLWINDOW) !== 0) return 1
+    // Rights-free visibility: pin above every non-topmost window and give the
+    // ownerless dialog a taskbar button. The pin stays for the dialog's whole
+    // lifetime; the pick's settle path closes the window, so nothing needs to
+    // undo it.
+    setWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_FLAGS)
+    setWindowLongW(hwnd, GWL_EXSTYLE, exStyle | WS_EX_APPWINDOW)
+    raised = true
+    // Focus pass: borrowing the foreground thread's input queue makes the
+    // activation stick where the bare SetForegroundWindow call would bounce.
+    const myThread = getCurrentThreadId() as number
+    const foreground = getForegroundWindow()
+    const pidOut = Buffer.alloc(4)
+    const foregroundThread = foreground === null
+      ? 0
+      : getWindowThreadProcessId(foreground, pidOut) as number
+    if (foregroundThread !== 0 && foregroundThread !== myThread) attachThreadInput(myThread, foregroundThread, 1)
+    attachThreadInput(myThread, threadId, 1)
+    setForegroundWindow(hwnd)
+    attachThreadInput(myThread, threadId, 0)
+    if (foregroundThread !== 0 && foregroundThread !== myThread) attachThreadInput(myThread, foregroundThread, 0)
+    return 1
+  }, koffi.pointer(protoEnumProc))
+  try {
+    enumThreadWindows(threadId, callback, 0)
+  } finally {
+    koffi.unregister(callback)
+  }
+  return raised
 }

@@ -10,7 +10,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconCloseOutline16, IconPlusOutline16, IconQueueOutline14, IconWarningOutline16, Toast, Tooltip,
+  IconCloseOutline16, IconPaperclipOutline16, IconPlusOutline16, IconQueueOutline14, IconWarningOutline16,
+  FileTypeIcon, fileTypeIconKind, Menu, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -24,7 +25,9 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
+import type { DraftAttachmentId } from '../input/contract.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { isImageMediaType, LARGE_PASTE_CHARS } from '../service.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
@@ -34,11 +37,30 @@ import css from './InputBar.module.css'
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
 
+/**
+ * Format a token string for display: strips leading trigger character (/ or @),
+ * replaces dashes/underscores with spaces, and capitalizes word boundaries (Title Case).
+ * @param raw - raw token string (e.g. '/dsh-doc-site-sync' or '@src/file.ts').
+ * @returns formatted human-readable label.
+ */
+export function formatTokenLabel(raw: string): string {
+  const clean = raw.replace(/^[/@]/u, '')
+  if (clean === '') return raw
+  if (clean.includes('/') || clean.includes('\\')) {
+    return clean
+  }
+  return clean
+    .split(/[-_\s]+/u)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 export type InputBarProps = ComposerBarProps
 
 export function InputBar({
-  useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
-  resolveSubmitMode, toggleCommandMenu, stop, command, t,
+  useSession, useInput, inputActions, keyboard, addFiles, addTextAttachment, removeAttachment, draftAttachments,
+  resolveSubmitMode, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
@@ -65,8 +87,8 @@ export function InputBar({
   // pending occurrence until submit saves it in place or Escape restores.
   const queueEditItem = input?.queueEdit?.itemId
   const attachments = useMemo(
-    () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
-    [draftImages, input?.imageIds],
+    () => input === undefined || draftAttachments === undefined ? [] : draftAttachments(input.attachmentIds),
+    [draftAttachments, input?.attachmentIds],
   )
   const empty = draft.trim() === '' && attachments.length === 0
   // Transient error banner (machine notices, image-intake rejections, and
@@ -102,6 +124,9 @@ export function InputBar({
   const cardRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // The plus button's attachment context menu (upload entry; more later).
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
   const safari = useMemo(() => isSafariBrowser(navigator), [])
   const safariNativeShrinkRef = useRef(false)
   // IME guard: composition Enter picks a candidate, it must not send. The ref outlives renders;
@@ -148,10 +173,10 @@ export function InputBar({
 
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return
-    if (attachments.length !== input.imageIds.length) {
-      inputActions.pruneImages(attachments.map(attachment => attachment.id))
+    if (attachments.length !== input.attachmentIds.length) {
+      inputActions.pruneAttachments(attachments.map(attachment => attachment.id))
     }
-  }, [attachments, input?.imageIds, inputActions])
+  }, [attachments, input?.attachmentIds, inputActions])
 
   // A native Safari edit that shortens the draft may leave the previous
   // soft-wrap layout behind after the mirror shrinks. The native-change signal
@@ -217,13 +242,22 @@ export function InputBar({
   // reused across sessions, so switching to a longer draft keeps the previous
   // offset while the value swap puts the caret at the new draft's end, which is
   // off screen (measured on all three engines: offset 0 with the caret 940px
-  // down). Suppress the walk, then reveal in our own box.
+  // down). Suppress the walk, then reveal in our own box. Coarse-pointer
+  // (touch) devices skip the focus entirely — a programmatic focus there
+  // raises the soft keyboard over a chat the user only opened; the reveal
+  // still runs, so switching to a longer draft still lands at its end.
+  const coarsePointer = useMemo(
+    // jsdom implements no matchMedia: the optional call keeps that lane on
+    // the desktop path.
+    () => window.matchMedia?.('(pointer: coarse)').matches ?? false,
+    [],
+  )
   useEffect(() => {
     const el = inputRef.current
-    if (locked || el === null) return
+    if (locked || coarsePointer || el === null) return
     el.focus({ preventScroll: true })
     revealSelectionFocus(el)
-  }, [locked, sessionId])
+  }, [locked, sessionId, coarsePointer])
 
   // A persisted draft arrives AFTER the unlock effect: ConversationSession
   // adopts it in its own mount effect, and a parent's mount effect runs after
@@ -281,6 +315,66 @@ export function InputBar({
   })
   /* oxlint-enable typescript/no-unnecessary-condition */
 
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null)
+  const backdropRef = useRef<HTMLDivElement | null>(null)
+
+  // Mirror-layer decorations: a visible backdrop with transparent textarea
+  // text. Claim tokens and references retain the draft's own glyph metrics,
+  // so their decoration cannot drift from wrapping, selection, or the caret.
+  const deco = input === undefined ? INERT_DECORATIONS : deriveDecorations(input, lexicon)
+
+  const allTokenRanges = useMemo(() => {
+    if (input === undefined) return []
+    const ranges: { start: number; end: number; key: string }[] = []
+    if (deco.token !== null) {
+      ranges.push({ start: deco.token.start, end: deco.token.end, key: 'token' })
+    }
+    for (const chip of deco.chips) {
+      ranges.push({ start: chip.offset, end: chip.offset + chip.length, key: `chip-${chip.occurrenceId}` })
+    }
+    for (const ref of deco.textRefs) {
+      ranges.push({ start: ref.start, end: ref.end, key: `ref-${ref.start}` })
+    }
+    return ranges.sort((a, b) => a.start - b.start)
+  }, [deco, input])
+
+  const snapCaretOutOfTokens = (el: HTMLTextAreaElement): void => {
+    const sel = selectionOf(el)
+    if (sel.start !== sel.end) return
+    const caret = sel.start
+    for (const range of allTokenRanges) {
+      if (caret > range.start && caret < range.end) {
+        const snapTo = caret - range.start < range.end - caret ? range.start : range.end
+        el.setSelectionRange(snapTo, snapTo)
+        return
+      }
+    }
+  }
+
+  const onMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>): void => {
+    const backdropEl = backdropRef.current
+    if (backdropEl === null) return
+    const tokenEls = backdropEl.querySelectorAll<HTMLElement>('[data-decoration]')
+    let foundKey: string | null = null
+    for (const el of tokenEls) {
+      const rect = el.getBoundingClientRect()
+      if (
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
+      ) {
+        foundKey = el.dataset.tokenKey ?? null
+        break
+      }
+    }
+    setHoveredKey(prev => prev === foundKey ? prev : foundKey)
+  }
+
+  const onMouseLeave = (): void => {
+    setHoveredKey(null)
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (workspaceTrigger) {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -298,17 +392,43 @@ export function InputBar({
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
     // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
+    if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      const selection = selectionOf(e.currentTarget)
+      if (selection.start === selection.end) {
+        const caret = selection.start
+        const token = allTokenRanges.find(r => caret > r.start && caret <= r.end)
+        if (token !== undefined) {
+          e.preventDefault()
+          restoreCaret(e.currentTarget, token.start)
+          return
+        }
+      }
+    }
+    if (e.key === 'ArrowRight' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      const selection = selectionOf(e.currentTarget)
+      if (selection.start === selection.end) {
+        const caret = selection.start
+        const token = allTokenRanges.find(r => caret >= r.start && caret < r.end)
+        if (token !== undefined) {
+          e.preventDefault()
+          restoreCaret(e.currentTarget, token.end)
+          return
+        }
+      }
+    }
     if (!composing && !machineBusy && !locked
       && (e.key === 'Backspace' || e.key === 'Delete')) {
       const selection = selectionOf(e.currentTarget)
       if (selection.start === selection.end) {
-        const occurrence = input.occurrences.find(o => e.key === 'Backspace'
-          ? o.offset + o.length === selection.start
-          : o.offset === selection.start)
-        if (occurrence !== undefined) {
+        const caret = selection.start
+        const token = allTokenRanges.find(r => e.key === 'Backspace'
+          ? (r.end === caret || (r.end < draft.length && draft[r.end] === ' ' && r.end + 1 === caret) || (caret > r.start && caret <= r.end))
+          : (r.start === caret || (caret >= r.start && caret < r.end)))
+        if (token !== undefined) {
           e.preventDefault()
-          const start = occurrence.offset
-          const end = occurrence.offset + occurrence.length
+          const start = token.start
+          let end = token.end
+          if (end < draft.length && draft[end] === ' ') end += 1
           keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
           restoreCaret(e.currentTarget, start)
           keyboard.track(keyboard.snapshot.draft, start)
@@ -424,13 +544,21 @@ export function InputBar({
       .filter(item => item.kind === 'file')
       .map(item => item.getAsFile())
       .filter((file): file is File => file !== null)
-    if (files.length > 0) intakeImages(files)
+    if (files.length > 0) intakeFiles(files)
     const text = e.clipboardData.getData('text/plain')
     if (text === '') {
       if (files.length > 0) e.preventDefault()
       return
     }
     e.preventDefault()
+    // A very large paste becomes a restorable text attachment instead of a
+    // draft-sized blob: the rail chip carries the content, and its restore
+    // control puts it back into the draft at the caret.
+    if (text.length >= LARGE_PASTE_CHARS && addTextAttachment !== undefined) {
+      const rejection = addTextAttachment(nextPastedName(), text)
+      if (rejection !== null) showToast(rejection)
+      return
+    }
     const el = e.currentTarget
     const sel = selectionOf(el)
     // Sync components stay empty at this layer: hot-snapshot matching needs
@@ -443,45 +571,90 @@ export function InputBar({
     keyboard.track(keyboard.snapshot.draft, caret)
   }
 
+  /** Next non-colliding name for a converted paste attachment. */
+  const nextPastedName = (): string => {
+    const taken = new Set(attachments.map(a => a.kind === 'image' ? '' : a.name))
+    if (!taken.has('pasted-text.txt')) return 'pasted-text.txt'
+    let n = 2
+    while (taken.has(`pasted-text-${String(n)}.txt`)) n += 1
+    return `pasted-text-${String(n)}.txt`
+  }
+
+  /**
+   * Put one converted paste back into the draft: splice its content over the
+   * current selection as one machine transaction, drop the attachment, and
+   * hand focus and the caret back to the textarea.
+   */
+  const restoreTextAttachment = (id: DraftAttachmentId): void => {
+    const attachment = attachments.find(candidate => candidate.id === id)
+    if (keyboard === undefined || attachment === undefined || attachment.kind !== 'text') return
+    const el = inputRef.current
+    const sel = el !== null ? selectionOf(el) : { start: draft.length, end: draft.length }
+    keyboard.setDraft(
+      draft.slice(0, sel.start) + attachment.content + draft.slice(sel.end),
+      { start: sel.start, end: sel.end, insertedLength: attachment.content.length },
+    )
+    removeAttachment?.(id)
+    el?.focus({ preventScroll: true })
+    if (el !== null) restoreCaret(el, sel.start + attachment.content.length)
+    keyboard.track(keyboard.snapshot.draft, sel.start + attachment.content.length)
+  }
+
   // Intake pre-check (DeepSeek Chat semantics): an addition that would break
   // a projected limit is refused as a whole batch, announced immediately, and
   // never enters the rail — no more submit-time failure rolling the rail
   // back. The host enforces the same limits at submit for callers that bypass
-  // this composer.
-  const intakeImages = useCallback((files: readonly File[]): void => {
-    if (addImages === undefined || files.length === 0) return
-    const rejected = ((): string | null => {
+  // this composer. Non-image files skip the image limits entirely and ride
+  // the injected file path (inline text or workspace upload).
+  const intakeFiles = useCallback((files: readonly File[]): void => {
+    if (addFiles === undefined || files.length === 0) return
+    const images = files.filter(file => isImageMediaType(file.type))
+    const others = files.filter(file => !isImageMediaType(file.type))
+    if (others.length > 0) {
+      void addFiles(others).then((rejected) => {
+        if (rejected !== null) showToast(rejected)
+      }, (error: unknown) => {
+        showToast(error instanceof Error ? error.message : String(error))
+      })
+    }
+    if (images.length === 0) return
+    const rejection = (async (): Promise<string | null> => {
       if (imageLimits !== undefined) {
         // Format precedes limits (DeepSeek Chat's filter order): a batch with
         // a non-image must announce the format problem, not a count or size
-        // it could never pass anyway — addImages rejects it authoritatively.
-        if (files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
-          return addImages(files)
+        // it could never pass anyway — addFiles rejects it authoritatively.
+        if (images.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
+          return addFiles(images)
         }
-        if (attachments.length + files.length > imageLimits.maxImagesPerMessage) {
+        const draftImages = attachments.filter(a => a.kind === 'image')
+        if (draftImages.length + images.length > imageLimits.maxImagesPerMessage) {
           return t('image.tooMany', { count: imageLimits.maxImagesPerMessage })
         }
-        if (files.some(file => file.size > imageLimits.maxImageBytes)) {
+        if (images.some(file => file.size > imageLimits.maxImageBytes)) {
           return t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) })
         }
-        const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
-          + files.reduce((sum, file) => sum + file.size, 0)
+        const total = draftImages.reduce((sum, attachment) => sum + attachment.file.size, 0)
+          + images.reduce((sum, file) => sum + file.size, 0)
         if (total > imageLimits.maxMessageImageBytes) {
           return t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) })
         }
       }
-      return addImages(files)
+      return addFiles(images)
     })()
-    if (rejected !== null) showToast(rejected)
-  }, [addImages, attachments, imageLimits, showToast, t])
+    void rejection.then((rejected) => {
+      if (rejected !== null) showToast(rejected)
+    }, (error: unknown) => {
+      showToast(error instanceof Error ? error.message : String(error))
+    })
+  }, [addFiles, attachments, imageLimits, showToast, t])
 
-  const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
+  const canAcceptDrop = !locked && !machineBusy && addFiles !== undefined
 
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
     // Any caret/selection gesture ends a live paste attempt (the machine
     // cannot observe DOM selection). Cheap no-op when none is live.
     if (keyboard !== undefined && keyboard.snapshot.paste !== undefined) keyboard.invalidatePaste()
-    void e
+    snapCaretOutOfTokens(e.currentTarget)
   }
 
   // Button presses steal focus from the textarea; suppress at mousedown so
@@ -493,15 +666,25 @@ export function InputBar({
     inputRef.current?.focus({ preventScroll: true })
   }
 
-  const onToggleCommandMenu = (): void => {
-    const el = inputRef.current
-    if (el !== null) toggleCommandMenu?.(selectionOf(el))
+  // Menu launchers keep the desktop typing flow but must NOT re-focus the
+  // textarea on touch: a programmatic focus there raises the soft keyboard
+  // over a menu the user is about to read. Mouse pointers get the same
+  // suppression as {@link keepFocus}; pen/touch presses let the button take
+  // focus naturally.
+  const keepFocusForMouse = (e: React.PointerEvent<HTMLButtonElement>): void => {
+    if (e.pointerType !== 'mouse') return
+    e.preventDefault()
+    inputRef.current?.focus({ preventScroll: true })
   }
 
-  // Ordinary sessions retain their primary Send/Stop toggle. A continuable
-  // child keeps Send as the primary action and exposes Stop independently so
-  // pointer users can queue follow-ups while its current turn is running.
-  const primaryStops = running && subagent === null
+  // Ordinary sessions retain their primary Send/Stop toggle, but a non-empty
+  // draft outranks Stop while the session runs: typing into a running turn
+  // means "queue this", so the primary flips back to Send — the same
+  // queue-mode submit the running-state Enter gesture uses — until the draft
+  // clears and Stop returns. A continuable child keeps Send as the primary
+  // action regardless and exposes Stop independently.
+  const draftQueues = running && subagent === null && !empty && queueEditItem === undefined
+  const primaryStops = running && subagent === null && !draftQueues
   const interruptible = running && continuable
   // While a queued message is loaded into the composer, the primary button
   // saves that occurrence in place (Enter does the same).
@@ -523,10 +706,6 @@ export function InputBar({
     ? null
     : <PermissionSelect key={sessionId} value={permissions} locked={locked} command={command} t={t} />
 
-  // Mirror-layer decorations: a visible backdrop with transparent textarea
-  // text. Claim tokens and references retain the draft's own glyph metrics,
-  // so their decoration cannot drift from wrapping, selection, or the caret.
-  const deco = input === undefined ? INERT_DECORATIONS : deriveDecorations(input, lexicon)
   const backdrop: ReactNode[] = []
   {
     // Segment boundaries: the token range end, every structured-reference
@@ -539,10 +718,24 @@ export function InputBar({
       cursor = upTo
     }
     if (deco.token !== null) {
+      // The claimed command token renders as a token pill:
+      const tokenText = draft.slice(deco.token.start, deco.token.end)
+      const isHovered = hoveredKey === 'token'
       backdrop.push(
-        <mark key="token" className={css.hlToken} data-decoration="token">
-          {draft.slice(deco.token.start, deco.token.end)}
-        </mark>,
+        <span
+          key="token"
+          className={clsx(css.tokenPill, isHovered && css.tokenPillHovered)}
+          data-decoration="token"
+          data-token-key="token"
+          title={tokenText}
+        >
+          <span className={css.tokenIcon}>
+            <ReferenceIcon kind="command" size={12} className={css.tokenIconGlyph} />
+          </span>
+          <span className={css.tokenLabel}>
+            {formatTokenLabel(tokenText)}
+          </span>
+        </span>,
       )
       cursor = deco.token.end
     }
@@ -558,46 +751,62 @@ export function InputBar({
       pushPlain(b.at)
       if (b.kind === 'chip') {
         const chip = b.chip
+        const chipKey = `chip-${chip.occurrenceId}`
+        const isHovered = hoveredKey === chipKey
         backdrop.push(
           <span
-            key={`chip-${chip.occurrenceId}`}
-            className={clsx(css.chip, chip.invalid && css.chipInvalid)}
+            key={chipKey}
+            className={clsx(
+              css.tokenPill,
+              chip.invalid && css.chipInvalid,
+              isHovered && css.tokenPillHovered,
+            )}
             data-decoration="chip"
+            data-token-key={chipKey}
             data-reference-appearance={chip.appearance}
             data-occurrence={chip.occurrenceId}
             data-invalid={chip.invalid || undefined}
             title={chip.label}
           >
-            {chip.appearance === undefined
-              ? chip.text[0]
-              : (
-                <span className={css.chipTrigger}>
-                  <span className={css.chipTriggerGlyph}>{chip.text[0]}</span>
-                  <ReferenceIcon kind={chip.appearance} size={16} className={css.chipIcon} />
-                </span>
-              )}
-            <span>{chip.text.slice(1)}</span>
+            <span className={css.tokenIcon}>
+              {chip.appearance === 'file'
+                ? <FileTypeIcon kind={fileTypeIconKind(chip.text)} size={12} className={css.tokenIconGlyph} />
+                : chip.appearance !== undefined
+                  ? <ReferenceIcon kind={chip.appearance} size={12} className={css.tokenIconGlyph} />
+                  : <FileTypeIcon kind="file" size={12} className={css.tokenIconGlyph} />}
+            </span>
+            <span className={css.tokenLabel}>
+              {formatTokenLabel(chip.text)}
+            </span>
           </span>,
         )
         cursor = chip.offset + chip.length
       } else {
-        // Plain-range highlight: the glyphs stay the
-        // textarea's (advance untouched); the mark paints the chip look.
         const text = draft.slice(b.ref.start, b.ref.end)
+        const refKey = `ref-${b.ref.start}`
+        const isHovered = hoveredKey === refKey
+        const appearance = b.ref.appearance ?? (b.ref.trigger === '@' ? 'file' : 'command')
         backdrop.push(
-          <mark key={`ref-${b.ref.start}`} className={css.textRef} data-decoration="text-ref">
-            {b.ref.appearance === 'folder'
-              ? (
-                <>
-                  <span className={css.textRefTrigger}>
-                    <span className={css.textRefTriggerGlyph}>{text[0]}</span>
-                    <ReferenceIcon kind="folder" size={16} className={css.textRefIcon} />
-                  </span>
-                  {text.slice(1)}
-                </>
-              )
-              : text}
-          </mark>,
+          <span
+            key={refKey}
+            className={clsx(
+              css.tokenPill,
+              isHovered && css.tokenPillHovered,
+            )}
+            data-decoration="text-ref"
+            data-token-key={refKey}
+            data-appearance={appearance}
+            title={text}
+          >
+            <span className={css.tokenIcon}>
+              {appearance === 'file'
+                ? <FileTypeIcon kind={fileTypeIconKind(text)} size={12} className={css.tokenIconGlyph} />
+                : <ReferenceIcon kind={appearance} size={12} className={css.tokenIconGlyph} />}
+            </span>
+            <span className={css.tokenLabel}>
+              {formatTokenLabel(text)}
+            </span>
+          </span>,
         )
         cursor = b.ref.end
       }
@@ -668,11 +877,16 @@ export function InputBar({
           warning: promptError?.error.code === 'attachment-error' && promptError.error.details?.reason === 'MODEL_DOES_NOT_SUPPORT_IMAGES'
             ? t('image.modelUnsupported')
             : undefined,
-          onAddImages: intakeImages,
-          onRemoveImage: (id) => { removeImage?.(id) },
+          onAddFiles: intakeFiles,
+          onRemoveAttachment: (id) => { removeAttachment?.(id) },
+          onRestoreText: restoreTextAttachment,
           dropLimits: imageLimits === undefined ? undefined : {
             count: imageLimits.maxImagesPerMessage,
             size: imageSizeText(imageLimits.maxImageBytes),
+          },
+          imagePixelLimits: imageLimits === undefined ? undefined : {
+            maxPixels: imageLimits.maxImagePixels,
+            maxDimension: imageLimits.maxImageDimension,
           },
         })}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the
@@ -685,6 +899,7 @@ export function InputBar({
         <div ref={scrollRef} className={css.scroll} data-input-scroll>
           <div className={css.grow}>
             <div
+              ref={backdropRef}
               aria-hidden
               className={clsx(css.backdrop, textareaDisabled && css.backdropDisabled)}
               data-input-backdrop
@@ -696,6 +911,9 @@ export function InputBar({
               ref={inputRef}
               className={css.input}
               value={draft}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               disabled={textareaDisabled}
               readOnly={machineBusy || workspaceTrigger}
               aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : undefined}
@@ -716,6 +934,10 @@ export function InputBar({
               onChange={onChange}
               onKeyDown={onKeyDown}
               onSelect={onSelect}
+              onMouseMove={onMouseMove}
+              onMouseLeave={onMouseLeave}
+              onClick={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
+              onKeyUp={(e) => { snapCaretOutOfTokens(e.currentTarget) }}
               onCopy={(e) => { onCopyOrCut(e, false) }}
               onCut={(e) => { onCopyOrCut(e, true) }}
               onPaste={onPaste}
@@ -727,20 +949,36 @@ export function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
-            <Tooltip label={t('input.commands')} side="top" delayMs={500}>
-              <button
-                type="button"
-                className={css.add}
-                aria-label={t('input.commands')}
-                aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
-                onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
-              >
-                <IconPlusOutline16 size={14} />
-              </button>
-            </Tooltip>
+            {/* The attachment menu: upload today, more entries later. Slash
+              commands stay on the '/' trigger inside the textarea. */}
+            <Menu
+              open={addMenuOpen}
+              side="top"
+              anchor={
+                <Tooltip label={t('input.add')} side="top" delayMs={500}>
+                  <button
+                    type="button"
+                    className={css.add}
+                    aria-label={t('input.add')}
+                    aria-haspopup="menu"
+                    aria-expanded={addMenuOpen}
+                    disabled={locked}
+                    onPointerDown={keepFocusForMouse}
+                    onClick={() => { setAddMenuOpen(open => !open) }}
+                  >
+                    <IconPlusOutline16 size={14} />
+                  </button>
+                </Tooltip>
+              }
+              items={[
+                { id: 'upload-file', label: t('input.uploadFile'), icon: <IconPaperclipOutline16 size={14} /> },
+              ]}
+              onSelect={(id) => {
+                setAddMenuOpen(false)
+                if (id === 'upload-file') fileInputRef.current?.click()
+              }}
+              onClose={() => { setAddMenuOpen(false) }}
+            />
             <div className={css.modes}>
               {accessSelect}
               {renderSlot('conversation.input.plan', { locked })}
@@ -790,6 +1028,20 @@ export function InputBar({
           </div>
         </div>
       </div>
+      {/* Hidden multi-file picker behind the attachment menu's upload entry;
+        the value reset lets the same file be picked twice in a row. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className={css.fileInput}
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(e) => {
+          intakeFiles(Array.from(e.target.files ?? []))
+          e.target.value = ''
+        }}
+      />
       {footer}
     </div>
   )

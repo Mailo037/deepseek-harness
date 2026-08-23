@@ -5,6 +5,7 @@
  * the instructions; tests drive this directly.
  */
 import type { InputState } from './contract.ts'
+import type { TriggerChar, TriggerLexiconMember } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 
 /** The claim-token highlight range (always draft-leading while the watch holds). */
 export interface TokenRange {
@@ -40,8 +41,8 @@ export interface TextRefRange {
   readonly start: number
   readonly end: number
   readonly trigger: '/' | '@'
-  /** Optional icon domain for syntax-recognizable plain references. */
-  readonly appearance?: 'folder'
+  /** Token domain: the domain glyph beside the name; undefined keeps the bare color-only highlight. */
+  readonly appearance?: 'folder' | 'skill' | 'command'
 }
 
 /** Decoration product: claim token range + chip instructions + text-ref ranges + the ghost hint. */
@@ -66,23 +67,27 @@ const FOLDER_REF_RE = /(^|\s)(@(?:"[^"\n]*\/|[^\s"]+\/))/g
  * start or after whitespace ('x/name' never matches); the name must be an
  * exact lexicon member.
  * @param draft - draft text.
- * @param lexicon - per-trigger name lists (a missing trigger scans nothing).
+ * @param lexicon - per-trigger rolls (a missing trigger scans nothing).
  * @returns matched ranges in draft order.
  */
 export function scanTextRefs(
-  draft: string, lexicon: ReadonlyMap<'/' | '@' | '!', readonly string[]>,
+  draft: string, lexicon: ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]>,
 ): TextRefRange[] {
   if (draft === '') return []
   const out: TextRefRange[] = []
   if (lexicon.size > 0) {
+    const lookups = new Map<TriggerChar, Map<string, 'skill' | 'command' | undefined>>()
+    for (const [trigger, members] of lexicon) lookups.set(trigger, lexiconLookup(members))
     TEXT_REF_RE.lastIndex = 0
     let m: RegExpExecArray | null
     while ((m = TEXT_REF_RE.exec(draft)) !== null) {
       const trigger = m[2] as '/' | '@'
       const name = m[3] ?? ''
-      if (lexicon.get(trigger)?.includes(name)) {
+      const lookup = lookups.get(trigger)
+      if (lookup?.has(name) === true) {
+        const appearance = lookup.get(name)
         const start = m.index + (m[1]?.length ?? 0)
-        out.push({ start, end: start + 1 + name.length, trigger })
+        out.push({ start, end: start + 1 + name.length, trigger, ...(appearance === undefined ? {} : { appearance }) })
       }
     }
   }
@@ -100,16 +105,38 @@ export function scanTextRefs(
 }
 
 /** The empty lexicon (default: zero text-ref decorations, old call sites unchanged). */
-const EMPTY_LEXICON: ReadonlyMap<'/' | '@' | '!', readonly string[]> = new Map()
+const EMPTY_LEXICON: ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]> = new Map()
+
+/**
+ * Name → appearance lookup over one trigger's aggregated roll. A bare string
+ * member maps to undefined; the documented command precedence holds on a name
+ * shared between sources — the `command` entry wins regardless of roll order,
+ * matching adjudication, which claims such lines as commands before they can
+ * become prompts.
+ * @param members - the trigger's aggregated lexicon roll.
+ * @returns the lookup (first occurrence wins except for the command precedence).
+ */
+function lexiconLookup(members: readonly TriggerLexiconMember[]): Map<string, 'skill' | 'command' | undefined> {
+  const lookup = new Map<string, 'skill' | 'command' | undefined>()
+  for (const member of members) {
+    const name = typeof member === 'string' ? member : member.name
+    if (!lookup.has(name)) {
+      lookup.set(name, typeof member === 'string' ? undefined : member.appearance)
+    } else if (lookup.get(name) !== 'command' && typeof member !== 'string' && member.appearance === 'command') {
+      lookup.set(name, 'command')
+    }
+  }
+  return lookup
+}
 
 /**
  * Derive the mirror-layer decorations from the input state.
  * @param state - published input state.
- * @param lexicon - optional per-trigger reference lexicons (plain-text-reference scan).
+ * @param lexicon - optional per-trigger rolls (plain-text-reference scan).
  * @returns token range, chip instructions, text-ref ranges, and the ghost hint.
  */
 export function deriveDecorations(
-  state: InputState, lexicon: ReadonlyMap<'/' | '@' | '!', readonly string[]> = EMPTY_LEXICON,
+  state: InputState, lexicon: ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]> = EMPTY_LEXICON,
 ): DraftDecorations {
   const { draft, claim, phase, occurrences } = state
   const claimActive = (phase === 'claimed' || phase === 'submitting')

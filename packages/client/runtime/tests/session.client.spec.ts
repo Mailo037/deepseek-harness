@@ -576,6 +576,26 @@ describe('prompt and cancel errors', () => {
       sessionId: SID, attachmentId: 'attachment-1',
     }])
   })
+
+  it('uploads one browser file into the session project and maps ok/error', async () => {
+    const { api, session } = makeSession()
+    api.onUploadAttachment = () => Promise.resolve(ok({ path: '.uploads/123-file.bin', bytes: 4 }))
+    const uploaded = await session.uploadAttachment('file.bin', 'AQIDBA==')
+    expect(uploaded).toEqual({ ok: true, value: { path: '.uploads/123-file.bin', bytes: 4 } })
+    expect(api.callsOf('session.uploadAttachment')).toEqual([{
+      sessionId: SID, name: 'file.bin', data: 'AQIDBA==',
+    }])
+    api.onUploadAttachment = () => Promise.resolve(err({
+      code: 'attachment-error',
+      message: 'invalid upload file name',
+      details: { reason: 'INVALID_NAME' },
+    }))
+    const rejected = await session.uploadAttachment('../evil', 'AQIDBA==')
+    expect(rejected).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'INVALID_NAME' } } })
+    api.onUploadAttachment = () => Promise.reject(new Error('upload transport down'))
+    const folded = await session.uploadAttachment('file.bin', 'AQIDBA==')
+    expect(folded).toMatchObject({ ok: false, error: { code: 'internal' } })
+  })
 })
 
 describe('rename', () => {

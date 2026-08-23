@@ -18,6 +18,7 @@ type SummaryOver = Partial<{
   blank: boolean
   parentSessionId: SessionId
   origin: 'subagent'
+  attention: 'retry-exhausted'
 }>
 
 function summary(sessionId: SessionId, over: SummaryOver = {}) {
@@ -315,7 +316,7 @@ describe('host frame routing', () => {
     expect(manager.getListSnapshot().items).toHaveLength(1)
 
     const session = manager.get(S1)
-    manager.handleHostEnvelope({ rpcId: 'h3' as never, payload: { type: 'host/session-status', sessionId: S1, running: true } })
+    manager.handleHostEnvelope({ rpcId: 'h3' as never, payload: { type: 'host/session-status', sessionId: S1, running: true, attention: null } })
     expect(session.getSnapshot().running).toBe(true)
     expect(manager.getListSnapshot().items[0]?.running).toBe(true)
 
@@ -382,7 +383,7 @@ describe('subagent catalogs', () => {
     const listCalls = api.callsOf('subagent.list').length
     manager.handleHostEnvelope({
       rpcId: 'child-complete' as never,
-      payload: { type: 'host/session-status', sessionId: S2, running: false },
+      payload: { type: 'host/session-status', sessionId: S2, running: false, attention: null },
     })
     expect(manager.getListSnapshot().subagentsByParent[S1]?.entries[0]).toMatchObject({
       kind: 'child', id: S2, activity: 'inactive',
@@ -533,11 +534,11 @@ describe('subagent catalogs', () => {
 
     manager.handleHostEnvelope({
       rpcId: 'child-stopped' as never,
-      payload: { type: 'host/session-status', sessionId: S1, running: false },
+      payload: { type: 'host/session-status', sessionId: S1, running: false, attention: null },
     })
     manager.handleHostEnvelope({
       rpcId: 'child-started' as never,
-      payload: { type: 'host/session-status', sessionId: S2, running: true },
+      payload: { type: 'host/session-status', sessionId: S2, running: true, attention: null },
     })
     response.resolve(ok({
       entries: [
@@ -838,7 +839,7 @@ describe('remaining branches', () => {
     manager.handleMuxEnvelope({ rpcId: 'q1' as never, payload: { type: 'question/requested', sessionId: S1, questions: [] } })
     expect(session.getSnapshot().pending).toMatchObject([{ kind: 'question' }])
     // status flip for an unknown session only touches summaries (no crash).
-    manager.handleHostEnvelope({ rpcId: 'h9' as never, payload: { type: 'host/session-status', sessionId: S2, running: true } })
+    manager.handleHostEnvelope({ rpcId: 'h9' as never, payload: { type: 'host/session-status', sessionId: S2, running: true, attention: null } })
     manager.handleHostEnvelope({ rpcId: 'ha' as never, payload: { type: 'host/agent-error', sessionId: S2, message: '无实例' } })
   })
 
@@ -848,7 +849,7 @@ describe('remaining branches', () => {
     const manager = new SessionManager(api, fakeRemote())
     await manager.refreshList()
     const before = manager.getListSnapshot()
-    manager.handleHostEnvelope({ rpcId: 'h' as never, payload: { type: 'host/session-status', sessionId: S2, running: true } })
+    manager.handleHostEnvelope({ rpcId: 'h' as never, payload: { type: 'host/session-status', sessionId: S2, running: true, attention: null } })
     const after = manager.getListSnapshot()
     expect(after.items).not.toBe(before.items)
     const beforeS1 = before.items.find(e => e.sessionId === S1)
@@ -1030,7 +1031,7 @@ describe('pending-interaction list status', () => {
 describe('completed reminder', () => {
   const status = (rpcId: string, sessionId: SessionId, running: boolean) => ({
     rpcId: rpcId as never,
-    payload: { type: 'host/session-status' as const, sessionId, running },
+    payload: { type: 'host/session-status' as const, sessionId, running, attention: null },
   })
   const added = (rpcId: string, sessionId: SessionId) => ({
     rpcId: rpcId as never,
@@ -1149,6 +1150,43 @@ describe('completed reminder', () => {
     gate.resolve(ok({ items: [summary(S1), summary(S2, { updatedAt: 200 })] as never[] }))
     await refresh
     expect(entry(manager, S2)?.completed).toBe(true)
+  })
+})
+
+describe('attention (retry-exhausted)', () => {
+  const status = (rpcId: string, sessionId: SessionId, running: boolean, attention: 'retry-exhausted' | null = null) => ({
+    rpcId: rpcId as never,
+    payload: { type: 'host/session-status' as const, sessionId, running, attention },
+  })
+  const added = (rpcId: string, sessionId: SessionId) => ({
+    rpcId: rpcId as never,
+    payload: { type: 'host/session-added' as const, sessionId, blank: false },
+  })
+  const entry = (manager: SessionManager, sessionId: SessionId) =>
+    manager.getListSnapshot().items.find(item => item.sessionId === sessionId)
+
+  it('sets the verdict from an idle status frame and clears it on the next run', () => {
+    const manager = new SessionManager(new FakeApiClient(), fakeRemote())
+    manager.handleHostEnvelope(added('h1', S1))
+    expect(entry(manager, S1)?.attention).toBeUndefined()
+    manager.handleHostEnvelope(status('s1', S1, true))
+    expect(entry(manager, S1)?.attention).toBeUndefined()
+    manager.handleHostEnvelope(status('s2', S1, false, 'retry-exhausted'))
+    expect(entry(manager, S1)?.attention).toBe('retry-exhausted')
+    // A fresh run clears the verdict (a running session never carries it).
+    manager.handleHostEnvelope(status('s3', S1, true))
+    expect(entry(manager, S1)?.attention).toBeUndefined()
+    // Idle again without exhaustion stays cleared.
+    manager.handleHostEnvelope(status('s4', S1, false))
+    expect(entry(manager, S1)?.attention).toBeUndefined()
+  })
+
+  it('rides the list baseline from a session.list refresh', async () => {
+    const api = new FakeApiClient()
+    api.onList = () => Promise.resolve(ok({ items: [summary(S1, { attention: 'retry-exhausted' })] as never[] }))
+    const manager = new SessionManager(api, fakeRemote())
+    await manager.refreshList()
+    expect(entry(manager, S1)?.attention).toBe('retry-exhausted')
   })
 })
 

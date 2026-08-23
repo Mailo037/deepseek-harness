@@ -6,8 +6,8 @@
 import clsx from 'clsx'
 import css from './StateDot.module.css'
 
-/** Four-color state semantic (green done / amber user-attention / blue running ring / red error). */
-export type StateDotState = 'done' | 'warning' | 'ongoing' | 'error'
+/** Five-color state semantic (green done / amber user-attention / blue running ring / red error / blue background pulse). */
+export type StateDotState = 'done' | 'warning' | 'ongoing' | 'error' | 'background'
 
 /** Outer 3x3 matrix cells (2px pixels on a 10px grid), clockwise from top-left. */
 const MATRIX_CELLS: readonly (readonly [number, number])[] = [
@@ -16,7 +16,7 @@ const MATRIX_CELLS: readonly (readonly [number, number])[] = [
 
 /**
  * Render a state dot.
- * @param props.state - which of the four states to show.
+ * @param props.state - which of the five states to show.
  * @param props.size - outer diameter in px (default 10, the figma size).
  * @param props.className - extra class for layout placement.
  * @returns the dot element (aria-hidden; pair with text for accessibility).
@@ -26,6 +26,21 @@ export function StateDot({ state, size = 10, className }: {
   size?: number | undefined
   className?: string | undefined
 }) {
+  if (state === 'background') {
+    return (
+      <span
+        className={clsx(css.loaderWrapper, className)}
+        data-state="background"
+        style={{
+          width: size,
+          height: size,
+        } as React.CSSProperties}
+        aria-hidden="true"
+      >
+        <span className={css.loader} />
+      </span>
+    )
+  }
   if (state === 'ongoing') {
     return (
       <svg

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-22-windows-plugin-pnpm-argv-launch.md
+2026-08-22-windows-plugin-pnpm-argv-launch.md: b842beeaefca01e62efc36236841bb50aba25ca2
+2026-08-22-windows-plugin-pnpm-argv-launch.zh.md: 6fc0ccd8739fb833b55a25eff3aaae7e1a0f03e7

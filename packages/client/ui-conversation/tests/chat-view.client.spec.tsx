@@ -142,23 +142,20 @@ const settledTool = (seq: number, callId: string, turn = 1, name = 'bash'): Conv
   turn,
 }) as unknown as ConversationNode
 
-/** Empty sessions-list hook for the global standard-kit seat. */
-function emptySessions() {
-  const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
-  return bindSnapshotSelector(store)
-}
-
 function emptyWorkspaces() {
   const store = createSnapshotStore<WorkspaceListState>({
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     baselinesReady: true, recentWorkspaceId: undefined,
   })
   return bindSnapshotSelector(store)
 }
 
-function makeHarness(init?: Partial<ConversationSnapshot>) {
+function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partial<SessionListState>) {
   const { set, source } = makeSource(init)
+  const sessionsStore = createSnapshotStore<SessionListState>({
+    ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    ...sessionsInit,
+  })
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
@@ -273,15 +270,15 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const props: ChatViewSlotProps = {
     sessionId: SID,
     useSession: bindSnapshotSelector(source),
-    useSessions: emptySessions(),
+    useSessions: bindSnapshotSelector(sessionsStore),
     useWorkspaces: emptyWorkspaces(),
     useProjection: (() => undefined),
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
-      addImages: () => true,
-      removeImage: () => {},
-      pruneImages: () => {},
+      addAttachments: () => true,
+      removeAttachment: () => {},
+      pruneAttachments: () => {},
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),
@@ -301,8 +298,11 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     t,
   }
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
+  const setSessions = (next: Partial<SessionListState>): void => {
+    sessionsStore.set({ ...sessionsStore.getSnapshot(), ...next })
+  }
   return {
-    set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
+    set, setSessions, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
     chatScroll, forkAt, setSelection, toolOwners,
   }
 }
@@ -385,6 +385,10 @@ describe('Chat node rendering', () => {
     expect(formatRunDuration(-500, t)).toBe('0秒')
     expect(formatRunDuration(15_999, t)).toBe('15秒')
     expect(formatRunDuration(125_000, t)).toBe('2分05秒')
+    // The unit ladder keeps the two most significant units: an hour-scale
+    // turn reads hours + minutes (no seconds), a day-scale one days + hours.
+    expect(formatRunDuration(4_215_000, t)).toBe('1小时10分')
+    expect(formatRunDuration(97_530_000, t)).toBe('1天3小时')
   })
 
 })
@@ -604,6 +608,29 @@ describe('ChatView', () => {
     fireEvent.click(view.container.querySelector('[data-tool-group] button') as HTMLElement)
     expect(view.getByTestId('tool-seat-t1')).toBeTruthy()
     fireEvent.click(fold)
+    expect(view.queryByTestId('tool-seat-t1')).toBeNull()
+    expect(view.getByText('done')).toBeTruthy()
+  })
+
+  it('renders ONE duration fold when a session-scoped row splits a folded turn', () => {
+    // A mid-turn admitted steer carries no turn affinity; it splits the
+    // turn's nodes into two segments without ending the turn. The fold
+    // decision reads the whole turn, so exactly one summary renders.
+    const tools = Array.from({ length: 12 }, (_, i) => settledTool(i + 3, `t${i + 1}`, 1))
+    const h = makeHarness({
+      nodes: [
+        user(1, 'go'),
+        ...tools.slice(0, 6),
+        user(2, 'steer mid-turn'),
+        ...tools.slice(6),
+        assistant(15, 'done', 1),
+      ],
+      turnEnds: new Map([[1, 16]]),
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 4_000 }]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('steer mid-turn')).toBeTruthy()
+    expect(view.getAllByRole('button', { name: '用时 3秒' })).toHaveLength(1)
     expect(view.queryByTestId('tool-seat-t1')).toBeNull()
     expect(view.getByText('done')).toBeTruthy()
   })

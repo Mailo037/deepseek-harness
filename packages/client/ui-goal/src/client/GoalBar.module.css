@@ -18,6 +18,7 @@
 
 .bar {
   box-sizing: border-box;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -29,6 +30,8 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 12px;
   background: var(--dsw-specific-tip);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .goalGlyph {
@@ -63,17 +66,33 @@
   white-space: nowrap;
 }
 
-/* Expanded (read) mode: the bar grows in height up to a cap and the objective
-   wraps onto multiple lines; overflow scrolls instead of truncating. */
+/* Expanded (read) mode: the glyph + phase label lead one header row with the
+   controls at its right end, and the objective gets the full card width below
+   instead of competing with them for one line; overflow scrolls instead of
+   truncating. */
 .barExpanded {
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   height: auto;
   padding-top: 6px;
   padding-bottom: 6px;
 }
 
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+
+.headerRow .actions,
+.headerRow .menuAnchor {
+  margin-left: auto;
+}
+
 .objectiveExpanded {
-  flex: 1;
   min-width: 0;
   max-height: 180px;
   overflow-y: auto;
@@ -112,6 +131,8 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 12px;
   background: var(--dsw-specific-tip);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .objectiveInput {
@@ -153,26 +174,51 @@
   flex: none;
 }
 
+/* Mobile seat for the overflow menu; the inline icon row owns the strip on
+   fine-pointer desktops. */
+.menuAnchor {
+  display: none;
+  flex: none;
+}
+
 /* On fine-pointer desktop the read-strip goal buttons are hover-revealed (and
-   revealed on keyboard focus) so the strip reads as status-only by default;
-   touch devices without hover always show them. The edit form's save/cancel
-   buttons stay visible because it lives in .editBar, not the read .bar.
-   Opacity keeps the layout stable. */
+   revealed on keyboard focus) so the objective text runs to the card's right
+   edge while they are hidden. Out of flow + opacity keeps them in the tab
+   order (visibility/display would drop keyboard reachability); focusing one
+   flips :focus-within and returns them to the flow. The expanded layout nests
+   the row inside .headerRow, so both homes share these descendant selectors. */
 @media (hover: hover) and (min-width: 769px) {
-  .bar > .actions {
+  .bar .actions {
+    position: absolute;
+    top: 4px;
+    right: 5px;
+    height: 28px;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 100ms ease;
   }
 
-  .bar:hover > .actions,
-  .bar:focus-within > .actions {
+  /* The expanded bar's taller padding aligns its overlay with the header row. */
+  .barExpanded .actions {
+    top: 6px;
+  }
+
+  .bar:hover .actions,
+  .bar:focus-within .actions {
+    position: static;
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
+/* Touch layouts keep every verb but collapse the row into one menu. */
 @media (max-width: 768px), (hover: none), (pointer: coarse) {
-  .actions {
-    opacity: 1;
+  .bar .actions {
+    display: none;
+  }
+
+  .bar .menuAnchor {
+    display: inline-flex;
   }
 }
 

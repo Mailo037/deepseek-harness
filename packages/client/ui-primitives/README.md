@@ -2,7 +2,24 @@
 
 English | [中文](README.zh.md)
 
-Pure React atoms (zero cordis): StateDot, DisclosureRow, ic_ds_* icons, Button/Pill/Menu/Modal/Input, the Toast transient banner, the OnboardingSurface first-run takeover (body-portaled mask + opaque stage that holds `#root` inert for exactly its own lifetime), the markdown family (MessageText/MarkdownText/JsonBlock), the read-only JsonTree inspector, the `useAnchoredMaxHeight` hook that clamps a bottom-anchored overlay to the viewport space above its anchor (re-measured on resize, scroll, and a caller-supplied dependency), the `useAnchoredPosition` hook that holds a fixed-position floating panel under its anchor (measure, offset, clamp inside the viewport margin, re-placed on capture-phase scroll, window resize, and the panel's own size changes), TerminalBlock, DiffBlock, ReadBlock, SearchBlock, and WebBlock.
+Pure React atoms (zero cordis): StateDot, DisclosureRow, ic_ds_* icons, Button/Pill/Menu/Modal/Input/Select, `SurfaceCard`/`LabeledField`/`ComparisonRail` for compact settings and status compositions, the Toast transient banner, the OnboardingSurface first-run takeover (body-portaled mask + opaque stage that holds `#root` inert for exactly its own lifetime), the markdown family (MessageText/MarkdownText/JsonBlock), the read-only JsonTree inspector, the `useAnchoredMaxHeight` hook that clamps a bottom-anchored overlay to the viewport space above its anchor (re-measured on resize, scroll, and a caller-supplied dependency), the `useAnchoredPosition` hook that holds a fixed-position floating panel under its anchor (measure, offset, clamp inside the viewport margin, re-placed on capture-phase scroll, window resize, and the panel's own size changes), TerminalBlock, DiffBlock, ReadBlock, SearchBlock, and WebBlock.
+
+## Compact compositions
+
+`SurfaceCard`, `LabeledField`, and `ComparisonRail` are reusable custom-UI building blocks for settings and status surfaces. The field's `labelFor` connects its label to a custom control such as `Select`; the rail is decorative and the card exposes its title as the region's accessible name.
+
+```tsx
+<SurfaceCard title="AI-assisted updates">
+  <ComparisonRail from="Local build" to="Unofficial Harness" />
+  <LabeledField label="Update source" labelFor="update-source">
+    <Select id="update-source" value={source} options={sources} onChange={setSource} />
+  </LabeledField>
+</SurfaceCard>
+```
+
+## Connection-loss overlay
+
+`ConnectionLostOverlay` waits for one continuous second of reconnecting state before covering the application, so transient connection drops do not flash the splash screen. Recovery hides a visible overlay immediately and cancels a pending one.
 
 ## Hover cards
 

@@ -34,6 +34,9 @@ apps/web/dist/
 .artifacts/
 .dsh-build/
 .playwright-mcp/
+.playwright-cli/
+apps/electron/release/
+apps/electron/release-*/
 .orig
 .worktrees/
 worktrees/

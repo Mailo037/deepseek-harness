@@ -357,12 +357,100 @@
   margin-top: 2px;
 }
 
+/* Pinned, Workspaces, and Ungrouped are peer navigation categories. Their
+   entrance follows the app's compact search/row motion vocabulary. */
+.categorySection {
+  display: block;
+  animation: category-in 180ms var(--ds-ease-in-out);
+}
+
+.categorySection > * + * {
+  margin-top: 2px;
+}
+
+.categoryLabel {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 2px;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  user-select: none;
+  animation: category-in 180ms var(--ds-ease-in-out);
+}
+
+.categorySection + .categoryLabel,
+.categorySection + .groupSection,
+.groupSection + .categoryLabel {
+  margin-top: 8px;
+}
+
+.archivedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 4px;
+  box-sizing: border-box;
+}
+
+.deleteAllButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.deleteAllButton:hover {
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+@keyframes category-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
 .searchStatus,
 .searchWarning {
   padding: 10px 12px;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.archiveNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--dsw-color-fill-secondary);
+  color: var(--dsw-color-text-secondary);
+  font-size: 12px;
+}
+
+.archiveNotice button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-color-brand);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
 }
 
 .searchWarning {
@@ -550,6 +638,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .wide {
+    animation: none;
+  }
+
+  .categorySection,
+  .categoryLabel {
     animation: none;
   }
 

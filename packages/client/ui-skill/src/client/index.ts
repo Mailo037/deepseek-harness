@@ -153,7 +153,7 @@ export function apply(ctx: ClientContext): void {
       fetchCatalog(session.sessionId).catch(() => {})
     },
     lexicon(session) {
-      return fetches.get(session.sessionId)?.settled?.map(skill => skill.name)
+      return fetches.get(session.sessionId)?.settled?.map(skill => ({ name: skill.name, appearance: 'skill' as const }))
     },
     subscribeLexicon(session, listener) {
       const key = session.sessionId

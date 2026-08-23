@@ -3,7 +3,7 @@ import type {
   SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, workspaceLabel, relativeTime,
+  deriveFlat, deriveGroups, derivePinned, deriveSearchResults, workspaceLabel, relativeTime,
   UNGROUPED_KEY, UNGROUPED_LABEL,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
@@ -101,6 +101,44 @@ describe('deriveGroups', () => {
     expect(deriveFlat(sessions, noArchive).find(node => node.id === done.id)!.completed).toBe(true)
     const search = deriveSearchResults(sessions, [workspace('first', ['done', 'plain'])], 'done', noArchive, { items: [], hasMore: false }, 10)
     expect(search.items[0]?.completed).toBe(true)
+  })
+
+  it('projects a completed background job into the attention-ready completion state', () => {
+    const background = summary('background', 3)
+    const sessions = {
+      ...list(background),
+      jobsBySession: {
+        [background.id]: [{ id: 'bash-1' as never, kind: 'bash', label: 'build', status: 'completed' as const, startedAt: 1, finishedAt: 2 }],
+      },
+    }
+    const groups = deriveGroups(sessions, [workspace('project', ['background'])], noArchive, view(['project']))
+    expect(groups[0]!.hasAttention).toBe(true)
+    expect(groups[0]!.sessions[0]?.completed).toBe(true)
+    expect(deriveFlat(sessions, noArchive)[0]?.completed).toBe(true)
+  })
+
+  it('projects a running background job into the active attention state', () => {
+    const background = summary('background', 3)
+    const sessions = {
+      ...list(background),
+      jobsBySession: {
+        [background.id]: [{ id: 'bash-1' as never, kind: 'bash', label: 'build', status: 'running' as const, startedAt: 1 }],
+      },
+    }
+    const groups = deriveGroups(sessions, [workspace('project', ['background'])], noArchive, view(['project']))
+    expect(groups[0]!.hasAttention).toBe(true)
+    expect(groups[0]!.sessions[0]?.running).toBe(true)
+    expect(deriveFlat(sessions, noArchive)[0]?.running).toBe(true)
+  })
+
+  it('projects the retry-exhausted attention verdict into session and search rows', () => {
+    const failed = { ...summary('failed', 3), attention: 'retry-exhausted' as const }
+    const sessions = list(failed)
+    const grouped = deriveGroups(sessions, [workspace('first', ['failed'])], noArchive, view(['first']))
+    expect(grouped[0]!.sessions[0]?.attention).toBe('retry-exhausted')
+    expect(deriveFlat(sessions, noArchive)[0]?.attention).toBe('retry-exhausted')
+    const search = deriveSearchResults(sessions, [workspace('first', ['failed'])], 'failed', noArchive, { items: [], hasMore: false }, 10)
+    expect(search.items[0]?.attention).toBe('retry-exhausted')
   })
 
   it('hides subagent-origin sessions without hiding ordinary forks', () => {
@@ -243,6 +281,31 @@ describe('deriveFlat', () => {
     const kept = summary('kept', 1)
     const gone = summary('gone', 2)
     expect(deriveFlat(list(kept, gone), archived('gone')).map(row => row.id)).toEqual([kept.id])
+  })
+})
+
+describe('derivePinned', () => {
+  it('keeps durable pin order and removes pinned rows from normal projections', () => {
+    const sessions = list(summary('workspace-pin', 1), summary('loose-pin', 3), summary('ordinary', 2))
+    const workspaces = [workspace('project', ['workspace-pin', 'ordinary'])]
+    const pins = [sid('workspace-pin'), sid('loose-pin')]
+
+    expect(derivePinned(sessions, pins, noArchive).map(row => row.id)).toEqual(pins)
+    expect(deriveGroups(sessions, workspaces, noArchive, view(['project', UNGROUPED_KEY]), pins)
+      .flatMap(group => group.sessions.map(row => row.id))).toEqual([sid('ordinary')])
+    expect(deriveFlat(sessions, noArchive, pins).map(row => row.id)).toEqual([sid('ordinary')])
+  })
+
+  it('drops missing, blank, subagent, and archived pin ids', () => {
+    const blank = { ...summary('blank', 4), blank: true }
+    const subagent = { ...summary('subagent', 3), origin: 'subagent' as const }
+    const visible = summary('visible', 2)
+    const gone = summary('gone', 1)
+    expect(derivePinned(
+      list(blank, subagent, visible, gone),
+      [sid('missing'), blank.id, subagent.id, visible.id, gone.id],
+      archived('gone'),
+    ).map(row => row.id)).toEqual([visible.id])
   })
 })
 

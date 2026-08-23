@@ -157,6 +157,18 @@ export const IconBranchOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** Harness sidebar pin glyph. */
+export const IconPinOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M5.166 1.25H10.834V2.47L9.75 3.253V6.37L11.764 8.35V9.583H8.667V14.75H7.333V9.583H4.236V8.35L6.25 6.37V3.253L5.166 2.47V1.25ZM7.583 2.583V6.93L6.24 8.25H9.76L8.417 6.93V2.583H7.583Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /** ic_ds_chevron_down_outline_14 */
 export const IconChevronDownOutline14 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -257,6 +269,25 @@ export const IconRefreshOutline14 = ({ size = 14, className }: IconProps) => (
     <path
       d="M1.272 6.21348C1.70645 3.08888 4.59169 0.908064 7.71634 1.34239C8.95495 1.51469 10.0438 2.07331 10.8814 2.87755L11.9458 1.81407C12.1347 1.6255 12.4572 1.75911 12.4575 2.02598V5.08751C12.4574 5.25303 12.3233 5.38731 12.1577 5.38731H9.0972C8.82993 5.38731 8.69629 5.06361 8.88528 4.87462L10.0327 3.72618C9.3732 3.09994 8.52006 2.66569 7.5513 2.53087C5.08313 2.18779 2.80376 3.91044 2.46048 6.37852C2.11747 8.84665 3.84009 11.1261 6.30814 11.4693C8.77612 11.8121 11.0557 10.0896 11.399 7.62169L11.9937 7.70372L12.5874 7.78673C12.153 10.9112 9.26756 13.0919 6.1431 12.6578C3.01854 12.2234 0.837738 9.33809 1.272 6.21348Z"
       fill="currentColor"
+    />
+  </svg>
+)
+
+/** ic_ds_undo_outline_14 */
+export const IconUndoOutline14 = ({ size = 14, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M4.9 2.9L2.2 5.6L4.9 8.3"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M2.7 5.6H8.1C10.308 5.6 12.1 7.392 12.1 9.6C12.1 10.704 11.652 11.702 10.927 12.427"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
     />
   </svg>
 )

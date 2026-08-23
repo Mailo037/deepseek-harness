@@ -386,7 +386,7 @@ describe('DetailsPanel Output section (search)', () => {
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })
     const workspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     return render(
@@ -400,9 +400,9 @@ describe('DetailsPanel Output section (search)', () => {
         useInput={(() => { throw new Error('unused') })}
         inputActions={{
           setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
+          addAttachments: () => true,
+          removeAttachment: () => {},
+          pruneAttachments: () => {},
           submit: () => {},
         }}
         useProjection={(() => undefined)}

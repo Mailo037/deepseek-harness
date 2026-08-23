@@ -14,6 +14,7 @@ import type { SettingsApi } from './settings.ts'
 import type { CredentialsApi } from './credentials.ts'
 import type { LlmApi } from './llm.ts'
 import type { SubagentsApi } from './subagents.ts'
+import type { JobsApi } from './jobs.ts'
 import type { RpcResponse } from './rpc.ts'
 
 /**
@@ -32,6 +33,7 @@ export interface RpcMethodMap {
   'session.fork': SessionsApi['fork']
   'session.prompt': SessionsApi['prompt']
   'session.attachment': SessionsApi['attachment']
+  'session.uploadAttachment': SessionsApi['uploadAttachment']
   'session.updateQueue': SessionsApi['updateQueue']
   'session.cancel': SessionsApi['cancel']
   'subagent.list': SubagentsApi['list']
@@ -54,6 +56,10 @@ export interface RpcMethodMap {
   'workspace.insertBefore': WorkspaceApi['insertBefore']
   'workspace.insertSessionBefore': WorkspaceApi['insertSessionBefore']
   'workspace.archiveSession': WorkspaceApi['archiveSession']
+  'workspace.unarchiveSession': WorkspaceApi['unarchiveSession']
+  'workspace.deleteSession': WorkspaceApi['deleteSession']
+  'workspace.deleteArchivedSessions': WorkspaceApi['deleteArchivedSessions']
+  'workspace.setSessionPinned': WorkspaceApi['setSessionPinned']
   'skill.list': SkillsApi['list']
   'agentPreset.list': AgentPresetsApi['list']
   'agentPreset.select': AgentPresetsApi['select']
@@ -78,6 +84,8 @@ export interface RpcMethodMap {
   'llm.providers': LlmApi['providers']
   'llm.models': LlmApi['models']
   'llm.discoverModels': LlmApi['discoverModels']
+  'job.kill': JobsApi['kill']
+  'job.output': JobsApi['output']
 }
 
 /** Business request payload of method K (reaches through the RpcRequest narrow form to payload). */

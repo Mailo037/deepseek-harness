@@ -31,7 +31,7 @@ const sessions: SessionListState = {
   ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
 }
 const workspaceState = (items: readonly WorkspaceView[]): WorkspaceListState => ({
-  items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null, baselinesReady: true,
+  items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null, baselinesReady: true,
   recentWorkspaceId: items[0]?.workspaceId,
 })
 function anchor(): { current: HTMLElement } {
@@ -77,18 +77,41 @@ function occupancySource(initial = true) {
   }
 }
 
+/** External request source bound through the normal renderer hook path. */
+function pickerRequestSource(initial = 0) {
+  let revision = initial
+  const listeners = new Set<() => void>()
+  const useWorkspacePickerRequest = bindSnapshotSelector({
+    getSnapshot: () => revision,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  })
+  return {
+    useWorkspacePickerRequest,
+    request: () => {
+      revision += 1
+      for (const listener of [...listeners]) listener()
+    },
+  }
+}
+
 function mount(
   items: readonly WorkspaceView[] = [workspace('alpha', 'Alpha')],
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
+  pickerRequests = pickerRequestSource(),
+  open = true,
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
+  const settleWorkspacePickerRequest = vi.fn()
   const anchorRef = anchor()
   const { probe, renderSlot } = flowProbe()
   const renderPicker = (nextItems: readonly WorkspaceView[]) => (
     <WorkspacePicker
-      open
+      open={open}
       anchorRef={anchorRef}
       useSessions={hook(sessions)}
       useWorkspaces={hook(workspaceState(nextItems))}
@@ -96,6 +119,8 @@ function mount(
       onClose={onClose}
       createWorkspace={createWorkspace}
       useDirectoryFlow={occupancy.useDirectoryFlow}
+      useWorkspacePickerRequest={pickerRequests.useWorkspacePickerRequest}
+      settleWorkspacePickerRequest={settleWorkspacePickerRequest}
       renderSlot={renderSlot}
       t={t}
     />
@@ -104,7 +129,7 @@ function mount(
     renderPicker(items),
   )
   return {
-    view, onPick, onClose, createWorkspace, probe, occupancy,
+    view, onPick, onClose, createWorkspace, probe, occupancy, pickerRequests, settleWorkspacePickerRequest,
     rerenderItems: (nextItems: readonly WorkspaceView[]) => { view.rerender(renderPicker(nextItems)) },
   }
 }
@@ -122,6 +147,70 @@ describe('WorkspacePicker', () => {
     expect(b.onPick).toHaveBeenCalledWith(wid('beta'))
   })
 
+  it('opens the composed directory flow directly when another feature requests it', () => {
+    const b = mount([], vi.fn(), occupancySource(true), pickerRequestSource(), false)
+    expect(screen.queryByRole('menu')).toBeNull()
+    act(() => { b.pickerRequests.request() })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    act(() => { b.probe.owner!.onCancel() })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    expect(b.settleWorkspacePickerRequest).toHaveBeenCalledWith(false)
+  })
+
+  it('keeps the ordinary menu when the ready list has no Workspace', () => {
+    const b = mount([])
+    expect(screen.getByRole('menu')).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '无工作区 (独立会话)' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '添加工作区…' })).toBeTruthy()
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    chooseAdd()
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    expect(b.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('consumes a picker request published before its slot mounts', () => {
+    const b = mount([], vi.fn(), occupancySource(true), pickerRequestSource(1), false)
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    act(() => { b.probe.owner!.onCancel() })
+    expect(b.settleWorkspacePickerRequest).toHaveBeenCalledWith(false)
+  })
+
+  it('settles a pending external request when its directory-flow owner unloads', async () => {
+    const b = mount([], vi.fn(), occupancySource(true), pickerRequestSource(), false)
+    act(() => { b.pickerRequests.request() })
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    act(() => { b.occupancy.flip(false) })
+    await waitFor(() => { expect(b.settleWorkspacePickerRequest).toHaveBeenCalledWith(false) })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    expect(b.onPick).not.toHaveBeenCalled()
+  })
+
+  it('keeps an external directory-flow error visible until cancellation settles it', () => {
+    const b = mount([], vi.fn(), occupancySource(true), pickerRequestSource(), false)
+    act(() => { b.pickerRequests.request() })
+    act(() => { b.probe.owner!.onError('folder access denied') })
+    expect(screen.getByRole('alert').textContent).toBe('folder access denied')
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重新选择' }))
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    act(() => { b.probe.owner!.onError('folder access denied') })
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(b.settleWorkspacePickerRequest).toHaveBeenCalledWith(false)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('adopts a directory from an external request and settles that request as completed', async () => {
+    const created = workspace('adopted')
+    const b = mount([], vi.fn(async () => created), occupancySource(true), pickerRequestSource(), false)
+    act(() => { b.pickerRequests.request() })
+    await act(async () => { b.probe.owner!.onPicked('/tmp/project') })
+    await waitFor(() => { expect(b.onPick).toHaveBeenCalledWith(created.workspaceId) })
+    expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/tmp/project' })
+    expect(b.settleWorkspacePickerRequest).toHaveBeenCalledWith(true)
+  })
+
   it('opens the composed directory flow, adopts its picked path, and selects the returned Workspace', async () => {
     const created = { ...workspace('adopted'), path: '/tmp/project', title: 'project' }
     const createWorkspace = vi.fn(async () => created)
@@ -133,6 +222,7 @@ describe('WorkspacePicker', () => {
     await act(async () => { b.probe.owner!.onPicked('/tmp/project') })
     expect(createWorkspace).toHaveBeenCalledWith({ path: '/tmp/project' })
     await waitFor(() => { expect(b.onPick).toHaveBeenCalledWith(created.workspaceId) })
+    expect(b.settleWorkspacePickerRequest).toHaveBeenCalledOnce()
     // Successful adoption withdraws the flow request.
     expect(screen.queryByTestId('directory-flow')).toBeNull()
   })
@@ -150,6 +240,7 @@ describe('WorkspacePicker', () => {
     expect(screen.queryByTestId('directory-flow')).toBeNull()
     expect(b.createWorkspace).not.toHaveBeenCalled()
     expect(b.onPick).not.toHaveBeenCalled()
+    expect(b.settleWorkspacePickerRequest).toHaveBeenCalledOnce()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -208,7 +299,10 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
+        useDirectoryFlow={occupancySource().useDirectoryFlow}
+        useWorkspacePickerRequest={pickerRequestSource().useWorkspacePickerRequest}
+        settleWorkspacePickerRequest={vi.fn()}
+        renderSlot={renderSlot} t={t}
       />,
     )
     expect(screen.queryByRole('menu')).toBeNull()
@@ -223,7 +317,10 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
+        useDirectoryFlow={occupancySource().useDirectoryFlow}
+        useWorkspacePickerRequest={pickerRequestSource().useWorkspacePickerRequest}
+        settleWorkspacePickerRequest={vi.fn()}
+        renderSlot={renderSlot} t={t}
       />,
     )
     // An empty list is not final yet: jumping into the directory flow here
@@ -254,7 +351,8 @@ describe('WorkspacePicker', () => {
     act(() => { b.probe.owner!.onPicked('/tmp/project') })
     expect(b.probe.owner!.busy).toBe(true)
     // The list empties under the still-settling adoption (the workspace was
-    // deleted elsewhere), which would otherwise make add the only entry.
+    // deleted elsewhere); the ordinary picker still retains its standalone
+    // choice and must not raise a second flow.
     act(() => { b.rerenderItems([]) })
     expect(b.createWorkspace).toHaveBeenCalledTimes(1)
     await act(async () => { resolve(created); await pending })

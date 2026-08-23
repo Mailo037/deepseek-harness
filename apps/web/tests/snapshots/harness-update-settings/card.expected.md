@@ -1,0 +1,11 @@
+- region "AI-assisted updates":
+  - text: AI-assisted updates
+  - paragraph: Integrate updates from either source in a dedicated AI session while preserving local user changes. The AI does not edit tracked files before you approve its plan.
+  - paragraph: "Optional: loading the model list uses no AI credits. A model request starts only after you choose Start AI update."
+  - text: Update source
+  - combobox "Update source": Unofficial Harness
+  - link "Mailo037/deepseek-harness":
+    - /url: https://github.com/Mailo037/deepseek-harness.git
+  - text: Target workspace
+  - code: {{cwd}}
+  - button "Load AI models"

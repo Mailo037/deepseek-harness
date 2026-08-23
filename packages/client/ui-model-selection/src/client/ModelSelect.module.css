@@ -67,6 +67,10 @@
 
 .menu {
   position: absolute;
+  /* CSS default: right-aligned with the trigger, opening upward. The open
+     menu is re-placed from the trigger rect with viewport clamping (inline
+     left/top, ModelSelect.tsx placeMenu), so a trigger near any screen edge
+     never lets the card run off the viewport. */
   right: 0;
   bottom: calc(100% + 8px);
   z-index: 20;
@@ -87,6 +91,18 @@
   color: var(--dsw-alias-label-primary);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* Phone: the card spans the viewport between fixed insets (left/right come
+ * from the inline placement, ModelSelect.tsx) and always opens upward over
+ * the composer — never flipped downward past it, which would extend the
+ * page and invite a scroll. */
+@media (max-width: 639px) {
+  .menu {
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 96px);
+  }
 }
 
 .searchBox {

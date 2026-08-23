@@ -73,7 +73,7 @@ describe('reference submission', () => {
     const serializeReference = vi.fn(() => Promise.resolve(mention))
     const sink = vi.fn<(
       _text: string,
-      _imageIds: readonly DraftAttachmentId[],
+      _attachmentIds: readonly DraftAttachmentId[],
       _mode: 'queue' | 'steer',
       _signal: AbortSignal,
     ) => Promise<SubmitOutcome>>()
@@ -149,7 +149,7 @@ describe('reference submission', () => {
     let signal: AbortSignal | undefined
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
-      defaultSink: (_text, _imageIds, _mode, received) => {
+      defaultSink: (_text, _attachmentIds, _mode, received) => {
         signal = received
         return new Promise<SubmitOutcome>(() => {})
       },
@@ -189,16 +189,16 @@ describe('submit transaction hardening', () => {
       defaultSink: sink,
       commandImages,
     })
-    expect(shell.addImages(['img-1' as DraftAttachmentId])).toBe(true)
+    expect(shell.addAttachments(['img-1' as DraftAttachmentId])).toBe(true)
     shell.submit('queue')
     shell.submit('queue')
     expect(sink).toHaveBeenCalledTimes(1)
     settle({ kind: 'success' })
     await vi.waitFor(() => {
-      expect(shell.snapshot.imageIds).toEqual([])
+      expect(shell.snapshot.attachmentIds).toEqual([])
     })
 
-    expect(shell.addImages(['img-2' as DraftAttachmentId])).toBe(true)
+    expect(shell.addAttachments(['img-2' as DraftAttachmentId])).toBe(true)
     shell.submit('queue')
     expect(sink).toHaveBeenCalledTimes(2)
   })
@@ -211,11 +211,11 @@ describe('submit transaction hardening', () => {
       commandImages,
     })
     const imageId = 'img-1' as DraftAttachmentId
-    shell.addImages([imageId])
+    shell.addAttachments([imageId])
     shell.submit()
     await Promise.resolve()
     await Promise.resolve()
-    expect(shell.snapshot.imageIds).toEqual([imageId])
+    expect(shell.snapshot.attachmentIds).toEqual([imageId])
     expect(shell.notices.getSnapshot()).toBeNull()
   })
 

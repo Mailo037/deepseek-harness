@@ -3,12 +3,12 @@
 // assistant answers), pending steering (copy only), context injection,
 // compaction marker, retry disclosure, and unknown-surface JSON rows.
 
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { JsonBlock, MessageText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { JsonBlock, MessageText, StateDot, FileTypeIcon, fileTypeIconKind } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -39,6 +39,57 @@ function contentParts(content: readonly unknown[]): {
 
 function retrySeconds(milliseconds: number): number {
   return Math.max(1, Math.ceil(milliseconds / 1_000))
+}
+
+/** Body height above which a user bubble clamps behind a show-more disclosure. */
+const USER_BUBBLE_COLLAPSE_HEIGHT = 264
+/** Clamped body height: whole 24px lines under the fade gradient. */
+const USER_BUBBLE_CLAMPED_HEIGHT = 240
+
+/**
+ * Show-more disclosure for an over-tall user bubble: the body clamps at a
+ * fixed max-height with a fade into the bubble fill, and one toggle expands
+ * it in place. Measurement is layout-synchronized, so an over-tall message
+ * never paints unclamped for a frame; `measureKey` re-runs it when the
+ * content changes (streaming pending steering grows).
+ */
+function ClampableBubbleBody({ measureKey, children, t }: {
+  /** Re-measurement key: the rendered content's source array. */
+  measureKey: readonly unknown[]
+  children: ReactNode
+  t: ChatViewSlotProps['t']
+}) {
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [clamped, setClamped] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    /* v8 ignore next -- the ref is always attached by effect time: the div renders unconditionally. */
+    if (el === null) return
+    setClamped(el.scrollHeight > USER_BUBBLE_COLLAPSE_HEIGHT)
+  }, [measureKey])
+  return (
+    <>
+      <div
+        ref={bodyRef}
+        className={css.bubbleBody}
+        data-clamped={clamped && !expanded || undefined}
+        style={clamped && !expanded ? { maxHeight: USER_BUBBLE_CLAMPED_HEIGHT } : undefined}
+      >
+        {children}
+      </div>
+      {clamped && (
+        <button
+          type="button"
+          className={css.bubbleToggle}
+          aria-expanded={expanded}
+          onClick={() => { setExpanded(e => !e) }}
+        >
+          {expanded ? t('message.showLess') : t('message.showMore')}
+        </button>
+      )}
+    </>
+  )
 }
 
 interface RetryCountdown {
@@ -200,7 +251,9 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
         title={label}
       >
         {referenceKind !== undefined && (
-          <ReferenceIcon kind={referenceKind} size={16} className={css.refIcon} />
+          referenceKind === 'file'
+            ? <FileTypeIcon kind={fileTypeIconKind(label)} size={16} className={css.refIcon} />
+            : <ReferenceIcon kind={referenceKind} size={16} className={css.refIcon} />
         )}
         {displayLabel}
       </span>,
@@ -234,8 +287,10 @@ function UserStyleBubble({
       <div className={css.userStack}>
         {renderMessageImages({ images, align: 'end' })}
         {showBubble && <div className={css.bubble}>
-          {projectUserText(text, referenceLabels)}
-          {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
+          <ClampableBubbleBody measureKey={content} t={t}>
+            {projectUserText(text, referenceLabels)}
+            {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
+          </ClampableBubbleBody>
         </div>}
         {referenceLabels.length > 0 && (
           <div className={css.referenceSummary}>

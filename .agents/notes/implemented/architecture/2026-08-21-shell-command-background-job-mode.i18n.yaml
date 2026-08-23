@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-shell-command-background-job-mode.md
-2026-08-21-shell-command-background-job-mode.md: pending
-2026-08-21-shell-command-background-job-mode.zh.md: pending
+2026-08-21-shell-command-background-job-mode.md: 58ff536a8f6a544d0e8386fd12b3825bb47bb305
+2026-08-21-shell-command-background-job-mode.zh.md: 3dd499dea99e552fdaeb24a7c17b7c078b57bcc4

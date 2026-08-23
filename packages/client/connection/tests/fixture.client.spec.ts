@@ -426,7 +426,7 @@ describe('createFixtureApi', () => {
         for await (const envelope of api.events.host(req({}), abort.signal)) hostSeen.push(envelope.payload)
       })()
       await vi.advanceTimersByTimeAsync(5001) // interval fires: fx-gamma flips running=true (no log exists)
-      expect(hostSeen).toContainEqual({ type: 'host/session-status', sessionId: sid('fx-gamma'), running: true })
+      expect(hostSeen).toContainEqual({ type: 'host/session-status', sessionId: sid('fx-gamma'), running: true, attention: null })
       // A mux stream opened now sees gamma in the baseline with lastSeq = -1 (empty log arm).
       const mabort = new AbortController()
       const baseline: MuxFrame[] = []

@@ -45,10 +45,38 @@ export function WorkspaceId(id: string): WorkspaceId {
 export class WorkspaceUnknownSessionError extends Error {
   /**
    * @param sessionId - The unknown session id.
+   * @param operation - Registry operation that required the session.
    */
-  constructor(readonly sessionId: SessionId) {
-    super(`cannot archive session '${sessionId}': live sessions and session persistence hold no such session`)
+  constructor(readonly sessionId: SessionId, operation: 'archive' | 'pin' = 'archive') {
+    super(`cannot ${operation} session '${sessionId}': live sessions and session persistence hold no such session`)
     this.name = 'WorkspaceUnknownSessionError'
+  }
+}
+
+/** A pin request targeted a session already hidden by the archive set. */
+export class WorkspaceArchivedSessionError extends Error {
+  /** @param sessionId - The archived session id. */
+  constructor(readonly sessionId: SessionId) {
+    super(`cannot pin archived session '${sessionId}'`)
+    this.name = 'WorkspaceArchivedSessionError'
+  }
+}
+
+/** A session deletion targeted a session that is not in the archive set. */
+export class WorkspaceSessionNotArchivedError extends Error {
+  /** @param sessionId - The non-archived session id. */
+  constructor(readonly sessionId: SessionId) {
+    super(`cannot delete session '${sessionId}': only archived sessions are deletable`)
+    this.name = 'WorkspaceSessionNotArchivedError'
+  }
+}
+
+/** A session deletion targeted a session currently live in this process. */
+export class WorkspaceSessionLiveError extends Error {
+  /** @param sessionId - The live session id. */
+  constructor(readonly sessionId: SessionId) {
+    super(`cannot delete session '${sessionId}': the session is open in this host`)
+    this.name = 'WorkspaceSessionLiveError'
   }
 }
 
@@ -67,6 +95,17 @@ export class WorkspaceOrderInvalidError extends Error {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     workspaceRegistry: WorkspaceRegistry
+  }
+
+  interface Events {
+    /**
+     * Emitted after one archived session's durable log was deleted and the
+     * registry state committed. Unfiltered: every surface showing the session
+     * must drop it.
+     * @param sessionId - the deleted session's id.
+     * @mode emit
+     */
+    'workspace/session-deleted'(sessionId: SessionId): void
   }
 }
 
@@ -235,6 +274,15 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Registry-global sidebar pins in user pin order. A pinned session keeps
+   * its Workspace account and is projected only in the Pinned category.
+   * @returns pinned session ids in pin order.
+   */
+  get pinnedSessionIds(): readonly SessionId[] {
+    return this.requireState().pinnedSessionIds
+  }
+
+  /**
    * Archive one session durably. The session must exist (live or in session
    * persistence); its workspace accounting — or lack of one — is irrelevant.
    * An already archived id resolves without writing.
@@ -250,7 +298,103 @@ export class WorkspaceRegistry extends Service {
         throw new WorkspaceUnknownSessionError(sessionId)
       }
       const state = this.requireState()
-      await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+      await this.setState({
+        ...state,
+        archivedSessionIds: [...state.archivedSessionIds, sessionId],
+        pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * Remove one session from the durable archive set. Workspace accounting is
+   * unchanged, so an accounted session returns to its prior position. A
+   * repeated restore resolves without writing.
+   * @param sessionId - The archived session to restore.
+   * @returns resolution after durability.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * Permanently delete one archived session: remove its durable log through
+   * session persistence, detach its workspace account slot, and drop it from
+   * the archive set. Only archived sessions are deletable — a non-archived id
+   * rejects with {@link WorkspaceSessionNotArchivedError} and a session open
+   * in this process with {@link WorkspaceSessionLiveError}. The log removal
+   * runs first: a failure leaves every registry fact untouched and retryable,
+   * while a state failure after log removal is healed by the next attempt
+   * (the absent log deletes as `false`, the state write then commits).
+   * Emits `workspace/session-deleted` only after durability.
+   * @param sessionId - The archived session to delete.
+   * @returns resolution after durability.
+   */
+  deleteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) {
+        throw new WorkspaceSessionNotArchivedError(sessionId)
+      }
+      if (this.ctx.get('sessions')?.get(sessionId) !== undefined) {
+        throw new WorkspaceSessionLiveError(sessionId)
+      }
+      // Absent-log tolerance heals an interrupted earlier attempt (see above).
+      await this.ctx.sessionPersistence.delete(sessionId)
+      const detach = this.findBySessionId(sessionId)?.detachSession(sessionId)
+      if (detach !== undefined) {
+        await detach.catch(() => {
+          // A stale candidate index entry (header gone) must not fail the
+          // deletion; the filtered-candidate prune removes it on the next
+          // workspace mutation anyway.
+        })
+      }
+      this.headers.delete(sessionId)
+      this.sessionPaths.delete(sessionId)
+      this.invalidSessionPaths.delete(sessionId)
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
+      })
+      this.ctx.emit('workspace/session-deleted', sessionId)
+    })
+  }
+
+  /**
+   * Set one session's durable sidebar pin membership. Pinning requires a live
+   * or persisted, non-archived session; repeated requests resolve without a
+   * write. Unpinning is idempotent and retains workspace accounting.
+   * @param sessionId - session whose pin membership changes.
+   * @param pinned - true to append to the pin list, false to remove.
+   * @returns resolution after durability.
+   */
+  setSessionPinned(sessionId: SessionId, pinned: boolean): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      const present = state.pinnedSessionIds.includes(sessionId)
+      if (present === pinned) return
+      if (pinned) {
+        if (state.archivedSessionIds.includes(sessionId)) {
+          throw new WorkspaceArchivedSessionError(sessionId)
+        }
+        if (!(await this.sessionKnown(sessionId))) {
+          throw new WorkspaceUnknownSessionError(sessionId, 'pin')
+        }
+      }
+      await this.setState({
+        ...state,
+        pinnedSessionIds: pinned
+          ? [...state.pinnedSessionIds, sessionId]
+          : state.pinnedSessionIds.filter(id => id !== sessionId),
+      })
     })
   }
 
@@ -365,6 +509,7 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
+        pinnedSessionIds: state.pinnedSessionIds,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -397,6 +542,7 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
+      pinnedSessionIds: state.pinnedSessionIds,
     }
     await this.setState({
       ...nextState,
@@ -454,6 +600,7 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
+      pinnedSessionIds: state.pinnedSessionIds,
     })
   }
 
@@ -536,9 +683,19 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({
+        initialized: false,
+        workspaceIds,
+        archivedSessionIds: state.archivedSessionIds,
+        pinnedSessionIds: state.pinnedSessionIds,
+      })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true,
+      workspaceIds,
+      archivedSessionIds: state.archivedSessionIds,
+      pinnedSessionIds: state.pinnedSessionIds,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
@@ -558,6 +715,24 @@ export class WorkspaceRegistry extends Service {
       throw new Error(
         `workspace domain is inconsistent: workspace '${orphan as WorkspaceId}' is absent from registry order`,
       )
+    }
+
+    const archived = new Set<SessionId>()
+    for (const sessionId of state.archivedSessionIds) {
+      if (archived.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: archive list repeats session '${sessionId}'`)
+      }
+      archived.add(sessionId)
+    }
+    const pinned = new Set<SessionId>()
+    for (const sessionId of state.pinnedSessionIds) {
+      if (pinned.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: pin list repeats session '${sessionId}'`)
+      }
+      if (archived.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: session '${sessionId}' is both pinned and archived`)
+      }
+      pinned.add(sessionId)
     }
 
     const paths = new Map<string, WorkspaceId>()

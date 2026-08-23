@@ -149,16 +149,25 @@ describe('web e2e: settings modal and General preferences', () => {
       expect(panelBox).not.toBeNull()
       expect(panelBox!.width).toBe(390)
       expect(panelBox!.height).toBe(844)
-      // The nav rail stacks above the content as a full-width row: the content
-      // column sits below the nav and spans the sheet, not a crushed sliver.
-      const navBox = await dialog.locator('[class*="nav"]').first().boundingBox()
-      const contentBox = await dialog.locator('[class*="content"]').first().boundingBox()
+      // The panel is one column: header row (title left, actions + close
+      // right), the horizontally scrolling section tab row, then the options
+      // area — which spans the sheet below both and owns all vertical
+      // scrolling.
+      const parts = dialog.locator(':scope > *')
+      expect(await parts.count()).toBe(3)
+      const headerBox = await parts.nth(0).boundingBox()
+      const navBox = await parts.nth(1).boundingBox()
+      const optionsBox = await parts.nth(2).boundingBox()
+      expect(headerBox).not.toBeNull()
       expect(navBox).not.toBeNull()
-      expect(contentBox).not.toBeNull()
-      expect(navBox!.width).toBeGreaterThan(350)
-      expect(navBox!.height).toBeLessThan(150)
-      expect(contentBox!.y).toBeGreaterThanOrEqual(navBox!.y + navBox!.height - 1)
-      expect(contentBox!.width).toBeGreaterThan(350)
+      expect(optionsBox).not.toBeNull()
+      for (const part of [headerBox!, navBox!, optionsBox!]) {
+        expect(part.width).toBeGreaterThan(350)
+        expect(part.height).toBeGreaterThan(0)
+      }
+      expect(headerBox!.height).toBeLessThan(100)
+      expect(headerBox!.y).toBeLessThanOrEqual(navBox!.y)
+      expect(optionsBox!.y).toBeGreaterThanOrEqual(navBox!.y + navBox!.height - 1)
       await page.keyboard.press('Escape')
       await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
       // Close the drawer again so the restored wide viewport is back to its

@@ -60,6 +60,8 @@ export interface SessionSummary {
   pendingInteraction?: PendingInteractionStatus
   /** Finished while not selected and not yet opened — the sidebar's green "done" reminder. Absent = false. */
   completed?: boolean
+  /** Latest turn ended in a terminal failure (the sidebar's red "needs attention" dot). Absent = false. */
+  attention?: 'retry-exhausted' | 'error'
   /**
    * Empty-log bit (host summary derivation mirror). New Session reuses a blank
    * one targeting the same workspace. Filtering stays with the consumer: the
@@ -670,6 +672,7 @@ export class SessionRuntime implements ISessions {
         displayTitle: displayTitleOf(entry.title, entry.cwd, entry.sessionId),
         running: entry.running,
         ...(entry.completed ? { completed: true } : {}),
+        ...(entry.attention === undefined ? {} : { attention: entry.attention }),
         blank: entry.blank,
         updatedAt: entry.updatedAt,
         ...(entry.pendingInteraction === undefined

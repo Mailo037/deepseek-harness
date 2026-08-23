@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** First-run DeepSeek prompt behavior over the shared Models join. */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
@@ -68,6 +68,8 @@ function harness(options: {
   providersReject?: boolean
   setFailure?: string
   setReject?: string
+  workspace?: boolean
+  workspacePicker?: boolean
 } = {}) {
   if (document.getElementById('root') === null) {
     const appRoot = document.createElement('div')
@@ -129,22 +131,28 @@ function harness(options: {
   const controller = new ModelsSettingsStore(face as never, settingsSchema, new SettingsDescribeMirror(face as never))
   const openSection = vi.fn()
   const complete = vi.fn()
+  const requestWorkspace = vi.fn((_onSettled: (completed: boolean) => void) => options.workspacePicker ?? true)
+  let workspace = options.workspace === true
   const unusedHook = (() => { throw new Error('unused standard hook') }) as never
   const props: DeepSeekOnboardingDialogProps = {
     stepId: 'deepseek-official',
     complete,
     openSection,
     useSessions: unusedHook,
-    useWorkspaces: unusedHook,
+    useWorkspaces: selector => selector({
+      items: workspace ? [{}] : [],
+    } as never),
     controller,
     useModels: bindSnapshotSelector(controller.store),
     api: face as never,
     schema: settingsSchema,
+    requestWorkspace,
     t: key => en[key],
   }
   return {
-    controller, complete, openSection, props, mutate, set,
+    controller, complete, openSection, requestWorkspace, props, mutate, set,
     configure: () => { fileConfigured = true },
+    setWorkspace: (next: boolean) => { workspace = next },
   }
 }
 
@@ -225,46 +233,130 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(h.mutate).not.toHaveBeenCalled()
   })
 
-  it('does not block the product when DeepSeek setup is unavailable', async () => {
+  it('keeps unavailable model setup actionable instead of silently completing onboarding', async () => {
     for (const h of [
       harness({ describeFailure: 'credentials service is absent' }),
       harness({ credential: { writable: false } }),
       harness({ settingsWritable: false }),
       harness({ providersReject: true }),
       harness({ providerActive: false }),
-      harness({ settingsNamespace: false }),
+    ]) {
+      const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+      await act(async () => { await h.controller.load() })
+      const dialog = await screen.findByRole('dialog', { name: en.onboardingRecoveryTitle })
+      fireEvent.click(within(dialog).getByRole('button', { name: en.onboardingOpenModels }))
+      expect(h.complete).toHaveBeenCalledOnce()
+      expect(h.openSection).toHaveBeenCalledWith('models')
+      view.unmount()
+    }
+  })
+
+  it('sends an absent adapter to Models and gives a usable provider the workspace step', async () => {
+    const absent = harness({ provider: false })
+    const absentView = render(<DeepSeekOnboardingDialog {...absent.props} />)
+    await act(async () => { await absent.controller.load() })
+    fireEvent.click(within(await screen.findByRole('dialog', { name: en.onboardingRecoveryTitle }))
+      .getByRole('button', { name: en.onboardingOpenModels }))
+    expect(absent.openSection).toHaveBeenCalledWith('models')
+    expect(absent.complete).toHaveBeenCalledOnce()
+    absentView.unmount()
+
+    for (const h of [
+      harness({ configured: () => true, credential: { source: 'env', writable: false } }),
       harness({ apiKeyEnv: null }),
     ]) {
       const view = render(<DeepSeekOnboardingDialog {...h.props} />)
       await act(async () => { await h.controller.load() })
-      expect(screen.queryByRole('dialog')).toBeNull()
-      await waitFor(() => { expect(h.complete).toHaveBeenCalledOnce() })
-      expect(h.openSection).not.toHaveBeenCalled()
+      const dialog = await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
+      const chooseWorkspace = within(dialog).getByRole<HTMLButtonElement>('button', { name: en.onboardingChooseWorkspace })
+      const skipForNow = within(dialog).getByRole<HTMLButtonElement>('button', { name: en.onboardingSkipForNow })
+      fireEvent.click(chooseWorkspace)
+      expect(h.requestWorkspace).toHaveBeenCalledOnce()
+      expect(h.complete).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: en.onboardingWorkspaceTitle })).toBe(dialog)
+      expect(chooseWorkspace.disabled).toBe(true)
+      expect(skipForNow.disabled).toBe(true)
+      const [onSettled] = h.requestWorkspace.mock.calls[0]!
+      act(() => { onSettled(false) })
+      expect(screen.getByRole('dialog', { name: en.onboardingWorkspaceTitle })).toBe(dialog)
+      expect(chooseWorkspace.disabled).toBe(false)
+      expect(skipForNow.disabled).toBe(false)
       view.unmount()
     }
   })
 
-  it('skips an absent adapter and an already-configured environment credential', async () => {
-    for (const h of [
-      harness({ provider: false }),
-      harness({ providerSettingsNs: '' }),
-      harness({ configured: () => true, credential: { source: 'env', writable: false } }),
-    ]) {
-      const view = render(<DeepSeekOnboardingDialog {...h.props} />)
-      await act(async () => { await h.controller.load() })
-      expect(screen.queryByRole('dialog')).toBeNull()
-      await waitFor(() => { expect(h.complete).toHaveBeenCalledOnce() })
-      view.unmount()
-    }
+  it('shows the first-task handoff only after a provider and workspace are ready', async () => {
+    const h = harness({
+      configured: () => true,
+      credential: { source: 'env', writable: false },
+    })
+    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+    await act(async () => { await h.controller.load() })
+    const workspaceDialog = await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
+    fireEvent.click(within(workspaceDialog).getByRole('button', { name: en.onboardingChooseWorkspace }))
+    const [onSettled] = h.requestWorkspace.mock.calls[0]!
+    h.setWorkspace(true)
+    act(() => { onSettled(true) })
+    view.rerender(<DeepSeekOnboardingDialog {...h.props} />)
+    const dialog = await screen.findByRole('dialog', { name: en.onboardingTaskTitle })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.onboardingStartTask }))
+    expect(h.complete).toHaveBeenCalledOnce()
   })
 
-  it('closes when an external credential invalidation refreshes the shared join', async () => {
+  it('defers workspace guidance without requesting, creating, or configuring anything', async () => {
+    const h = harness({
+      configured: () => true,
+      credential: { source: 'env', writable: false },
+    })
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await act(async () => { await h.controller.load() })
+    const dialog = await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.onboardingSkipForNow }))
+    expect(h.complete).toHaveBeenCalledOnce()
+    expect(h.requestWorkspace).not.toHaveBeenCalled()
+    expect(h.set).not.toHaveBeenCalled()
+  })
+
+  it('defers the first-task handoff without creating a session or changing configuration', async () => {
+    const h = harness({
+      configured: () => true,
+      credential: { source: 'env', writable: false },
+    })
+    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
+    await act(async () => { await h.controller.load() })
+    const workspaceDialog = await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
+    fireEvent.click(within(workspaceDialog).getByRole('button', { name: en.onboardingChooseWorkspace }))
+    const [onSettled] = h.requestWorkspace.mock.calls[0]!
+    h.setWorkspace(true)
+    act(() => { onSettled(true) })
+    view.rerender(<DeepSeekOnboardingDialog {...h.props} />)
+    const taskDialog = await screen.findByRole('dialog', { name: en.onboardingTaskTitle })
+    fireEvent.click(within(taskDialog).getByRole('button', { name: en.onboardingSkipForNow }))
+    expect(h.complete).toHaveBeenCalledOnce()
+    expect(h.set).not.toHaveBeenCalled()
+  })
+
+  it('keeps the workspace step open when the existing chooser is unavailable', async () => {
+    const h = harness({
+      workspacePicker: false,
+      configured: () => true,
+      credential: { source: 'env', writable: false },
+    })
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await act(async () => { await h.controller.load() })
+    const dialog = await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.onboardingChooseWorkspace }))
+    expect((await screen.findByRole('alert')).textContent).toBe(en.onboardingWorkspaceUnavailable)
+    expect(h.complete).not.toHaveBeenCalled()
+  })
+
+  it('continues to workspace guidance when an external credential invalidation makes a provider usable', async () => {
     const h = harness()
     render(<DeepSeekOnboardingDialog {...h.props} />)
     await screen.findByRole('dialog')
     h.configure()
     await act(async () => { await h.controller.load() })
-    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    expect(h.complete).toHaveBeenCalledOnce()
+    await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
+    expect(h.complete).not.toHaveBeenCalled()
   })
 })

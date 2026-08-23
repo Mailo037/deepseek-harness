@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionBanner, ConnectionLostOverlay, Input, Menu, Modal, MultiSelect, Pill, Select } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
@@ -239,6 +239,27 @@ describe('Menu', () => {
     expect(onSelect).toHaveBeenCalledWith('del')
   })
 
+  it('renders a warn row with the warn tone and keeps selection distinct', () => {
+    const onSelect = vi.fn()
+    render(
+      <Menu
+        open
+        anchor={<span>trigger</span>}
+        items={[
+          { id: 'safe', label: 'Safe' },
+          { id: 'full', label: 'Full access', warn: true },
+        ]}
+        selectedId="full"
+        onSelect={onSelect}
+        onClose={() => {}}
+      />)
+    expect(screen.getByRole('menuitem', { name: 'Safe' }).className).not.toMatch(/warn/)
+    const warn = screen.getByRole('menuitem', { name: 'Full access' })
+    expect(warn.className).toMatch(/warn/)
+    fireEvent.click(warn)
+    expect(onSelect).toHaveBeenCalledWith('full')
+  })
+
   it('closeOnPointerLeave closes a grace after the pointer leaves trigger and list; default never does', () => {
     vi.useFakeTimers()
     try {
@@ -441,6 +462,31 @@ describe('Menu', () => {
     expect(onSelect).toHaveBeenCalledWith('new')
   })
 
+  it('renders header in a pinned section above the items when provided, and drops when null', () => {
+    const { rerender } = render(
+      <Menu
+        open
+        anchor={<span>trigger</span>}
+        items={items}
+        header={<span data-testid="head-content">Header</span>}
+        onSelect={() => {}}
+        onClose={() => {}}
+      />)
+    const headContent = screen.getByTestId('head-content')
+    expect(headContent.closest('div[class*="menuHead"]')).not.toBeNull()
+
+    rerender(
+      <Menu
+        open
+        anchor={<span>trigger</span>}
+        items={items}
+        header={null}
+        onSelect={() => {}}
+        onClose={() => {}}
+      />)
+    expect(document.querySelector('div[class*="menuHead"]')).toBeNull()
+  })
+
   it('caps the list height for internal scrolling unless a submenu row is present', () => {
     const { rerender } = render(
       <Menu open anchor={<span>trigger</span>} items={items} onSelect={() => {}} onClose={() => {}} />)
@@ -496,23 +542,38 @@ describe('ConnectionBanner', () => {
 })
 
 describe('ConnectionLostOverlay', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
   it('renders nothing when not reconnecting', () => {
     const { container } = render(<ConnectionLostOverlay reconnecting={false} />)
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders full-screen overlay with wordmark, spinner, and label when reconnecting', () => {
+  it('suppresses the overlay when the connection recovers inside the grace period', () => {
     const { container, rerender } = render(<ConnectionLostOverlay reconnecting={false} />)
-    expect(container.querySelector('[data-connection-lost]')).toBeNull()
 
     rerender(<ConnectionLostOverlay reconnecting />)
+    act(() => { vi.advanceTimersByTime(999) })
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+
+    rerender(<ConnectionLostOverlay reconnecting={false} />)
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+  })
+
+  it('renders the full-screen overlay after the grace period and hides it immediately on recovery', () => {
+    const { container, rerender } = render(<ConnectionLostOverlay reconnecting label="Custom reconnect message" />)
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+
+    act(() => { vi.advanceTimersByTime(1_000) })
     const overlay = container.querySelector('[data-connection-lost]')
     expect(overlay).not.toBeNull()
     expect(overlay?.textContent).toContain('HARNESS')
-    expect(overlay?.textContent).toContain('Connection lost. Trying to connect to server…')
+    expect(overlay?.textContent).toContain('Custom reconnect message')
     expect(container.querySelector('[data-boot-spinner]')).not.toBeNull()
 
-    rerender(<ConnectionLostOverlay reconnecting label="Custom reconnect message" />)
-    expect(container.textContent).toContain('Custom reconnect message')
+    rerender(<ConnectionLostOverlay reconnecting={false} label="Custom reconnect message" />)
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
   })
 })

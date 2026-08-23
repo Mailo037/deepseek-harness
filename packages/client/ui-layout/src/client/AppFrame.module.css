@@ -131,7 +131,10 @@
 
 /* Drawer overlay: the sidebar column becomes absolutely positioned above the
    center so the conversation keeps full width on phone-sized viewports. The
-   width is set inline to respect the drawer max + margin system. */
+   width is set inline to respect the drawer max + margin system. Opening
+   slides the drawer in from the left (the standard phone-drawer gesture) on
+   the theme's slow ease; the grid track stays zero (see AppFrame.tsx), so
+   the center never moves. */
 .frame[data-drawer-mode] .sidebarCol {
   position: absolute;
   top: 0;
@@ -140,11 +143,14 @@
   z-index: 30;
   border-right: 1px solid var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-shadow-lv3);
-  animation: drawer-in 200ms var(--ds-ease-in-out);
+  animation: drawer-in var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
 @keyframes drawer-in {
-  from { opacity: 0; }
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
 }
 
 /* Drawer backdrop: centered below the drawer but above the conversation and
@@ -162,4 +168,27 @@
   .frame[data-drawer-mode] .sidebarCol {
     animation: none;
   }
+}
+
+/* Phone off-frame rail replacement: a floating control in the conversation's
+   top-left corner (below the drawer overlay z-order, above column content). */
+.sidebarReveal {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-button-floating-fill);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.sidebarReveal:hover {
+  background: var(--dsw-alias-button-floating-hover);
 }

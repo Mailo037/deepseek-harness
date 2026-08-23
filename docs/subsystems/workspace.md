@@ -60,11 +60,23 @@ interface Workspace {
   readonly sessionIds: readonly SessionId[]
 
   /**
+   * Optional project-specific settings (e.g. permissionPreset, model).
+   */
+  readonly settings?: Readonly<Record<string, unknown>> | undefined
+
+  /**
    * Replace the display title durably.
    * @param title - New title; any string, duplicates across workspaces allowed.
    * @returns resolution after durability.
    */
   setTitle(title: string): Promise<void>
+
+  /**
+   * Replace the project-specific settings durably.
+   * @param settings - New settings dictionary.
+   * @returns resolution after durability.
+   */
+  setSettings(settings: Record<string, unknown>): Promise<void>
 
   /**
    * Prepend a session to this workspace's candidate account. An already

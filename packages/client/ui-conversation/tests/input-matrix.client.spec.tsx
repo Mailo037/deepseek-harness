@@ -45,23 +45,23 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })),
     useProjection: (() => undefined),
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
-    addImages: () => null,
-    removeImage: () => {},
+    addFiles: () => Promise.resolve(null),
+    addTextAttachment: () => null,
+    removeAttachment: () => {},
     // Every id resolves so the bar's registry prune never drops a test image.
-    draftImages: ids => ids.map(id => ({
+    draftAttachments: ids => ids.map(id => ({
       kind: 'image' as const, id,
       file: new File([Uint8Array.of(1)], `${id}.png`, { type: 'image/png' }),
       previewUrl: `blob:${id}`,
     })),
     resolveSubmitMode: () => 'queue',
-    toggleCommandMenu: vi.fn(),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(createSnapshotStore<string | null>(null)),
@@ -170,14 +170,14 @@ describe('matrix row: claimed with images', () => {
     const submit = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
     const { view, textarea, shell, sink, claim } = bench({ submit })
     claim()
-    act(() => { shell.addImages([img]) })
+    act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     await Promise.resolve()
     expect(shell.snapshot.phase).toBe('claimed')
     expect(submit).not.toHaveBeenCalled()
     expect(sink).not.toHaveBeenCalled()
     expect(view.getByText('/goal images-unsupported')).toBeTruthy()
-    expect(shell.snapshot.imageIds).toEqual([img])
+    expect(shell.snapshot.attachmentIds).toEqual([img])
     expect((textarea).value).toBe('/goal ')
   })
 
@@ -188,13 +188,13 @@ describe('matrix row: claimed with images', () => {
     claim('/goal ', '目标', true)
     // The claim currency carries the acceptance flag the pre-gate reads.
     expect(shell.snapshot.claim).toEqual({ token: '/goal ', hint: '目标', images: true })
-    act(() => { shell.addImages([img]) })
+    act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     await vi.waitFor(() => { expect(submit).toHaveBeenCalledWith('', SCTX, [png]) })
     expect(serialize).toHaveBeenCalledWith([img])
     await vi.waitFor(() => { expect((textarea).value).toBe('') })
     expect(release).toHaveBeenCalledWith([img])
-    expect(shell.snapshot.imageIds).toEqual([])
+    expect(shell.snapshot.attachmentIds).toEqual([])
     expect(shell.snapshot.phase).toBe('plain')
   })
 
@@ -202,11 +202,11 @@ describe('matrix row: claimed with images', () => {
     const submit = vi.fn(() => Promise.resolve({ kind: 'error' as const, text: '处理失败' }))
     const { view, textarea, shell, claim, release } = bench({ submit })
     claim('/goal ', '目标', true)
-    act(() => { shell.addImages([img]) })
+    act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     await vi.waitFor(() => { expect(view.getByText('处理失败')).toBeTruthy() })
     expect(shell.snapshot.phase).toBe('claimed')
-    expect(shell.snapshot.imageIds).toEqual([img])
+    expect(shell.snapshot.attachmentIds).toEqual([img])
     expect(release).not.toHaveBeenCalled()
     expect((textarea).value).toBe('/goal ')
   })
@@ -215,11 +215,11 @@ describe('matrix row: claimed with images', () => {
     const submit = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
     const { view, textarea, shell, claim, release } = bench({ submit, serialize: () => Promise.reject(new Error('附件已失效')) })
     claim('/goal ', '目标', true)
-    act(() => { shell.addImages([img]) })
+    act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     await vi.waitFor(() => { expect(view.getByText('附件已失效')).toBeTruthy() })
     expect(submit).not.toHaveBeenCalled()
-    expect(shell.snapshot.imageIds).toEqual([img])
+    expect(shell.snapshot.attachmentIds).toEqual([img])
     expect(release).not.toHaveBeenCalled()
     expect(shell.snapshot.phase).toBe('claimed')
   })
@@ -232,7 +232,7 @@ describe('matrix row: claimed with images', () => {
       serialize: () => new Promise((resolve) => { resolveSerialize = resolve }),
     })
     claim('/goal ', '目标', true)
-    act(() => { shell.addImages([img]) })
+    act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     await vi.waitFor(() => { expect(resolveSerialize).toBeDefined() })
     shell.dispose()
@@ -246,11 +246,11 @@ describe('matrix row: claimed with images', () => {
     const submit = vi.fn(() => new Promise<SubmitOutcome>(() => {})) // never settles
     const { shell, textarea, claim } = bench({ submit, serialize: () => Promise.resolve([]) })
     claim('/goal ', '目标', true)
-    act(() => { shell.addImages([img]) })
+    act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(shell.snapshot.phase).toBe('submitting')
-    act(() => { shell.removeImage(img) })
-    expect(shell.snapshot.imageIds).toEqual([img])
+    act(() => { shell.removeAttachment(img) })
+    expect(shell.snapshot.attachmentIds).toEqual([img])
   })
 })
 
@@ -301,7 +301,7 @@ describe('matrix row: locked (session disabled)', () => {
   it('disables the textarea and chrome; the machine currency is untouched', () => {
     const { view, textarea, shell } = bench({ disabled: true })
     expect((textarea).disabled).toBe(true)
-    expect((view.getByLabelText('命令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加附件') as HTMLButtonElement).disabled).toBe(true)
     expect(shell.snapshot.phase).toBe('plain')
   })
 

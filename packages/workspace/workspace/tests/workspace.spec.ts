@@ -140,11 +140,11 @@ function record(path: string, sessionIds: string[], createdAt = '2026-07-24T00:0
 }
 
 /**
- * Media written before archivedSessionIds existed omit the field; keeping the
- * fixtures in that shape continuously proves the schema default upgrades them.
+ * Media written before the registry-global lists existed omit their fields;
+ * keeping fixtures in that shape proves both schema defaults.
  */
-type StoredDomainState = Omit<WorkspaceDomainState, 'archivedSessionIds'>
-  & Partial<Pick<WorkspaceDomainState, 'archivedSessionIds'>>
+type StoredDomainState = Omit<WorkspaceDomainState, 'archivedSessionIds' | 'pinnedSessionIds'>
+  & Partial<Pick<WorkspaceDomainState, 'archivedSessionIds' | 'pinnedSessionIds'>>
 
 function storedPool(
   entries: Array<[string, WorkspaceRecord]>,
@@ -196,7 +196,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     await fiber.await()
     expect(ctx.workspaceRegistry.list()).toEqual([])
     expect(list).toHaveBeenCalledTimes(1)
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
   })
 
   it('bootstraps once from list headers only, in workspace/session createdAt order', async () => {
@@ -230,6 +230,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
       initialized: true,
       workspaceIds: result.registry.list().map(workspace => workspace.id),
       archivedSessionIds: [],
+      pinnedSessionIds: [],
     })
   })
 
@@ -258,7 +259,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     const second = await harness({ pool, sessions: [header('late', late, 100)] })
     expect(second.list).not.toHaveBeenCalled()
     expect(second.registry.list()).toEqual([])
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
   })
 
   it('reuses partial records after a bootstrap record write fails', async () => {
@@ -486,7 +487,7 @@ describe('WorkspaceRegistry create and lookup', () => {
     await expect(result.registry.delete(workspace.id)).resolves.toBe(false)
     expect(result.registry.get(workspace.id)).toBeUndefined()
     expect(result.registry.list()).toEqual([])
-    expect(storedState(result.pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(result.pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
     expect(result.pool.media.get('workspace')!.tables.get('workspaces')!.has(workspace.id)).toBe(false)
     await expect(realpath(dir)).resolves.toBe(dir)
     expect(result.list).toHaveBeenCalledTimes(1)
@@ -530,6 +531,7 @@ describe('WorkspaceRegistry create and lookup', () => {
       initialized: true,
       workspaceIds: [],
       archivedSessionIds: [],
+      pinnedSessionIds: [],
       pendingMutation: { operation: 'delete', workspaceId: workspace.id },
     })
     const reregistered = await first.registry.create(dir)
@@ -538,6 +540,7 @@ describe('WorkspaceRegistry create and lookup', () => {
       initialized: true,
       workspaceIds: [reregistered.id],
       archivedSessionIds: [],
+      pinnedSessionIds: [],
     })
     await first.fiber.dispose()
 
@@ -817,7 +820,7 @@ describe('header-validated membership projection', () => {
     const createRecovery = await harness({ pool: interruptedCreate })
     expect(createRecovery.registry.list()).toEqual([])
     expect(interruptedCreate.media.get('workspace')!.tables.get('workspaces')!.has(createId)).toBe(false)
-    expect(storedState(interruptedCreate)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(interruptedCreate)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
 
     const interruptedDelete = storedPool(
       [[deleteId, record(deleteDir, [])]],
@@ -830,7 +833,7 @@ describe('header-validated membership projection', () => {
     const deleteRecovery = await harness({ pool: interruptedDelete })
     expect(deleteRecovery.registry.list()).toEqual([])
     expect(interruptedDelete.media.get('workspace')!.tables.get('workspaces')!.has(deleteId)).toBe(false)
-    expect(storedState(interruptedDelete)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(interruptedDelete)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
 
     const corruptPending = storedPool(
       [[deleteId, record(deleteDir, [])]],
@@ -895,6 +898,19 @@ describe('registry-global session archive', () => {
     expect(result.registry.archivedSessionIds).toEqual(['gone', 'kept'])
   })
 
+  it('restores an archived session without changing its workspace account', async () => {
+    const dir = await makeDir('archive-restore')
+    const result = await harness({ sessions: [header('kept', dir, 100)] })
+    const workspace = result.registry.list()[0]!
+    await result.registry.archiveSession(SessionId('kept'))
+    await result.registry.unarchiveSession(SessionId('kept'))
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(workspace.sessionIds).toContain('kept')
+    const writes = result.changes.filter(change => change.table === '').length
+    await result.registry.unarchiveSession(SessionId('kept'))
+    expect(result.changes.filter(change => change.table === '').length).toBe(writes)
+  })
+
   it('accepts unaccounted and live sessions but rejects unknown ids without writing', async () => {
     const dir = await makeDir('archive-strays')
     const live = await makeDir('archive-live')
@@ -940,5 +956,51 @@ describe('registry-global session archive', () => {
     )
     const upgraded = await harness({ pool: legacy })
     expect(upgraded.registry.archivedSessionIds).toEqual([])
+    expect(upgraded.registry.pinnedSessionIds).toEqual([])
+  })
+})
+
+describe('registry-global session pins', () => {
+  it('persists pin order, keeps workspace accounting, and unpins idempotently', async () => {
+    const dir = await makeDir('pin-order')
+    const pool = new MemoryMediaPool()
+    const first = await harness({
+      pool,
+      sessions: [header('s1', dir, 100), header('s2', dir, 200)],
+    })
+    const workspace = first.registry.list()[0]!
+
+    await first.registry.setSessionPinned(SessionId('s2'), true)
+    await first.registry.setSessionPinned(SessionId('s1'), true)
+    await first.registry.setSessionPinned(SessionId('s2'), true)
+    expect(first.registry.pinnedSessionIds).toEqual(['s2', 's1'])
+    expect(workspace.sessionIds).toEqual(['s2', 's1'])
+    await first.fiber.dispose()
+
+    const restarted = await harness({
+      pool,
+      sessions: [header('s1', dir, 100), header('s2', dir, 200)],
+    })
+    expect(restarted.registry.pinnedSessionIds).toEqual(['s2', 's1'])
+    await restarted.registry.setSessionPinned(SessionId('s2'), false)
+    await restarted.registry.setSessionPinned(SessionId('s2'), false)
+    expect(restarted.registry.pinnedSessionIds).toEqual(['s1'])
+    expect(storedState(pool).pinnedSessionIds).toEqual(['s1'])
+  })
+
+  it('rejects unknown or archived pins and removes a pin when archiving', async () => {
+    const dir = await makeDir('pin-archive')
+    const result = await harness({ sessions: [header('s1', dir, 100), header('s2', dir, 200)] })
+    await expect(result.registry.setSessionPinned(SessionId('ghost'), true))
+      .rejects.toThrow(/cannot pin session 'ghost'/)
+
+    await result.registry.setSessionPinned(SessionId('s1'), true)
+    await result.registry.archiveSession(SessionId('s1'))
+    expect(result.registry.pinnedSessionIds).toEqual([])
+    await expect(result.registry.setSessionPinned(SessionId('s1'), true))
+      .rejects.toThrow(/cannot pin archived session 's1'/)
+
+    await result.registry.setSessionPinned(SessionId('s2'), false)
+    expect(result.registry.pinnedSessionIds).toEqual([])
   })
 })

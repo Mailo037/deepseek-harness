@@ -99,6 +99,16 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
+   * Fail-loud stub; supply `uploadAttachment` on the fixture's session face to exercise it.
+   * @param _name - proposed upload file name.
+   * @param _dataBase64 - base64 file bytes.
+   * @returns never — always throws.
+   */
+  uploadAttachment(_name: string, _dataBase64: string): never {
+    throw new Error(`test session "${this.sessionId}": uploadAttachment is not stubbed — supply it on the fixture's session face`)
+  }
+
+  /**
    * Fail-loud stub; supply `updateQueue` on the fixture's session face to exercise it.
    * @returns never — always throws.
    */

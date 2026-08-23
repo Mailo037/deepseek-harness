@@ -101,6 +101,8 @@ export class FakeApiClient implements IApiClient {
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
+  onUploadAttachment: (payload: unknown) => Promise<RpcResponse<{ path: string; bytes: number }>> =
+    () => Promise.resolve(ok({ path: '.uploads/fixture-file', bytes: 1 }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
 
@@ -158,6 +160,7 @@ export class FakeApiClient implements IApiClient {
     fork: (payload: unknown) => this.record('session.fork', payload, this.onFork(payload)),
     prompt: (payload: unknown) => this.record('session.prompt', payload, this.onPrompt(payload)),
     attachment: (payload: unknown) => this.record('session.attachment', payload, this.onAttachment(payload)),
+    uploadAttachment: (payload: unknown) => this.record('session.uploadAttachment', payload, this.onUploadAttachment(payload)),
     updateQueue: (payload: unknown) => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
     cancel: (payload: unknown) => this.record('session.cancel', payload, this.onCancel(payload)),
   }
@@ -201,9 +204,13 @@ export class FakeApiClient implements IApiClient {
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 
-  // The archive-set field defaults at the binding below so list stubs keep
-  // the pre-archive `{ items }` shape; a stub carrying the field wins.
-  onWorkspaceList: (payload: unknown) => Promise<RpcResponse<{ items: never[]; archivedSessionIds?: never[] }>> =
+  // Registry-global list fields default at the binding below so narrow list
+  // stubs can keep the `{ items }` shape; a stub carrying either field wins.
+  onWorkspaceList: (payload: unknown) => Promise<RpcResponse<{
+    items: never[]
+    archivedSessionIds?: never[]
+    pinnedSessionIds?: never[]
+  }>> =
     () => Promise.resolve(ok({ items: [] }))
   onWorkspaceCreate: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView; created: boolean }>> =
     () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws'), created: true }))
@@ -220,8 +227,32 @@ export class FakeApiClient implements IApiClient {
   onWorkspaceInsertSessionBefore: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView }>> =
     () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws') }))
 
-  onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
-    payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
+  onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{
+    archivedSessionIds: SessionId[]
+    pinnedSessionIds: SessionId[]
+  }>> = payload => Promise.resolve(ok({
+    archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId],
+    pinnedSessionIds: [],
+  }))
+
+  onWorkspaceUnarchiveSession: (payload: unknown) => Promise<RpcResponse<{
+    archivedSessionIds: SessionId[]
+  }>> = () => Promise.resolve(ok({ archivedSessionIds: [] }))
+
+  onWorkspaceDeleteSession: (payload: unknown) => Promise<RpcResponse<{
+    archivedSessionIds: SessionId[]
+  }>> = () => Promise.resolve(ok({ archivedSessionIds: [] }))
+
+  onWorkspaceDeleteArchivedSessions: (payload: unknown) => Promise<RpcResponse<{
+    archivedSessionIds: SessionId[]
+  }>> = () => Promise.resolve(ok({ archivedSessionIds: [] }))
+
+  onWorkspaceSetSessionPinned: (payload: unknown) => Promise<RpcResponse<{ pinnedSessionIds: SessionId[] }>> =
+    payload => Promise.resolve(ok({
+      pinnedSessionIds: (payload as { sessionId: SessionId; pinned: boolean }).pinned
+        ? [(payload as { sessionId: SessionId }).sessionId]
+        : [],
+    }))
 
   onWorkspaceUpdateSettings: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView }>> =
     () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws') }))
@@ -232,7 +263,13 @@ export class FakeApiClient implements IApiClient {
   readonly workspace: IApiClient['workspace'] = {
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (
       response.result.ok
-        ? { ...response, result: { ok: true as const, value: { archivedSessionIds: [] as never[], ...response.result.value } } }
+        ? {
+          ...response,
+          result: {
+            ok: true as const,
+            value: { archivedSessionIds: [] as never[], pinnedSessionIds: [] as never[], ...response.result.value },
+          },
+        }
         : response
     )) as ReturnType<IApiClient['workspace']['list']>),
     create: (payload: unknown) => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),
@@ -244,6 +281,14 @@ export class FakeApiClient implements IApiClient {
       this.record('workspace.insertSessionBefore', payload, this.onWorkspaceInsertSessionBefore(payload)),
     archiveSession: (payload: unknown) =>
       this.record('workspace.archiveSession', payload, this.onWorkspaceArchiveSession(payload)),
+    unarchiveSession: (payload: unknown) =>
+      this.record('workspace.unarchiveSession', payload, this.onWorkspaceUnarchiveSession(payload)),
+    deleteSession: (payload: unknown) =>
+      this.record('workspace.deleteSession', payload, this.onWorkspaceDeleteSession(payload)),
+    deleteArchivedSessions: (payload: unknown) =>
+      this.record('workspace.deleteArchivedSessions', payload, this.onWorkspaceDeleteArchivedSessions(payload)),
+    setSessionPinned: (payload: unknown) =>
+      this.record('workspace.setSessionPinned', payload, this.onWorkspaceSetSessionPinned(payload)),
     updateSettings: (payload: unknown) =>
       this.record('workspace.updateSettings', payload, this.onWorkspaceUpdateSettings(payload)),
     moveSession: (payload: unknown) =>
@@ -318,6 +363,11 @@ export class FakeApiClient implements IApiClient {
     const held = this.heldOpens
     this.heldOpens = []
     for (const fire of held) fire()
+  }
+
+  readonly jobs: IApiClient['jobs'] = {
+    kill: (payload: unknown) => this.record('job.kill', payload, Promise.resolve(ok({ result: 'requested' as const }))),
+    output: (payload: unknown) => this.record('job.output', payload, Promise.resolve(ok({ text: '', status: 'running' as const }))),
   }
 
   readonly events: IApiClient['events'] = {

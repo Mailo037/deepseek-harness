@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { execa } from 'execa'
@@ -670,6 +670,59 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       rmSync(checkout, { recursive: true, force: true })
     }
   }, 90_000)
+
+  it.skipIf(process.platform !== 'win32')('forwards Windows pnpm arguments without executing shell metacharacters', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-windows-argv-'))
+    const pnpmBin = join(home, 'pnpm-bin')
+    const argvFile = join(home, 'pnpm-argv.json')
+    const injectedMarker = join(home, 'injected')
+    const injectedScript = join(home, 'injected.mjs')
+    const pnpmEntry = join(pnpmBin, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
+    try {
+      mkdirSync(dirname(pnpmEntry), { recursive: true })
+      writeFileSync(join(pnpmBin, 'pnpm.cmd'), [
+        '@echo off',
+        `"${process.execPath}" "%~dp0node_modules\\pnpm\\bin\\pnpm.mjs" %*`,
+        '',
+      ].join('\r\n'))
+      writeFileSync(pnpmEntry, [
+        'import { writeFileSync } from \'node:fs\'',
+        'writeFileSync(process.env.PNPM_ARGV_FILE, JSON.stringify(process.argv.slice(2)))',
+        '',
+      ].join('\n'))
+      writeFileSync(injectedScript, [
+        'import { writeFileSync } from \'node:fs\'',
+        'writeFileSync(process.env.INJECTED_MARKER, \'executed\')',
+        '',
+      ].join('\n'))
+      const literal = `literal&"${process.execPath}" "${injectedScript}"`
+      const result = await runBuiltBin(['plugin', '--profile', 'argv', literal], {
+        DSH_HOME: home,
+        PATH: `${pnpmBin};${process.env.PATH ?? ''}`,
+        PNPM_ARGV_FILE: argvFile,
+        INJECTED_MARKER: injectedMarker,
+      })
+      expect(result.code, result.stderr).toBe(0)
+      expect(JSON.parse(readFileSync(argvFile, 'utf8'))).toEqual([literal])
+      expect(existsSync(injectedMarker)).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it.skipIf(process.platform !== 'win32')('reports a missing Windows pnpm entry point', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-windows-no-pnpm-'))
+    try {
+      const result = await runBuiltBin(['plugin', '--profile', 'missing-pnpm', 'root'], {
+        DSH_HOME: home,
+        PATH: home,
+      })
+      expect(result.code).toBe(127)
+      expect(result.stderr).toContain('dsh: pnpm not found on PATH — install pnpm to manage profile plugins')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
 
   it('activates a dependency that gained dsh.bundle in a later update', async () => {
     // Reconcile runs against the INSTALLED state on every successful pnpm

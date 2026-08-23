@@ -31,6 +31,8 @@ export interface SessionListEntry {
   projectionValues?: Readonly<Partial<SessionProjectionMap>>
   /** User interaction currently blocking this session, derived from live mux frames. */
   pendingInteraction?: PendingInteractionStatus
+  /** Latest turn ended in a terminal failure (summary passthrough); absent = false. */
+  attention?: 'retry-exhausted' | 'error'
   /** Finished running while not selected and not yet opened — the sidebar's green "done" reminder (clears on select or the next run). */
   completed: boolean
   /** Lineage indent depth: root = 0; the UI just multiplies by the indent width. */

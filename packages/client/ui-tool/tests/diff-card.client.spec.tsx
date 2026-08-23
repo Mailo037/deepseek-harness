@@ -65,6 +65,7 @@ describe('diffCardModel', () => {
   it('derives a running card from the call view alone', () => {
     expect(diffCardModel(running())).toEqual({
       card: { diffs: [{ path: 'notes/demo.txt', oldText: 'hello', newText: 'hello fixture' }] },
+      stats: { added: 1, removed: 1 },
     })
   })
 
@@ -74,7 +75,18 @@ describe('diffCardModel', () => {
       resultView: resultDiff({ diffs: [{ path: 'notes/demo.txt', oldText: 'a', newText: 'b' }] }),
     }))).toEqual({
       card: { diffs: [{ path: 'notes/demo.txt', oldText: 'a', newText: 'b' }] },
+      stats: { added: 1, removed: 1 },
     })
+  })
+
+  it('counts multi-line sides with the block footer terminator rule', () => {
+    // A trailing newline terminates the last line (not an extra empty one); a
+    // create's absent old side counts zero removed.
+    expect(diffCardModel(settled({
+      resultView: resultDiff({
+        diffs: [{ path: 'notes/new.txt', oldText: null, newText: 'one\ntwo\n' }],
+      }),
+    }))?.stats).toEqual({ added: 2, removed: 0 })
   })
 
   it('renders a settled diff even when the window dropped the call head', () => {
@@ -129,6 +141,17 @@ describe('chat row diff body', () => {
     fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
     expect(view.getByText('hello fixture')).toBeTruthy()
+  })
+
+  it('the collapsed row shows the +/- line count beside the path; a non-diff row shows none', () => {
+    const view = render(<GenericToolCard {...ownerProps(settled())} />)
+    expect(view.container.querySelector('[data-diff]')).toBeNull() // still collapsed
+    expect(view.container.querySelector('[class*="diffStats"]')?.textContent).toBe('+1-1')
+    const plain = render(<GenericToolCard {...{
+      callId: 'c1', toolName: 'some_tool', openFile: vi.fn(), t,
+      block: settled({ call: { name: 'some_tool', argsRaw: '{}' }, callView: null, resultView: null }),
+    }} />)
+    expect(plain.container.querySelector('[class*="diffStats"]')).toBeNull()
   })
 
   it('a running diff call expands to its intended change', () => {
@@ -321,7 +344,7 @@ describe('DetailsPanel diff Output section', () => {
         currentAddress: undefined,
       })
     const workspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     return render(
@@ -335,9 +358,9 @@ describe('DetailsPanel diff Output section', () => {
         useInput={(() => { throw new Error('unused') })}
         inputActions={{
           setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
+          addAttachments: () => true,
+          removeAttachment: () => {},
+          pruneAttachments: () => {},
           submit: () => {},
         }}
         useProjection={(() => undefined)}

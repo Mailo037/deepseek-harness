@@ -33,6 +33,9 @@
       "path": "../ui-conversation"
     },
     {
+      "path": "../../session-query/session-log-export"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

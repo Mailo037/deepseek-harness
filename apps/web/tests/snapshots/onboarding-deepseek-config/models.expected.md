@@ -1,6 +1,10 @@
 - dialog "设置":
+  - text: 设置
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
   - navigation:
-    - text: 设置
     - button "通用设置":
       - img
       - text: 通用设置
@@ -10,13 +14,12 @@
     - button "插件":
       - img
       - text: 插件
+    - button "关于":
+      - img
+      - text: 关于
     - button "Agent 预设":
       - img
       - text: Agent 预设
-  - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - heading "模型" [level=2]
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
   - list:
@@ -31,6 +34,8 @@
         - text: 自定义设置 API 地址
         - textbox "API 地址":
           - /placeholder: https://api.deepseek.com
+        - text: 默认推理强度
+        - combobox "默认推理强度": 继承默认
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"
@@ -62,11 +67,22 @@
           - textbox "最大输出 token 数 2":
             - /placeholder: 256K
             - text: 64K
+          - text: 推理强度
+          - combobox "推理强度 2": 继承默认
+          - textbox "模型 ID 3":
+            - /placeholder: 模型 ID
+          - textbox "显示名称 3":
+            - /placeholder: 显示名称
+          - button "容量 3":
+            - img
+          - button "删除模型 3":
+            - img
           - button "添加模型":
             - img
             - text: 添加模型
+      - paragraph: "模型 3: 模型 ID 不能为空。"
       - button "取消"
-      - button "保存"
+      - button "保存" [disabled]
   - button "添加提供方":
     - img
     - text: 添加提供方

@@ -142,7 +142,8 @@ async function readBounded(response: Response, url: string): Promise<string> {
 }
 
 /** Parse input modalities from entry architecture or model conventions. */
-function parseModalities(entry: ListingEntry | null, id: string): string[] | undefined {
+/** Parse input modalities from entry architecture or model conventions. */
+function parseModalities(entry: ListingEntry | null, id: string): { inputModalities: string[]; visionInferred?: boolean } | undefined {
   if (entry === null) return undefined
   const raw = entry.architecture?.modality
     ?? entry.architecture?.input_modalities
@@ -156,7 +157,7 @@ function parseModalities(entry: ListingEntry | null, id: string): string[] | und
     if (parts.includes('text') || parts.length === 0) res.push('text')
     if (parts.includes('image')) res.push('image')
     if (parts.includes('video')) res.push('video')
-    return res.length > 0 ? res : undefined
+    return res.length > 0 ? { inputModalities: res } : undefined
   }
   if (Array.isArray(raw)) {
     const res: string[] = []
@@ -168,12 +169,35 @@ function parseModalities(entry: ListingEntry | null, id: string): string[] | und
         }
       }
     }
-    return res.length > 0 ? res : undefined
+    return res.length > 0 ? { inputModalities: res } : undefined
   }
-  if (id.includes('gemini') || id.includes('vision') || id.includes('vl') || id.includes('ox-alpha')) {
+  const lowerId = id.toLowerCase()
+  if (
+    lowerId.includes('vision')
+    || lowerId.includes('vl')
+    || lowerId.includes('janus')
+    || lowerId.includes('gemini')
+    || lowerId.includes('omni')
+    || lowerId.includes('multimodal')
+    || lowerId.includes('pixtral')
+    || lowerId.includes('llava')
+    || lowerId.includes('florence')
+    || lowerId.includes('internvl')
+    || lowerId.includes('minicpm-v')
+    || lowerId.includes('glm-4v')
+    || lowerId.includes('qwen-vl')
+    || lowerId.includes('ox-alpha')
+    || lowerId.includes('4o')
+    || lowerId.includes('sonnet')
+    || lowerId.includes('opus')
+    || lowerId.includes('o1')
+    || lowerId.includes('o3')
+  ) {
     const res = ['text', 'image']
-    if (id.includes('gemini') || id.includes('ox-alpha')) res.push('video')
-    return res
+    if (lowerId.includes('gemini') || lowerId.includes('ox-alpha') || lowerId.includes('qwen-vl') || lowerId.includes('glm-4v')) {
+      res.push('video')
+    }
+    return { inputModalities: res, visionInferred: true }
   }
   return undefined
 }
@@ -207,13 +231,14 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
       entry?.max_tokens,
       entry?.top_provider?.max_completion_tokens,
     )
-    const inputModalities = parseModalities(entry, id)
+    const parsedMod = parseModalities(entry, id)
     models.push({
       id,
       ...name === undefined ? {} : { name },
       ...contextWindow === undefined ? {} : { contextWindow },
       ...maxTokens === undefined ? {} : { maxTokens },
-      ...inputModalities === undefined ? {} : { inputModalities },
+      ...parsedMod?.inputModalities === undefined ? {} : { inputModalities: parsedMod.inputModalities },
+      ...parsedMod?.visionInferred === true ? { visionInferred: true } : {},
     })
   }
   return models
@@ -256,8 +281,8 @@ export async function discoverModels(
 ): Promise<readonly LlmDiscoveredModel[]> {
   // A catalog route already has its answer, and a better one: the installed
   // entries carry context windows and output caps no listing endpoint reports.
-  // Exception: openrouter maintains 400+ models; probe live endpoint when possible.
-  if (request.provider !== undefined && request.provider !== 'openrouter') {
+  // Exception: openrouter and b.ai maintain dynamic models; probe live endpoint when possible.
+  if (request.provider !== undefined && request.provider !== 'openrouter' && request.provider !== 'b.ai' && request.provider !== 'bai') {
     const installed = catalogModels(request.provider)
     if (installed.size > 0) {
       return [...installed.values()].map(model => ({
@@ -271,11 +296,13 @@ export async function discoverModels(
   }
   const effectiveBaseUrl = (request.baseURL && request.baseURL.length > 0)
     ? request.baseURL
-    : (request.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined)
+    : (request.provider === 'openrouter'
+      ? 'https://openrouter.ai/api/v1'
+      : (request.provider === 'b.ai' || request.provider === 'bai' ? 'https://api.b.ai/v1' : undefined))
 
   if (effectiveBaseUrl === undefined) {
-    if (request.provider === 'openrouter') {
-      const installed = catalogModels('openrouter')
+    if (request.provider === 'openrouter' || request.provider === 'b.ai' || request.provider === 'bai') {
+      const installed = catalogModels(request.provider)
       return [...installed.values()].map(model => ({
         id: model.id,
         name: model.name,

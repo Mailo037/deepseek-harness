@@ -28,6 +28,8 @@ class Entry {
   epoch = 0
   lastError: unknown
   waiters: Array<() => void> = []
+  /** Settlement listeners (the service's lexicon invalidation fan-out). */
+  changeListeners: Array<() => void> = []
 }
 
 /** The session-keyed directory cache. Plain class — the owning service wires events and RPC. */
@@ -55,6 +57,30 @@ export class CommandDirectory {
     const entry = this.entries.get(sessionId)
     if (entry === undefined || entry.state !== 'ready') return undefined
     return entry.commands.find(c => c.name === name)
+  }
+
+  /**
+   * Synchronous hot-snapshot read over one session's catalog.
+   * @param sessionId - session key.
+   * @returns the ready snapshot, or undefined while cold/pending/failed.
+   */
+  snapshot(sessionId: SessionId): readonly CommandDescriptor[] | undefined {
+    const entry = this.entries.get(sessionId)
+    return entry !== undefined && entry.state === 'ready' ? entry.commands : undefined
+  }
+
+  /**
+   * Subscribe to one session's catalog settlements (each winning publish).
+   * @param sessionId - session key.
+   * @param listener - settlement callback.
+   * @returns unsubscribe.
+   */
+  onSettle(sessionId: SessionId, listener: () => void): () => void {
+    const entry = this.entry(sessionId)
+    entry.changeListeners.push(listener)
+    return () => {
+      entry.changeListeners = entry.changeListeners.filter(l => l !== listener)
+    }
   }
 
   /** Soft invalidation (commands-changed): background repull on every touched key; ready snapshots keep serving. */
@@ -164,6 +190,16 @@ function notifyWaiters(entry: Entry): void {
   const woken = entry.waiters
   entry.waiters = []
   for (const wake of woken) wake()
+  for (const listener of [...entry.changeListeners]) {
+    try {
+      listener()
+    } catch (error) {
+      // Contain listener failures: the settlement tick runs inside promise
+      // continuations, where a throw would surface as an unhandled rejection
+      // and one faulty consumer must not starve the others.
+      console.error('[ui-commands] directory settlement listener failed:', error)
+    }
+  }
 }
 
 /** Normalize an abort into an Error rejection. */

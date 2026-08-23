@@ -132,6 +132,29 @@ describe('sessions.list cold merge', () => {
     ]))
   })
 
+  it('serves the retry-exhausted attention hint for a cold Session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(UserQuestionService)
+    const meta = header('cold-attention', 100)
+    ctx.provide('sessionPersistence', {
+      list: () => Promise.resolve([meta]),
+      locate: () => undefined,
+    } as never)
+    ctx.provide('sessionProjectionCache', {
+      cachedSnapshot: () => ({
+        asOfSeq: 9,
+        values: { sessionListMetadata: { blank: false, lastPromptAt: null, attention: 'retry-exhausted' } },
+      }),
+    } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.list(request({}))
+    if (!response.result.ok) throw new Error('unreachable')
+    const row = response.result.value.items.find(item => item.sessionId === meta.id)
+    expect(row?.attention).toBe('retry-exhausted')
+  })
+
   it('can disable bounded blank probes without hiding cold Sessions', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -284,6 +307,7 @@ describe('cold history recovery view', () => {
       ),
       appendBatch: () => Promise.resolve(),
       commitRepair: () => Promise.resolve(),
+      deleteStored: () => Promise.resolve(false),
       list: () => Promise.resolve([structuredClone(meta)]),
     }
     const coordinator = new PersistenceCoordinator(ctx, backend)

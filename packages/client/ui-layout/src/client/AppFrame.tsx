@@ -13,10 +13,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import { ConnectionLostOverlay } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import { ConnectionLostOverlay, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  computeColumns, drawerWidth, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_BREAKPOINT,
+  computeColumns, drawerWidth, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_BREAKPOINT,
 } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
@@ -26,6 +26,7 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & PropsLocale<'layout'>
   & {
     /** Observable connection state handle from the wire root. */
     readonly connection?: ConnectionHandle | undefined
@@ -105,6 +106,7 @@ export function AppFrame({
   actions,
   renderSlot,
   connection,
+  t,
 }: AppFrameProps) {
   const connectionState = useSyncExternalStore(
     connection === undefined ? (() => () => {}) : connection.state.subscribe,
@@ -158,6 +160,7 @@ export function AppFrame({
   // phone-sized frames (AppFrame.module.css .frame[data-drawer-mode]).
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
+  const phone = viewport < SIDEBAR_DRAWER_BREAKPOINT
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const drawer = narrow && !sidebarCollapsed && viewport < SIDEBAR_DRAWER_BREAKPOINT
   // The drawer column keeps its overlay mode through the wide-content fade-out
@@ -170,12 +173,39 @@ export function AppFrame({
     return () => { window.clearTimeout(timer) }
   }, [drawer])
   const drawerMode = drawer || !drawerSettled
+  // Navigation closes the overlay drawer: selecting a chat while the drawer
+  // covers the center must hand the screen back (the backdrop click is the
+  // same toggle). Wide-panel navigation never passes through here — the ref
+  // reads the open state captured at this render, i.e. exactly the state the
+  // tapped row acted under.
+  const drawerOpenRef = useRef(drawer)
+  drawerOpenRef.current = drawer
+  const currentSession = useSessions(s => s.current)
+  const navFrom = useRef(currentSession)
+  useEffect(() => {
+    if (currentSession === navFrom.current) return
+    const wasOpen = drawerOpenRef.current
+    navFrom.current = currentSession
+    if (wasOpen) actions.toggleSidebar()
+  }, [actions, currentSession])
   const sidebarPreference = sidebarCollapsed || drawerMode
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
-  const colsRef = useRef(cols)
-  colsRef.current = cols
+  // Phone frames drop the closed-sidebar rail entirely: the column leaves the
+  // grid (nothing of it stays in frame) and the corner button below opens the
+  // drawer instead. The solved center absorbs the rail's former width.
+  const offFrame = phone && sidebarCollapsed && !drawerMode
+  // The drawer rides the same zero track as the off-frame rail: the absolute
+  // overlay must not mint a 56px rail track, which would shove the center
+  // column right the moment the drawer opens. The drawer column keeps its
+  // overlay mode through the collapse fade, so the closing crossfade never
+  // needs the rail track either.
+  const solvedCols = offFrame || drawerMode
+    ? { ...cols, sidebar: 0, center: cols.center + SIDEBAR_COLLAPSED }
+    : cols
+  const colsRef = useRef(solvedCols)
+  colsRef.current = solvedCols
 
   // The drag base is the rendered width captured at drag start (grabbing a
   // concession-clamped panel must not jump back to the stored preference);
@@ -199,8 +229,9 @@ export function AppFrame({
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: `${solvedCols.sidebar}px minmax(0, 1fr) ${solvedCols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-sidebar-offframe={offFrame || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
       data-drawer-mode={drawerMode || undefined}
@@ -224,6 +255,18 @@ export function AppFrame({
           the drawer is fully open, never during the fade-out. Matches the
           settings mask pattern: aria-hidden, pointer-only. */}
       {drawer && <div className={css.drawerBackdrop} aria-hidden="true" onClick={() => { actions.toggleSidebar() }} />}
+      {/* Phone off-frame rail replacement: the only open affordance while the
+          sidebar column is fully out of the grid. */}
+      {offFrame && (
+        <button
+          type="button"
+          className={css.sidebarReveal}
+          aria-label={t('sidebar.reveal')}
+          onClick={() => { actions.toggleSidebar() }}
+        >
+          <IconPanelLeftOutline16 />
+        </button>
+      )}
       <>
         {/* Both column occupants stay at fixed tree positions from first
             paint — no loading gate: a bare status line reads worse than

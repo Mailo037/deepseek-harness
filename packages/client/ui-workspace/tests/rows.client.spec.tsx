@@ -175,7 +175,7 @@ describe('workspace browser rows', () => {
     running.unmount()
     // Descendant activity also wins until the last running descendant stops.
     const delegated = renderRow({ completed: true, runningSubagentCount: 1 })
-    expect(delegated.container.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(delegated.container.querySelector('[data-state="background"]')).not.toBeNull()
     expect(delegated.container.querySelector('[data-state="done"]')).toBeNull()
   })
 
@@ -189,7 +189,7 @@ describe('workspace browser rows', () => {
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
-      expect(row.querySelector('[data-state="ongoing"]')).not.toBeNull()
+      expect(row.querySelector('[data-state="background"]')).not.toBeNull()
       expect(screen.getByText('2 个子代理运行中')).toBeTruthy()
       expect(screen.queryByText('进行中')).toBeNull()
 
@@ -199,6 +199,18 @@ describe('workspace browser rows', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('renders background state dot when background jobs are running while turn is idle', () => {
+    const node: SessionNode = {
+      id: sid('owner'), title: 'Job Running', blank: false, running: true, backgroundRunning: true,
+      runningSubagentCount: 0, completed: false, updatedAt: 0,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
+    const row = screen.getByRole('treeitem')
+    expect(row.querySelector('[data-state="background"]')).not.toBeNull()
+    expect(screen.getByText('后台任务进行中')).toBeTruthy()
   })
 
   it('keeps descendant activity secondary while the parent is running', () => {
@@ -236,6 +248,46 @@ describe('workspace browser rows', () => {
     expect(row.querySelector('[data-state="ongoing"]')).toBeNull()
     expect(screen.getByText('等待回答')).toBeTruthy()
     expect(screen.getByText('1 个子代理运行中')).toBeTruthy()
+  })
+
+  it('shows the red error dot instead of green done when the last turn exhausted its retries', () => {
+    const renderRow = (over: Partial<SessionNode>) => render(
+      <SessionNodeItem
+        node={{
+          id: sid('s1'), title: 'Failed', blank: false, running: false,
+          runningSubagentCount: 0, completed: false, updatedAt: 0, ...over,
+        }}
+        currentId={undefined} now={0} onOpen={vi.fn()}
+        onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t}
+      />,
+    )
+    // Retry-exhausted while unviewed: the red error dot, never green done.
+    const attention = renderRow({ attention: 'retry-exhausted', completed: true })
+    expect(attention.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(attention.container.querySelector('[data-state="done"]')).toBeNull()
+    expect(screen.getByText('需要关注')).toBeTruthy()
+    attention.unmount()
+    // Live activity still wins the slot.
+    const running = renderRow({ attention: 'retry-exhausted', running: true })
+    expect(running.container.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(running.container.querySelector('[data-state="error"]')).toBeNull()
+    running.unmount()
+    // Pending user interaction also outranks the failure verdict.
+    const pending = renderRow({ attention: 'retry-exhausted', pendingInteraction: 'approval' })
+    expect(pending.container.querySelector('[data-state="warning"]')).not.toBeNull()
+    expect(pending.container.querySelector('[data-state="error"]')).toBeNull()
+  })
+
+  it('shows the red error dot on a finished search result row with retry exhaustion', () => {
+    render(<SearchResultItem
+      result={{
+        id: sid('result'), title: 'Failed', workspace: 'Workspace', running: false,
+        runningSubagentCount: 0, completed: true, attention: 'retry-exhausted',
+      }}
+      currentId={undefined} onOpen={vi.fn()} t={t}
+    />)
+    expect(screen.getByRole('treeitem').querySelector('[data-state="error"]')).not.toBeNull()
+    expect(screen.getByRole('treeitem').querySelector('[data-state="done"]')).toBeNull()
   })
 
   it('shows the green done dot on a finished search result row', () => {
@@ -277,6 +329,26 @@ describe('workspace browser rows', () => {
     fireEvent.click(screen.getByRole('button', { name: '工作区“Project”的操作' }))
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('opens the same session action menu at the right-click position without opening the session', () => {
+    const onOpen = vi.fn()
+    const onSetPinned = vi.fn()
+    const node: SessionNode = {
+      id: sid('context-session'), title: 'Context chat', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, updatedAt: 0,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onSetPinned={onSetPinned} t={t} />)
+
+    fireEvent.contextMenu(screen.getByRole('treeitem'), { clientX: 120, clientY: 80 })
+
+    const menu = screen.getByRole('menu')
+    expect(menu.style.left).toBe('120px')
+    expect(menu.style.top).toBe('84px')
+    expect(onOpen).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('menuitem', { name: '固定会话' }))
+    expect(onSetPinned).toHaveBeenCalledWith(node.id, true)
   })
 
   it('workspace hover card shows its details and copies the full directory path', async () => {
@@ -394,21 +466,26 @@ describe('workspace browser rows', () => {
     }
   })
 
-  it('session row menu opens without opening the session and dispatches rename, fork, and archive', () => {
+  it('session row menu opens without opening the session and dispatches pin, rename, fork, and archive', () => {
     const onOpen = vi.fn()
     const onRename = vi.fn()
     const onFork = vi.fn()
     const onArchive = vi.fn()
+    const onSetPinned = vi.fn()
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0,
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
-      onRename={onRename} onFork={onFork} onArchive={onArchive} t={t} />)
+      onRename={onRename} onFork={onFork} onArchive={onArchive} onSetPinned={onSetPinned} t={t} />)
     fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
     expect(onOpen).not.toHaveBeenCalled()
-    // Archive is not destructive (log and accounting slot remain): no danger styling.
-    expect(screen.getByRole('menuitem', { name: '归档会话' }).className).not.toMatch(/danger/)
+    // Archive is the row's removing gesture: danger styling, same as the
+    // header menu's archive row (no confirmation dialog either way).
+    expect(screen.getByRole('menuitem', { name: '归档会话' }).className).toMatch(/danger/)
+    fireEvent.click(screen.getByRole('menuitem', { name: '固定会话' }))
+    expect(onSetPinned).toHaveBeenCalledWith(node.id, true)
+    fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
     // Rename dispatches with the current display title (dialog prefill).
     fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
     expect(screen.queryByRole('menu')).toBeNull()
@@ -567,5 +644,37 @@ describe('workspace browser rows', () => {
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} drag={after} t={t} />,
     )
     expect(screen.getByRole('treeitem').className).toMatch(/dropAfter/)
+  })
+
+  it('opens context menu on right click on ProjectRowItem', () => {
+    const rename = vi.fn()
+    const del = vi.fn()
+    const group: GroupNode = {
+      key: 'proj-1',
+      label: 'My Project',
+      workspaceId: wid('proj-1'),
+      cwd: '/tmp/proj-1',
+      sessionCount: 0,
+      sessions: [],
+      expanded: true,
+      containsCurrent: false,
+      hasAttention: false,
+      createdAt: 1000,
+    }
+    render(
+      <ProjectRowItem
+        group={group}
+        onToggle={vi.fn()}
+        onCreate={vi.fn()}
+        actions={{ rename, delete: del }}
+        t={t}
+      />,
+    )
+    const row = screen.getByRole('treeitem')
+    fireEvent.contextMenu(row, { clientX: 100, clientY: 150 })
+    expect(screen.getByRole('menuitem', { name: '重命名' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '删除工作区' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    expect(rename).toHaveBeenCalledOnce()
   })
 })

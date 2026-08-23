@@ -59,6 +59,7 @@ function scriptedApi(overrides: {
         attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
         data: 'AA==',
       }),
+      uploadAttachment: r => ok(r, { path: '.uploads/fixture-file', bytes: 1 }),
       updateQueue: r => ok(r, { accepted: true as const }),
       cancel: r => ok(r, { accepted: true as const }),
       ...overrides.sessions,
@@ -86,13 +87,17 @@ function scriptedApi(overrides: {
       ...overrides.host,
     },
     workspace: {
-      list: r => ok(r, { items: [], archivedSessionIds: [] }),
+      list: r => ok(r, { items: [], archivedSessionIds: [], pinnedSessionIds: [] }),
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       delete: r => ok(r, { deleted: true as const }),
       insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
-      archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
+      archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId], pinnedSessionIds: [] }),
+      unarchiveSession: r => ok(r, { archivedSessionIds: [] }),
+      deleteSession: r => ok(r, { archivedSessionIds: [] }),
+      deleteArchivedSessions: r => ok(r, { archivedSessionIds: [] }),
+      setSessionPinned: r => ok(r, { pinnedSessionIds: r.payload.pinned ? [r.payload.sessionId] : [] }),
       updateSettings: r => ok(r, { workspace: { workspaceId: r.payload.workspaceId, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0', settings: r.payload.settings } }),
       moveSession: r => ok(r, { success: true as const }),
     },
@@ -134,6 +139,10 @@ function scriptedApi(overrides: {
       models: r => ok(r, { groups: [], failures: [] }),
       discoverModels: err,
       ...overrides.llm,
+    },
+    jobs: {
+      kill: r => ok(r, { result: 'requested' }),
+      output: r => ok(r, { text: '', status: 'running' }),
     },
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),
@@ -431,15 +440,19 @@ describe('unary round trip', () => {
 })
 
 describe('workspace domain round trip', () => {
-  it('routes both workspace methods through their handler rows and value schemas', async () => {
+  it('routes Workspace methods through their handler rows and value schemas', async () => {
     const c = client(scriptedApi())
     const list = await c.workspace.list({})
-    expect(list.result).toEqual({ ok: true, value: { items: [], archivedSessionIds: [] } })
+    expect(list.result).toEqual({ ok: true, value: { items: [], archivedSessionIds: [], pinnedSessionIds: [] } })
     const created = await c.workspace.create({ path: '/t' })
     expect(created.result.ok).toBe(true)
     if (created.result.ok) expect(created.result.value.created).toBe(true)
     const archivedResponse = await c.workspace.archiveSession({ sessionId: 's-arch' as never })
-    expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'] } })
+    expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'], pinnedSessionIds: [] } })
+    const restoredResponse = await c.workspace.unarchiveSession({ sessionId: 's-arch' as never })
+    expect(restoredResponse.result).toEqual({ ok: true, value: { archivedSessionIds: [] } })
+    const pinnedResponse = await c.workspace.setSessionPinned({ sessionId: 's-pin' as never, pinned: true })
+    expect(pinnedResponse.result).toEqual({ ok: true, value: { pinnedSessionIds: ['s-pin'] } })
   })
 
   it('rejects a pathless create payload at the handler schema', async () => {

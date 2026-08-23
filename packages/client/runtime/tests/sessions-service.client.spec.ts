@@ -36,6 +36,7 @@ type FeedRow = {
   running?: boolean
   blank?: boolean
   agentPreset?: string
+  attention?: 'retry-exhausted'
 }
 
 async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
@@ -46,6 +47,7 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
       ...(r.parentId !== undefined ? { parentSessionId: sid(r.parentId) } : {}),
       ...(r.origin !== undefined ? { origin: r.origin } : {}),
       ...(r.agentPreset !== undefined ? { agentPreset: r.agentPreset } : {}),
+      ...(r.attention !== undefined ? { attention: r.attention } : {}),
     })),
   }) as never)
   await b.svc.refresh()
@@ -53,6 +55,12 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
 }
 
 describe('list store projection', () => {
+  it('projects the retry-exhausted attention verdict onto the row', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1', attention: 'retry-exhausted' }])
+    expect(b.svc.list.getSnapshot().byId[sid('s1')]?.attention).toBe('retry-exhausted')
+  })
+
   it('projects durable titles separately from cwd/id display fallbacks and parent links', async () => {
     const b = bench()
     b.svc.handleMuxEnvelope({
@@ -623,7 +631,7 @@ describe('blank mirror', () => {
     expect(b.svc.list.getSnapshot().byId[sid('s1')]).toMatchObject({ blank: true })
     b.svc.handleHostEnvelope({
       rpcId: 'st' as never,
-      payload: { type: 'host/session-status', sessionId: sid('s1'), running: true },
+      payload: { type: 'host/session-status', sessionId: sid('s1'), running: true, attention: null },
     })
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().byId[sid('s1')]).toMatchObject({ blank: false, running: true })

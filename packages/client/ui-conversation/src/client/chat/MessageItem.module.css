@@ -28,6 +28,45 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Show-more disclosure (ClampableBubbleBody): the clamped body fades into
+   the bubble fill instead of a hard cut; the toggle sits under it. */
+.bubbleBody {
+  position: relative;
+}
+
+.bubbleBody[data-clamped] {
+  overflow: hidden;
+}
+
+.bubbleBody[data-clamped]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  background: linear-gradient(to bottom, transparent, var(--dsw-specific-bubble) 85%);
+  pointer-events: none;
+}
+
+.bubbleToggle {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bubbleToggle:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
 .referenceSummary {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
-import { ModelSelect } from '../src/client/ModelSelect.tsx'
+import { ModelSelect, placeMenu, placeMenuPhoneTop } from '../src/client/ModelSelect.tsx'
 import { zh } from '../src/client/locales.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 
@@ -273,5 +273,194 @@ describe('ModelSelect reasoning effort', () => {
     // Click header again to expand
     fireEvent.click(groupHeader)
     expect(screen.getAllByTitle('DeepSeek-V4-Flash').length).toBe(2)
+  })
+})
+
+const positionedElement = (l: number, t: number, r: number, b: number) => ({
+  getBoundingClientRect: () => ({
+    left: l, top: t, right: r, bottom: b, x: l, y: t,
+    width: r - l, height: b - t, toJSON: () => ({}),
+  }) as DOMRect,
+})
+
+describe('placeMenu viewport clamping', () => {
+  const rect = positionedElement
+  const menu = (w: number, h: number) => ({ offsetWidth: w, offsetHeight: h })
+  const MARGIN = 8
+
+  it('keeps the preferred right-aligned-above placement when it fits', () => {
+    const pos = placeMenu(rect(0, 0, 0, 0), rect(300, 600, 600, 628), menu(320, 200))
+    expect(pos.left).toBe(600 - 320)
+    expect(pos.top).toBe(600 - 200 - 8)
+  })
+
+  it('clamps the left edge when the trigger is near the left of a narrow viewport', () => {
+    const pos = placeMenu(rect(0, 0, 0, 0), rect(8, 600, 60, 628), menu(320, 200))
+    expect(pos.left).toBe(MARGIN)
+  })
+
+  it('clamps the right edge when the trigger is near the right edge', () => {
+    // trigger right edge beyond viewport right bound
+    const pos = placeMenu(rect(0, 0, 0, 0), rect(900, 600, 1030, 628), menu(320, 200))
+    expect(pos.left).toBe(1024 - 320 - MARGIN)
+  })
+
+  it('flips below when there is no room above', () => {
+    const pos = placeMenu(rect(0, 0, 0, 0), rect(100, 40, 200, 68), menu(320, 200))
+    expect(pos.top).toBe(68 + 8)
+  })
+
+  it('clamps to the top margin when neither side fits vertically', () => {
+    const pos = placeMenu(rect(0, 0, 0, 0), rect(100, 200, 200, 228), menu(320, 700))
+    expect(pos.top).toBe(MARGIN)
+  })
+
+  it('accounts for the root offset when the root is not at the viewport origin', () => {
+    const pos = placeMenu(rect(16, 16, 16, 16), rect(200, 500, 300, 528), menu(320, 200))
+    // viewport-coordinate x = 300 - 320 = -20 → clamped to 8 → root-relative = 8 - 16 = -8
+    expect(pos.left).toBe(8 - 16)
+    // viewport y = 500 - 200 - 8 = 292 → no clamp → root-relative = 292 - 16
+    expect(pos.top).toBe(292 - 16)
+  })
+})
+
+describe('placeMenuPhoneTop upward-only placement', () => {
+  const rect = positionedElement
+  const MARGIN = 8
+
+  it('opens above a trigger near the viewport bottom without flipping below', () => {
+    vi.stubGlobal('innerHeight', 700)
+    try {
+      const pos = placeMenuPhoneTop(rect(0, 0, 0, 0), rect(300, 640, 420, 668), { offsetHeight: 380 })
+      expect(pos.top).toBe(640 - 380 - 8)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('clamps to the top margin when even the full viewport cannot hold the card', () => {
+    vi.stubGlobal('innerHeight', 700)
+    try {
+      const pos = placeMenuPhoneTop(rect(0, 0, 0, 0), rect(300, 640, 420, 668), { offsetHeight: 900 })
+      // Height caps at vh - 2×margin (684); y clamps to the top margin.
+      expect(pos.top).toBe(MARGIN)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('returns a root-relative top when the composer is offset from the viewport', () => {
+    vi.stubGlobal('innerHeight', 700)
+    try {
+      const pos = placeMenuPhoneTop(rect(0, 520, 0, 520), rect(300, 640, 420, 668), { offsetHeight: 100 })
+      // Viewport y = 640 - 100 - 8 = 532; `.menu` is absolute under root.
+      expect(pos.top).toBe(532 - 520)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('open-menu re-placement', () => {
+  /** Minimal ResizeObserver stand-in recording what the component observes. */
+  class FakeResizeObserver {
+    static instances: FakeResizeObserver[] = []
+    readonly observed: Element[] = []
+    constructor(readonly callback: ResizeObserverCallback) {
+      FakeResizeObserver.instances.push(this)
+    }
+    observe(target: Element): void { this.observed.push(target) }
+    disconnect(): void {}
+    unobserve(): void {}
+  }
+
+  const rect = (l: number, t: number, r: number, b: number) => ({
+    left: l, top: t, right: r, bottom: b, x: l, y: t, width: r - l, height: b - t, toJSON: () => ({}),
+  })
+
+  it('re-places the card when the open menu grows after the initial placement', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    FakeResizeObserver.instances = []
+    try {
+      const directory = createSnapshotStore(state())
+      render(<ModelSelect
+        locked={false}
+        available
+        directory={directory}
+        load={vi.fn()}
+        select={vi.fn().mockResolvedValue(true)}
+        t={t}
+      />)
+
+      // The trigger sits near the viewport bottom: the card opens upward.
+      const trigger = screen.getByRole('button', { name: /选择模型/ })
+      trigger.getBoundingClientRect =
+        () => rect(300, 600, 420, 628)
+
+      fireEvent.click(trigger)
+      const menu = screen.getByRole('menu')
+      // Placement measured a zero-height layout (jsdom): y = 600 − 0 − 8.
+      expect(menu.style.top).toBe('592px')
+      const observer = FakeResizeObserver.instances.at(-1)
+      expect(observer?.observed).toContain(menu)
+
+      // Drilling into a pane grows the card after the initial placement; the
+      // size change must re-place it instead of extending past the fold.
+      Object.defineProperty(menu, 'offsetHeight', { value: 200, configurable: true })
+      act(() => {
+        observer!.callback([], observer as unknown as ResizeObserver)
+      })
+      // Preferred above-placement recomputed for the grown card:
+      // y = 600 − 200 − 8 = 392 (no clamp).
+      expect(menu.style.top).toBe('392px')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps root and effort panes root-relative above the mobile composer through resize', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    vi.stubGlobal('innerHeight', 700)
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    FakeResizeObserver.instances = []
+    try {
+      render(<ModelSelect
+        locked={false}
+        available
+        directory={createSnapshotStore(state())}
+        load={vi.fn()}
+        select={vi.fn().mockResolvedValue(true)}
+        t={t}
+      />)
+
+      const trigger = screen.getByRole('button', { name: /选择模型/ })
+      const root = trigger.parentElement!
+      root.getBoundingClientRect = () => rect(0, 520, 420, 700)
+      trigger.getBoundingClientRect = () => rect(300, 640, 420, 668)
+      fireEvent.click(trigger)
+      const menu = screen.getByRole('menu')
+      Object.defineProperty(menu, 'offsetHeight', { value: 100, configurable: true })
+      const observer = FakeResizeObserver.instances.at(-1)!
+      act(() => { observer.callback([], observer) })
+      // Viewport y = 640 - 100 - 8 = 532, then root-relative 12px.
+      expect(menu.style.top).toBe('12px')
+
+      fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
+      Object.defineProperty(menu, 'offsetHeight', { value: 160, configurable: true })
+      act(() => { observer.callback([], observer) })
+      // Effort pane remeasures independently, still in the root's frame.
+      expect(menu.style.top).toBe('-48px')
+
+      vi.stubGlobal('innerHeight', 620)
+      act(() => { window.dispatchEvent(new Event('resize')) })
+      // The viewport clamp moves the effort pane up, not below the trigger.
+      expect(menu.style.top).toBe('-68px')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

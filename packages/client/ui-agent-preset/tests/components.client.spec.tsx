@@ -13,6 +13,8 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelProps } from '../src/client/AgentPresetLabel.tsx'
+import { AgentPresetMenuHead } from '../src/client/AgentPresetMenuHead.tsx'
+import type { AgentPresetMenuHeadProps } from '../src/client/AgentPresetMenuHead.tsx'
 import { AgentPresetRow } from '../src/client/AgentPresetRow.tsx'
 import type { AgentPresetRowProps } from '../src/client/AgentPresetRow.tsx'
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
@@ -401,5 +403,52 @@ describe('the session-header label', () => {
     await act(async () => { await Promise.resolve() })
     expect(absent.load).not.toHaveBeenCalled()
     expect(unknown.load).not.toHaveBeenCalled()
+  })
+})
+
+function renderMenuHead(
+  summary: { blank: boolean; agentPreset?: string } | undefined,
+  isPhone = true,
+  roster: Partial<AgentPresetSettingsState> = {},
+) {
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+    matches: isPhone && query === '(max-width: 639px)',
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  })))
+  const store = createSnapshotStore<AgentPresetSettingsState>({
+    ...ROW_READY, options: SEAT_READY.options, ...roster,
+  })
+  const sessions = createSnapshotStore({ byId: summary === undefined ? {} : { s1: summary } })
+  const load = vi.fn(() => Promise.resolve())
+  const view = render(<AgentPresetMenuHead {...({
+    load,
+    sessionId: 's1',
+    useSessions: bindSnapshotSelector(sessions),
+    useAgentPresets: bindSnapshotSelector(store),
+    t: (key: keyof typeof en) => en[key],
+  } as unknown as AgentPresetMenuHeadProps)} />)
+  return { load, view }
+}
+
+describe('the more-options menu head', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('renders preset name on phone viewport', async () => {
+    const { load } = renderMenuHead({ blank: false, agentPreset: 'standard' }, true)
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
+    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
+  })
+
+  it('renders nothing on desktop / wide viewports', () => {
+    const { view } = renderMenuHead({ blank: false, agentPreset: 'standard' }, false)
+    expect(view.container.firstChild).toBeNull()
+  })
+
+  it('renders nothing when session has no preset', () => {
+    const { view } = renderMenuHead({ blank: false }, true)
+    expect(view.container.firstChild).toBeNull()
   })
 })

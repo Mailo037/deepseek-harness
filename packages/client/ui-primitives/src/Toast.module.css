@@ -68,3 +68,11 @@
     animation: dsh-toast-fade 1000ms ease 3000ms forwards;
   }
 }
+
+/* Phone: long failure copy is the norm there, so the banner spends nearly
+   the whole viewport width instead of hugging its text. */
+@media (max-width: 639px) {
+  .toast {
+    max-width: calc(100vw - 16px);
+  }
+}

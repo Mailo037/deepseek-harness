@@ -1,0 +1,74 @@
+- button "New session"
+- button "Collapse sidebar":
+  - img
+- button "New session":
+  - img
+  - text: New Session
+- button "Search sessions":
+  - img
+- textbox "Search sessions..."
+- button "View options":
+  - img
+- button "Add workspace":
+  - img
+- tree "Needs attention":
+  - treeitem "Waiting for answer Use the ask_user_question tool to Session actions for Use the ask_user_question tool to" [selected]:
+    - text: Waiting for answer Use the ask_user_question tool to
+    - button "Session actions for Use the ask_user_question tool to":
+      - img
+- button "Settings":
+  - img
+  - text: Settings
+- banner:
+  - navigation "Session hierarchy":
+    - button "Use the ask_user_question tool to" [disabled]
+  - img
+  - text: Standard mode
+  - button "Session actions for Use the ask_user_question tool to":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: "Use the ask_user_question tool to ask me exactly one multi-select question with id \"color\", question \"Which color do you prefer?\", header \"Pick one\", and two options: label \"Blue\" with description \"A cool recessive hue that reads as calm and trustworthy in long reading sessions and dense dashboards.\", and label \"Green\" with description \"A restful mid-spectrum hue with the highest perceived brightness, easiest on the eye over long sessions.\" Set multi_select to true. After I answer, reply with the single word DONE and stop. {{clock}}"
+- button "Copy":
+  - img
+- button "Context injection @deepseek-ai/dsh-system-prompt":
+  - img
+  - img
+  - text: Context injection @deepseek-ai/dsh-system-prompt
+- button "Ask User Question" [expanded]:
+  - img
+  - img
+  - text: Ask User Question
+- button "Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.":
+  - img
+  - img
+  - text: Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.
+- text: Running
+- button "Ask question waiting":
+  - img
+  - img
+  - text: Ask question waiting
+- status: Deep diving...
+- region "Which color do you prefer?":
+  - text: Pick one
+  - heading "Which color do you prefer?" [level=2]
+  - button "Collapse the question card" [expanded]:
+    - img
+  - button "Dismiss all questions":
+    - img
+  - group:
+    - checkbox "Blue": Blue A cool recessive hue that reads as calm and trustworthy in long reading sessions and dense dashboards.
+    - checkbox "Green": Green A restful mid-spectrum hue with the highest perceived brightness, easiest on the eye over long sessions.
+    - textbox "Type your answer"
+  - button "Previous question" [disabled]:
+    - img
+  - text: 1 / 1
+  - button "Next question" [disabled]:
+    - img
+  - status
+  - button "Skip this question"
+  - button "Submit" [disabled]
+- text: Details
+- button "Close details"
+- text: Click a tool row in the message flow to view its details

@@ -243,6 +243,24 @@ describe('candidates', () => {
     await expect(names('query-longer-than-every-name')).resolves.toEqual([])
   })
 
+  it('matches across description words and tolerates minor typos in command names', async () => {
+    const commands: CommandDescriptor[] = [
+      { name: 'compact', description: 'Compact older conversation history' },
+      { name: 'export', description: 'Download this Session log as a ZIP archive' },
+      { name: 'feedback', description: 'record feedback about this session' },
+      { name: 'permission', description: 'Switch the permission preset' },
+    ]
+    const { source } = await bench({ commands: () => Promise.resolve({ commands }) })
+    const names = async (query: string) => (await source.candidates(proj('s1'), req(query))).map(c => c.name)
+    // Description search: multi-token / phrase
+    await expect(names('older conv')).resolves.toEqual(['compact'])
+    await expect(names('zip archive')).resolves.toEqual(['export'])
+    await expect(names('preset')).resolves.toEqual(['permission'])
+    // Typo tolerance
+    await expect(names('compct')).resolves.toEqual(['compact'])
+    await expect(names('permision')).resolves.toEqual(['permission'])
+  })
+
   it('catalogs are per session: another session pulls its own key', async () => {
     const { source, listCalls } = await bench()
     const names = (await source.candidates(proj('s2'), req(''))).map(c => c.name)
@@ -754,6 +772,60 @@ describe('popupFor', () => {
     await scope.fiber.dispose()
     expect(popup.state.getSnapshot().open).toBe(false)
     expect(command.popupFor(mint('s1').ctx)).not.toBe(popup)
+  })
+})
+
+describe('lexicon (plain-token decoration roll)', () => {
+  it('is undefined while the key is cold and serves host commands + available contributions after warm', async () => {
+    const { source, command, mint } = await bench()
+    // Cold: no synchronous snapshot — never a fetch from the render path.
+    expect(source.lexicon!(proj('s1'))).toBeUndefined()
+    source.warm!(proj('s1'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const theme = themeContribution()
+    command.register(theme)
+    expect(source.lexicon!(proj('s1'))).toEqual([
+      { name: 'plan', appearance: 'command' },
+      { name: 'goal', appearance: 'command' },
+      { name: 'theme', appearance: 'command' },
+    ])
+    // An unavailable contribution stays out; another session's key is independent.
+    command.register({ ...theme, name: 'hidden', available: () => false })
+    expect(source.lexicon!(proj('s1'))).toEqual([
+      { name: 'plan', appearance: 'command' },
+      { name: 'goal', appearance: 'command' },
+      { name: 'theme', appearance: 'command' },
+    ])
+    mint('s2')
+    expect(source.lexicon!(proj('s2'))).toBeUndefined()
+  })
+
+  it('subscribeLexicon notifies on catalog settle and repull; unsubscribe stops the fan-out', async () => {
+    let round = 0
+    const { ctx, source } = await bench({
+      commands: () => {
+        round += 1
+        return Promise.resolve({
+          commands: round === 1
+            ? S1_CMDS
+            : [{ name: 'fresh', description: '', input: { hint: 'h' } }],
+        })
+      },
+    })
+    const listener = vi.fn()
+    const off = source.subscribeLexicon!(proj('s1'), listener)
+    source.warm!(proj('s1'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(listener).toHaveBeenCalledTimes(1)
+    ctx.remote.$dispatch('commands/change', [])
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(listener).toHaveBeenCalledTimes(2)
+    off()
+    ctx.remote.$dispatch('commands/change', [])
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(listener).toHaveBeenCalledTimes(2)
+    // The refreshed roll carries the new snapshot's names.
+    expect(source.lexicon!(proj('s1'))).toEqual([{ name: 'fresh', appearance: 'command' }])
   })
 })
 

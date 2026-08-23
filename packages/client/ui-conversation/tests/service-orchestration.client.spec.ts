@@ -88,13 +88,13 @@ describe('ConversationController', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-1')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
     try {
-      const [attachment] = b.root.createDraftImages([
+      const [attachment] = b.root.createDraftAttachments([
         new File([new Uint8Array(4)], 'a.png', { type: 'image/png' }),
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
-      b.root.input.for(b.runtime.sessions.scope('s1')!).addImages([attachment.id])
+      b.root.input.for(b.runtime.sessions.scope('s1')!).addAttachments([attachment.id])
       await b.runtime.sessions.remove('s1')
-      expect(b.root.draftImages([attachment.id])).toEqual([])
+      expect(b.root.draftAttachments([attachment.id])).toEqual([])
       expect(revoked).toHaveBeenCalledWith('blob:draft-1')
     } finally {
       created.mockRestore()
@@ -106,7 +106,7 @@ describe('ConversationController', () => {
   it('validates every MIME type before allocating previews', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
-    expect(() => b.root.createDraftImages([
+    expect(() => b.root.createDraftAttachments([
       new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
       new File([Uint8Array.of(2)], 'invalid.svg', { type: 'image/svg+xml' }),
     ])).toThrow(UnsupportedImageMediaTypeError)
@@ -246,23 +246,23 @@ describe('InputHub queue editing (composer-side edit flow)', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-edit')
     try {
       const b = await editBench()
-      const [attachment] = b.root.createDraftImages([
+      const [attachment] = b.root.createDraftAttachments([
         new File([Uint8Array.of(1)], 'a.png', { type: 'image/png' }),
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
-      b.shell.addImages([attachment.id])
+      b.shell.addAttachments([attachment.id])
       b.shell.setDraft('my pending draft')
 
       expect(b.shell.beginQueueEdit('q-1' as never)).toBe(true)
       expect(b.shell.snapshot.draft).toBe('q-1')
       expect(b.shell.snapshot.queueEdit).toEqual({ itemId: 'q-1' })
       // Attachments detach for the edit; the descriptors stay alive.
-      expect(b.shell.snapshot.imageIds).toEqual([])
-      expect(b.root.draftImages([attachment.id])).toHaveLength(1)
+      expect(b.shell.snapshot.attachmentIds).toEqual([])
+      expect(b.root.draftAttachments([attachment.id])).toHaveLength(1)
 
       b.shell.cancelQueueEdit()
       expect(b.shell.snapshot.draft).toBe('my pending draft')
-      expect(b.shell.snapshot.imageIds).toEqual([attachment.id])
+      expect(b.shell.snapshot.attachmentIds).toEqual([attachment.id])
       expect(b.shell.snapshot.queueEdit).toBeUndefined()
       expect(b.updateQueue).not.toHaveBeenCalled()
       await b.runtime.dispose()

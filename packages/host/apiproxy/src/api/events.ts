@@ -121,8 +121,9 @@ export type MuxFrame =
  * committed registration-deletion increment and never implies directory or
  * session-log deletion; workspace-order-changed pushes the complete durable
  * registry order after a reorder; archived-sessions-changed pushes the full registry
- * archive set after every durable change (same full-snapshot posture as
- * workspace-changed — `workspace.list` re-baselines it on reconnect).
+ * archive set after every durable change; pinned-sessions-changed does the
+ * same for the ordered sidebar pin list. `workspace.list` re-baselines both
+ * on reconnect.
  */
 export type HostFrame =
   | {
@@ -135,12 +136,19 @@ export type HostFrame =
     agentPreset?: string
   }
   | { type: 'host/session-removed'; sessionId: SessionId }
-  | { type: 'host/session-status'; sessionId: SessionId; running: boolean }
+  /**
+   * Running-status flip of one attached session. `attention` is the current
+   * terminal-failure verdict (`null` = none): required so a client can both
+   * set and clear the sidebar's "needs attention" state from the live
+   * channel, without waiting for a `session.list` re-pull.
+   */
+  | { type: 'host/session-status'; sessionId: SessionId; running: boolean; attention: 'retry-exhausted' | 'error' | null }
   | { type: 'host/agent-error'; sessionId: SessionId; message: string }
   | { type: 'host/workspace-changed'; workspace: WorkspaceView }
   | { type: 'host/workspace-removed'; workspaceId: WorkspaceView['workspaceId'] }
   | { type: 'host/workspace-order-changed'; workspaceIds: WorkspaceView['workspaceId'][] }
   | { type: 'host/archived-sessions-changed'; archivedSessionIds: SessionId[] }
+  | { type: 'host/pinned-sessions-changed'; pinnedSessionIds: SessionId[] }
   /**
    * One allowlisted host cordis event forwarded verbatim. The allowlist is
    * owned by `@deepseek-ai/dsh-api-remotes` (`API_REMOTE_FORWARDED_EVENTS`),

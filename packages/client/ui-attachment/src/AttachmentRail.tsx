@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconWarningTriangle16, Tooltip,
+  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconPaperclipOutline16,
+  IconUndoOutline14, IconWarningTriangle16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './AttachmentRail.module.css'
 
@@ -18,6 +19,12 @@ export interface AttachmentRailItem {
   alt: string
   /** Accessible label of the item's remove control. */
   removeLabel: string
+  /** Display name and formatted size of a non-image file attachment. When
+    * present, a document chip renders instead of the image thumbnail. */
+  file?: { readonly name: string; readonly sizeText: string } | undefined
+  /** Accessible label of the item's undo (restore-to-draft) control. When
+    * present, a small undo button renders beside the remove control. */
+  restoreLabel?: string | undefined
   /** Warning tooltip text when the active model does not support this attachment. */
   warning?: string | undefined
 }
@@ -64,13 +71,15 @@ function pageBehavior(): ScrollBehavior {
  * @param props.labels - rail-level strings (group name, open tooltip, arrows).
  * @param props.onOpen - single-click open of one item's original image.
  * @param props.onRemove - remove one item from the draft.
+ * @param props.onRestore - put one converted text attachment back into the draft.
  * @returns the rail group with its paging arrows.
  */
-export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, onOpen, onRemove }: {
+export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, onOpen, onRemove, onRestore }: {
   items: readonly T[]
   labels: AttachmentRailLabels
   onOpen: (item: T) => void
   onRemove: (item: T) => void
+  onRestore: (item: T) => void
 }) {
   const railRef = useRef<HTMLDivElement | null>(null)
   // null marks the first layout pass: a rail that MOUNTS over an existing
@@ -178,22 +187,43 @@ export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, on
                 </div>
               </Tooltip>
             )}
-            <button
-              type="button"
-              className={css.thumbnail}
-              title={labels.open}
-              onClick={() => { onOpen(item) }}
-            >
-              <img src={item.previewUrl} alt={item.alt} />
-            </button>
-            <button
-              type="button"
-              className={css.remove}
-              aria-label={item.removeLabel}
-              onClick={() => { onRemove(item) }}
-            >
-              <IconCloseFill14 size={12} />
-            </button>
+            {item.file === undefined ? (
+              <button
+                type="button"
+                className={css.thumbnail}
+                title={labels.open}
+                onClick={() => { onOpen(item) }}
+              >
+                <img src={item.previewUrl} alt={item.alt} />
+              </button>
+            ) : (
+              <div className={css.chip} title={item.file.name}>
+                <IconPaperclipOutline16 size={14} className={css.chipIcon} />
+                <span className={css.chipName}>{item.file.name}</span>
+                <span className={css.chipSize}>{item.file.sizeText}</span>
+              </div>
+            )}
+            <div className={css.controls}>
+              {item.restoreLabel !== undefined && (
+                <button
+                  type="button"
+                  className={css.restore}
+                  aria-label={item.restoreLabel}
+                  title={item.restoreLabel}
+                  onClick={() => { onRestore(item) }}
+                >
+                  <IconUndoOutline14 />
+                </button>
+              )}
+              <button
+                type="button"
+                className={css.remove}
+                aria-label={item.removeLabel}
+                onClick={() => { onRemove(item) }}
+              >
+                <IconCloseFill14 size={12} />
+              </button>
+            </div>
           </div>
         ))}
       </div>

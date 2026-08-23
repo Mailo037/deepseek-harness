@@ -127,7 +127,7 @@ describe('PopupSelectView', () => {
   it('caps the card height at the design maximum when the composer sits low enough', async () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ bottom: 800 } as DOMRect)
     await mountOpen()
-    expect(screen.getByLabelText('/theme 选项').style.maxHeight).toBe('320px')
+    expect(screen.getByLabelText('/theme 选项').style.maxHeight).toBe('240px')
   })
 
   it('clamps the card height to the space above the composer minus the safe margin', async () => {

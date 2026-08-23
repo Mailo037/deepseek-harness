@@ -104,4 +104,21 @@ export interface IWorkspaces {
    * @param sessionId - session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
+  /** Restore one archived session to its original workspace grouping. */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /**
+   * Permanently delete one archived session (durable log removed host-side).
+   * A non-archived or host-open session rejects; the row disappears through
+   * the host/session-removed frame and the archive-set echo.
+   * @param sessionId - archived session to delete.
+   */
+  deleteSession(sessionId: SessionId): Promise<void>
+  /**
+   * Permanently delete every deletable archived session. Sessions open in the
+   * host stay archived; the returned set is exactly what remains.
+   * @returns the remaining archived session ids.
+   */
+  deleteArchivedSessions(): Promise<readonly SessionId[]>
+  /** Set one session's durable sidebar pin membership. */
+  setSessionPinned(sessionId: SessionId, pinned: boolean): Promise<void>
 }

@@ -2,18 +2,22 @@
  * GoalBar: the goal indicator docked above the message composer (input dock
  * strip). A present goal shows a goal glyph, a phase label, the truncated
  * objective, and icon actions — resume when paused, edit (inline form in the
- * same strip), and clear. Goal creation lives on the `/goal` command, not
- * here: loading (undefined), no goal (null), and complete goals render
- * nothing. Live state arrives as the projected whole snapshot; the verbs are
- * the injected face.
+ * same strip), and clear. Fine-pointer desktops reveal those icons on
+ * hover/focus out of flow so hidden actions never reserve text width; touch
+ * layouts collapse them into one kebab menu instead. Goal creation lives on
+ * the `/goal` command, not here: loading (undefined), no goal (null), and
+ * complete goals render nothing. Live state arrives as the projected whole
+ * snapshot; the verbs are the injected face.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
-  IconCheckOutline16, IconCloseOutline16, IconEditOutline16, IconFullscreenOutline16,
-  IconGoalOutline16, IconPauseOutline16, IconPlayOutline16, IconTrashOutline16, Tooltip,
+  IconCheckOutline16, IconChevronDownOutline14, IconChevronUpOutline14, IconCloseOutline16, IconEditOutline16,
+  IconEllipsisOutline16, IconGoalOutline16, IconPauseOutline16, IconPlayOutline16,
+  IconTrashOutline16, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActionResult, GoalBarActions } from './slots.ts'
 import type { GoalKey } from './locales.ts'
@@ -44,6 +48,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [clearedGoalId, setClearedGoalId] = useState<GoalSnapshot['id'] | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const pendingRef = useRef(false)
   const objectiveRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -61,6 +66,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
     setExpanded(false)
     setActionError(null)
     setClearedGoalId(null)
+    setMenuOpen(false)
   }, [goalId])
 
   // React state disables the controls on the next render; the ref closes the
@@ -88,6 +94,18 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
     const result = await runAction(onClear)
     if (result?.ok) setClearedGoalId(clearedId)
   }, [onClear, runAction])
+
+  // Mobile overflow menu: same verbs as the inline icons, one seat instead of
+  // five. The goal snapshot is non-null wherever the menu renders.
+  const runMenuAction = useCallback((id: string) => {
+    setMenuOpen(false)
+    if (goal === null || goal === undefined) return
+    if (id === 'expand') { setExpanded(prev => !prev); return }
+    if (id === 'pause') { void runAction(onPause); return }
+    if (id === 'resume') { void runAction(onResume); return }
+    if (id === 'edit') { setDraft(goal.objective); setEditing(true); return }
+    if (id === 'clear') void handleClear(goal.id)
+  }, [goal, handleClear, onClear, onPause, onResume, runAction])
 
   // Loading, absent, and complete goals have no strip at all.
   if (goal === undefined || goal === null || goal.phase === 'complete' || goal.id === clearedGoalId) return null
@@ -146,58 +164,116 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   }
 
   const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
+  const menuItems: MenuEntry[] = [
+    { id: 'expand', label: t(expanded ? 'action.collapse' : 'action.expand'), icon: expanded ? <IconChevronDownOutline14 /> : <IconChevronUpOutline14 /> },
+    ...(goal.phase === 'active'
+      ? [{ id: 'pause', label: t('action.pause'), icon: <IconPauseOutline16 size={14} /> }]
+      : []),
+    ...(goal.phase === 'paused'
+      ? [{ id: 'resume', label: t('action.resume'), icon: <IconPlayOutline16 size={14} /> }]
+      : []),
+    { id: 'edit', label: t('action.edit'), icon: <IconEditOutline16 size={14} /> },
+    { id: 'clear', label: t('action.clear'), danger: true, icon: <IconTrashOutline16 size={14} /> },
+  ]
+  // The verb controls (toggle, pause/resume, edit, clear, kebab) are identical
+  // in both layouts; only their surrounding row changes.
+  const controls = (
+    <>
+      <div className={css.actions}>
+        <Tooltip label={t(expanded ? 'action.collapse' : 'action.expand')} side="bottom" delayMs={500}>
+          <button
+            type="button"
+            className={css.iconBtn}
+            disabled={pending}
+            onClick={() => { setExpanded(prev => !prev) }}
+            aria-label={t(expanded ? 'action.collapse' : 'action.expand')}
+            aria-expanded={expanded ? 'true' : 'false'}
+          >
+            {/* Disclosure chevrons (the TodoDock convention): up = expand the
+                folded bar, down = collapse the expanded panel. */}
+            {expanded ? <IconChevronDownOutline14 /> : <IconChevronUpOutline14 />}
+          </button>
+        </Tooltip>
+        {goal.phase === 'active' && (
+          <Tooltip label={t('action.pause')} side="bottom" delayMs={500}>
+            <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onPause) }} aria-label={t('action.pause')}>
+              <IconPauseOutline16 size={14} />
+            </button>
+          </Tooltip>
+        )}
+        {goal.phase === 'paused' && (
+          <Tooltip label={t('action.resume')} side="bottom" delayMs={500}>
+            <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onResume) }} aria-label={t('action.resume')}>
+              <IconPlayOutline16 size={14} />
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip label={t('action.edit')} side="bottom" delayMs={500}>
+          <button
+            type="button"
+            className={css.iconBtn}
+            disabled={pending}
+            onClick={() => { setDraft(goal.objective); setEditing(true) }}
+            aria-label={t('action.edit')}
+          >
+            <IconEditOutline16 size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t('action.clear')} side="bottom" delayMs={500}>
+          <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void handleClear(goal.id) }} aria-label={t('action.clear')}>
+            <IconTrashOutline16 size={14} />
+          </button>
+        </Tooltip>
+      </div>
+      {/* Mobile seat: one kebab opens every read-strip verb as a menu row. */}
+      <div className={css.menuAnchor}>
+        <Menu
+          open={menuOpen}
+          items={menuItems}
+          onSelect={runMenuAction}
+          onClose={() => { setMenuOpen(false) }}
+          side="top"
+          align="end"
+          anchor={
+            <button
+              type="button"
+              className={css.iconBtn}
+              disabled={pending}
+              onClick={() => { setMenuOpen(prev => !prev) }}
+              aria-label={t('menu.open')}
+              aria-expanded={menuOpen ? 'true' : 'false'}
+            >
+              <IconEllipsisOutline16 size={14} />
+            </button>
+          }
+        />
+      </div>
+    </>
+  )
   return (
     <div className={css.dock} data-goal-bar>
-      <div className={expanded ? `${css.bar} ${css.barExpanded}` : css.bar} title={expanded ? undefined : title}>
-        <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
-        <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
-        <span className={expanded ? css.objectiveExpanded : css.objective}>{goal.objective}</span>
-        {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
-        <div className={css.actions}>
-          <Tooltip label={t(expanded ? 'action.collapse' : 'action.expand')} side="bottom" delayMs={500}>
-            <button
-              type="button"
-              className={css.iconBtn}
-              disabled={pending}
-              onClick={() => { setExpanded(prev => !prev) }}
-              aria-label={t(expanded ? 'action.collapse' : 'action.expand')}
-              aria-expanded={expanded ? 'true' : 'false'}
-            >
-              <IconFullscreenOutline16 size={14} />
-            </button>
-          </Tooltip>
-          {goal.phase === 'active' && (
-            <Tooltip label={t('action.pause')} side="bottom" delayMs={500}>
-              <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onPause) }} aria-label={t('action.pause')}>
-                <IconPauseOutline16 size={14} />
-              </button>
-            </Tooltip>
-          )}
-          {goal.phase === 'paused' && (
-            <Tooltip label={t('action.resume')} side="bottom" delayMs={500}>
-              <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onResume) }} aria-label={t('action.resume')}>
-                <IconPlayOutline16 size={14} />
-              </button>
-            </Tooltip>
-          )}
-          <Tooltip label={t('action.edit')} side="bottom" delayMs={500}>
-            <button
-              type="button"
-              className={css.iconBtn}
-              disabled={pending}
-              onClick={() => { setDraft(goal.objective); setEditing(true) }}
-              aria-label={t('action.edit')}
-            >
-              <IconEditOutline16 size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t('action.clear')} side="bottom" delayMs={500}>
-            <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void handleClear(goal.id) }} aria-label={t('action.clear')}>
-              <IconTrashOutline16 size={14} />
-            </button>
-          </Tooltip>
+      {expanded ? (
+        /* Expanded (read) layout: the glyph + phase label lead one header row
+           with every control at its right end, and the objective gets the full
+           card width below instead of competing with them for one line. */
+        <div className={`${css.bar} ${css.barExpanded}`}>
+          <div className={css.headerRow}>
+            <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
+            <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
+            {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
+            {controls}
+          </div>
+          <div className={css.objectiveExpanded}>{goal.objective}</div>
         </div>
-      </div>
+      ) : (
+        <div className={css.bar} title={title}>
+          <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
+          <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
+          <span className={css.objective}>{goal.objective}</span>
+          {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
+          {controls}
+        </div>
+      )}
     </div>
   )
 }

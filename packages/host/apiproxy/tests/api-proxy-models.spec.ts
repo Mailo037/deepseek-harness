@@ -6,6 +6,10 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -274,6 +278,59 @@ describe('Web session model selection', () => {
       error: { code: 'attachment-error', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } },
     })
     expect(readImage).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+  it('uploads attachment bytes under .uploads with the sanitized timestamped name', async () => {
+    const { ctx } = await harness()
+    const cwd = mkdtempSync(join(tmpdir(), 'dsh-apiproxy-upload-'))
+    const uploadSession = ctx.sessions.create(undefined, { meta: { cwd } })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd,
+    })
+
+    const uploaded = expectValue(await api.sessions.uploadAttachment(request({
+      sessionId: uploadSession.id, name: 'report.pdf', data: Buffer.from([1, 2, 3, 4]).toString('base64'),
+    })))
+    expect(uploaded.bytes).toBe(4)
+    expect(uploaded.path).toMatch(/^\.uploads\/\d+-report\.pdf$/)
+    const entries = await readdir(join(cwd, '.uploads'))
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!).toMatch(/^\d+-report\.pdf$/)
+    expect(readFileSync(join(cwd, '.uploads', entries[0]!))).toEqual(Buffer.from([1, 2, 3, 4]))
+
+    await ctx.fiber.dispose()
+  })
+  it('rejects invalid upload names, oversized files, empty files, and cwd-less sessions', async () => {
+    const { ctx } = await harness()
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const uploader = ctx.sessions.create(undefined, { meta: { cwd: '/tmp' } })
+
+    const traversal = await api.sessions.uploadAttachment(request({ sessionId: uploader.id, name: '../x', data: 'AQ==' }))
+    expect(traversal.result).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'INVALID_NAME' } } })
+    const dot = await api.sessions.uploadAttachment(request({ sessionId: uploader.id, name: '.', data: 'AQ==' }))
+    expect(dot.result).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'INVALID_NAME' } } })
+    const dotdot = await api.sessions.uploadAttachment(request({ sessionId: uploader.id, name: '..', data: 'AQ==' }))
+    expect(dotdot.result).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'INVALID_NAME' } } })
+    const empty = await api.sessions.uploadAttachment(
+      request({ sessionId: uploader.id, name: 'e.bin', data: Buffer.alloc(0).toString('base64') }),
+    )
+    expect(empty.result).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'EMPTY_FILE' } } })
+
+    const oversized = await api.sessions.uploadAttachment(request({
+      sessionId: uploader.id,
+      name: 'big.bin',
+      data: Buffer.alloc(26_214_401).toString('base64'),
+    }))
+    expect(oversized.result).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'FILE_TOO_LARGE' } } })
+
+    const cwdless = ctx.sessions.create()
+    const noCwd = await api.sessions.uploadAttachment(request({ sessionId: cwdless.id, name: 'x.bin', data: 'AQ==' }))
+    expect(noCwd.result).toMatchObject({ ok: false, error: { code: 'internal', message: `session "${cwdless.id}" has no project cwd` } })
+
     await ctx.fiber.dispose()
   })
   it('groups successful providers and leaves an unlisted current selection out of the catalog', async () => {

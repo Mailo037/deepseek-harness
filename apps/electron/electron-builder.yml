@@ -1,0 +1,33 @@
+appId: ai.deepseek.harness
+productName: DeepSeek Harness
+artifactName: ${productName}-Setup-${version}.${ext}
+directories:
+  output: release
+  buildResources: build
+files:
+  - lib/types/**
+  - config/**
+  - package.json
+  - "!**/*.map"
+asar: true
+asarUnpack:
+  - "**/*.node"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  verifyUpdateCodeSignature: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: deepseek-ai
+  repo: deepseek-harness
+  releaseType: release

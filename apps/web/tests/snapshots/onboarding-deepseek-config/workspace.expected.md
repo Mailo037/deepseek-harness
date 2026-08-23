@@ -1,0 +1,5 @@
+- dialog "选择工作区":
+  - heading "选择工作区" [level=2]
+  - paragraph: 第 2 步（共 3 步）：选择第一个任务所属的文件夹。
+  - button "选择工作区"
+  - button "暂时跳过"

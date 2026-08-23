@@ -13,7 +13,8 @@ import { z } from 'zod'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, createAssistantMessage } from '@deepseek-ai/dsh-llm'
+import type { RetryId } from '@deepseek-ai/dsh-llm-retry'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -270,6 +271,89 @@ describe('session.list projections column', () => {
     const row = response.result.value.items.find(item => item.sessionId === session.id)
     expect(row).toBeDefined()
     expect(row !== undefined && 'projections' in row).toBe(false)
+  })
+
+  it('flags a session whose latest turn failed after exhausting its retry budget', async () => {
+    const { ctx, session } = await harness(true)
+    const gateway = api(ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    for (let retry = 1; retry <= 5; retry++) {
+      session.append('llm/retry', {
+        retryId: `retry-${retry}` as RetryId,
+        turn: 1, step: 1, provider: 'p', mode: 'normal', policyKey: 'k',
+        retry, maxRetries: 5, delayMs: 1,
+        failure: { message: 'boom', code: 'SERVER' },
+      })
+    }
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'boom', code: 'SERVER' } } })
+    const response = await gateway.sessions.list(request({}))
+    if (!response.result.ok) throw new Error('unreachable')
+    const row = response.result.value.items.find(item => item.sessionId === session.id)
+    expect(row?.attention).toBe('retry-exhausted')
+    // The persisted hint carries the same fact for the cold path.
+    expect(row?.projections?.values.sessionListMetadata).toEqual({
+      blank: false,
+      lastPromptAt: null,
+      attention: 'retry-exhausted',
+    })
+  })
+
+  it('does not flag a turn whose exhausted retry attempt recovered', async () => {
+    const { ctx, session } = await harness(true)
+    const gateway = api(ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('llm/retry', {
+      retryId: 'r5' as RetryId,
+      turn: 1, step: 1, provider: 'p', mode: 'normal', policyKey: 'k',
+      retry: 5, maxRetries: 5, delayMs: 1,
+      failure: { message: 'boom', code: 'SERVER' },
+    })
+    // The retry attempt produced a message, so the exhaustion no longer
+    // drives the turn's verdict.
+    session.append('assistant/message', {
+      turn: 1, step: 1,
+      message: createAssistantMessage({ content: [{ type: 'text', text: 'ok' }], source: { provider: 'p', model: 'm' } }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const response = await gateway.sessions.list(request({}))
+    if (!response.result.ok) throw new Error('unreachable')
+    const row = response.result.value.items.find(item => item.sessionId === session.id)
+    expect(row?.attention).toBeUndefined()
+  })
+
+  it('does not flag an error turn without retry exhaustion', async () => {
+    const { ctx, session } = await harness(true)
+    const gateway = api(ctx)
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'nope', code: 'UNKNOWN' } } })
+    const response = await gateway.sessions.list(request({}))
+    if (!response.result.ok) throw new Error('unreachable')
+    const row = response.result.value.items.find(item => item.sessionId === session.id)
+    expect(row?.attention).toBeUndefined()
+  })
+
+  it('a fresh turn clears a previous retry-exhausted verdict', async () => {
+    const { ctx, session } = await harness(true)
+    const gateway = api(ctx)
+    session.append('turn/start', { turn: 1 })
+    session.append('llm/retry', {
+      retryId: 'r1' as RetryId,
+      turn: 1, step: 1, provider: 'p', mode: 'normal', policyKey: 'k',
+      retry: 1, maxRetries: 1, delayMs: 1,
+      failure: { message: 'boom', code: 'SERVER' },
+    })
+    session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'boom', code: 'SERVER' } } })
+    session.append('turn/start', { turn: 2 })
+    const response = await gateway.sessions.list(request({}))
+    if (!response.result.ok) throw new Error('unreachable')
+    const row = response.result.value.items.find(item => item.sessionId === session.id)
+    expect(row?.attention).toBeUndefined()
   })
 })
 

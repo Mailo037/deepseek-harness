@@ -12,7 +12,10 @@ import { pickWin32Directory, type Win32DialogInternals, type Win32DialogWorkerLi
 import type { Win32DialogWorkerMessage } from '../src/win32-dialog-worker.ts'
 
 class FakeWorker extends EventEmitter implements Win32DialogWorkerLike {
-  kill = vi.fn(() => true)
+  kill = vi.fn(() => {
+    queueMicrotask(() => { this.emit('exit', 1) })
+    return true
+  })
   post(message: Win32DialogWorkerMessage): void {
     this.emit('message', message)
   }
@@ -22,17 +25,21 @@ interface Harness {
   worker: FakeWorker
   internals: Win32DialogInternals
   close: ReturnType<typeof vi.fn>
+  raise: ReturnType<typeof vi.fn>
 }
 
 function harness(overrides: Partial<Win32DialogInternals> = {}): Harness {
   const worker = new FakeWorker()
   const close = vi.fn(async () => undefined)
+  const raise = vi.fn(async () => true)
   return {
     worker,
     close,
+    raise,
     internals: {
       spawnWorker: () => worker,
       closeThreadWindows: close,
+      raiseThreadWindows: raise,
       closeRetryMs: 1,
       ...overrides,
     },
@@ -88,6 +95,75 @@ describe('pickWin32Directory', () => {
     await expect(pickWin32Directory(controller.signal, { spawnWorker, closeThreadWindows: async () => undefined }))
       .rejects.toThrow('native directory picker aborted')
     expect(spawnWorker).not.toHaveBeenCalled()
+  })
+
+  it('raises the dialog when the showing notice arrives, until a window lifts', async () => {
+    // The RPC trigger leaves the server a background process, so without the
+    // raise the dialog shows behind the browser and the pick looks dead.
+    // Early attempts run before `Show` created the window; the service keeps
+    // retrying until one attempt reports a raised visible window.
+    const raise = vi.fn(async () => raise.mock.calls.length > 2)
+    const { worker, internals } = harness({ raiseThreadWindows: raise, raiseRetryMs: 1 })
+    const picked = pickWin32Directory(live(), internals)
+    worker.post({ kind: 'showing', threadId: 42 })
+    await vi.waitFor(() => {
+      expect(raise.mock.calls.length).toBeGreaterThan(2)
+    })
+    await vi.waitFor(() => {
+      expect(raise.mock.calls.length).toBe(3)
+    })
+    worker.post({ kind: 'done', path: null })
+    await expect(picked).resolves.toBeNull()
+  })
+
+  it('restarts once when Show creates no common-dialog window', async () => {
+    const workers = [new FakeWorker(), new FakeWorker()]
+    const spawnWorker = vi.fn(() => workers[spawnWorker.mock.calls.length - 1] as FakeWorker)
+    const raise = vi.fn(async (threadId: number) => threadId === 10)
+    const picked = pickWin32Directory(live(), {
+      spawnWorker,
+      closeThreadWindows: async () => undefined,
+      raiseThreadWindows: raise,
+      raiseRetryMs: 1,
+    })
+    workers[0]?.post({ kind: 'showing', threadId: 9 })
+    await vi.waitFor(() => {
+      expect(spawnWorker).toHaveBeenCalledTimes(2)
+    })
+    expect(workers[0]?.kill).toHaveBeenCalledOnce()
+    workers[1]?.post({ kind: 'showing', threadId: 10 })
+    await vi.waitFor(() => {
+      expect(raise).toHaveBeenCalledWith(10)
+    })
+    workers[1]?.post({ kind: 'done', path: 'C:\\retried' })
+    await expect(picked).resolves.toBe('C:\\retried')
+  })
+
+  it('rejects after two workers create no common-dialog window', async () => {
+    const workers = [new FakeWorker(), new FakeWorker()]
+    const spawnWorker = vi.fn(() => workers[spawnWorker.mock.calls.length - 1] as FakeWorker)
+    const picked = pickWin32Directory(live(), {
+      spawnWorker,
+      closeThreadWindows: async () => undefined,
+      raiseThreadWindows: async () => false,
+      raiseRetryMs: 1,
+    })
+    workers[0]?.post({ kind: 'showing', threadId: 9 })
+    await vi.waitFor(() => {
+      expect(spawnWorker).toHaveBeenCalledTimes(2)
+    })
+    workers[1]?.post({ kind: 'showing', threadId: 10 })
+    await expect(picked).rejects.toThrow('did not create a visible window')
+    expect(workers[0]?.kill).toHaveBeenCalledOnce()
+    expect(workers[1]?.kill).toHaveBeenCalledOnce()
+  })
+
+  it('keeps picking when the raise fails', async () => {
+    const { worker, internals } = harness({ raiseThreadWindows: async () => { throw new Error('no window yet') } })
+    const picked = pickWin32Directory(live(), internals)
+    worker.post({ kind: 'showing', threadId: 3 })
+    worker.post({ kind: 'done', path: 'C:\\raised' })
+    await expect(picked).resolves.toBe('C:\\raised')
   })
 
   it('services an abort by closing the dialog thread windows until the worker reports', async () => {

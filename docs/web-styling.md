@@ -13,6 +13,7 @@ Global style sheets belong in `ui-theme/src/styles/`. Component styles live besi
 ## Component rules
 
 - Use CSS Modules and `clsx`; do not add a component library or Tailwind.
+- Build visible controls from `ui-primitives` or a feature-owned custom component. Do not ship browser-native picker, select, dialog, or file-input chrome; a native semantic element may remain underneath only when the custom component owns the complete visible presentation, keyboard behavior, focus state, and reduced-motion behavior.
 - Use `--dsw-alias-*` semantic tokens in feature components. Do not copy static palette values or write literal colors there.
 - Keep theme selectors out of feature component CSS. Light/dark overrides belong to the theme owner.
 - Pair font sizes with line heights and use the theme typography variables when an existing role matches.

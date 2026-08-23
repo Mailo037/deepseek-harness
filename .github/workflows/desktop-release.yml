@@ -1,0 +1,97 @@
+name: Desktop release
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a signed Windows installer from an electron-v* tag.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package and smoke Windows desktop app
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Package unsigned NSIS installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm --filter @deepseek-ai/dsh-electron run package:win
+
+      - name: Smoke unpacked Windows application
+        working-directory: apps/electron
+        run: node scripts/smoke-launch.mjs --packaged
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: electron-windows-${{ github.sha }}
+          path: apps/electron/release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Sign and publish Windows desktop release
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: package
+    runs-on: windows-2025
+    timeout-minutes: 30
+    environment: desktop-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Require the versioned desktop tag
+        shell: bash
+        run: |
+          version="$(node -p "require('./apps/electron/package.json').version")"
+          [ "${{ github.ref_type }}" = tag ]
+          [ "${{ github.ref_name }}" = "electron-v$version" ]
+
+      - name: Sign and publish NSIS installer
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pnpm run build:official
+          $env:DSH_ELECTRON_PUBLISH = 'always'
+          pnpm --dir apps/electron exec node scripts/package.mjs --win --x64

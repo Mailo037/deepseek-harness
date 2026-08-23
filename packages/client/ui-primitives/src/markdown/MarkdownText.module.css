@@ -155,6 +155,11 @@
   padding: 0 5px;
 }
 
+.markdown :not(pre) > code.fileMentionCode {
+  background-color: transparent;
+  padding: 0;
+}
+
 .markdown :where(h1, h2, h3, h4, h5, h6) code {
   font: inherit;
   font-family: var(--ds-font-family-code);
@@ -245,8 +250,13 @@
 /* Inline file mention: the same link language this sheet gives anchors (and
    thereby URL-promoted inline code) — link-blue at rest, underline only on
    hover/focus. An underline at rest reads badly inside the code chip, where
-   it collides with monospace descenders and the pill background. */
+   it collides with monospace descenders and the pill background. The leading
+   file-type glyph rides the row via inline flex; vertical alignment centers
+   it against the monospace x-height rather than the full line box. */
 .fileMention {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin: 0;
   padding: 0;
   border: none;
@@ -255,6 +265,26 @@
   color: var(--dsw-alias-state-business-primary);
   text-decoration: none;
   cursor: pointer;
+}
+
+.fileMentionIcon {
+  flex: none;
+}
+
+/* External link token (chat opt-in via linkFavicons): the site's favicon rides
+   left of the anchor text; a site that answers its favicon with an error swaps
+   to the generic link glyph inside the same box. */
+.linkWithIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.linkIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
 }
 
 .fileMention:hover,

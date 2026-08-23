@@ -30,6 +30,7 @@ function renderSettled(
   text: string,
   codeLabels: MarkdownCodeLabels | undefined,
   fileMentions: MarkdownFileMentions | undefined,
+  linkFavicons: boolean,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -38,6 +39,7 @@ function renderSettled(
     streaming: false,
     codeLabels,
     fileMentions,
+    linkFavicons,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -68,7 +70,10 @@ class StreamingRenderer {
   private lastRendered: ReactNode[] = []
 
   /** @param codeLabels - Fence copy labels baked into cached elements; the owner replaces the renderer when they change. */
-  constructor(private readonly codeLabels: MarkdownCodeLabels | undefined) {}
+  constructor(
+    private readonly codeLabels: MarkdownCodeLabels | undefined,
+    private readonly linkFavicons: boolean,
+  ) {}
 
   /**
    * Render the current accumulated text. Idempotent per text value, so React
@@ -102,6 +107,7 @@ class StreamingRenderer {
         streaming: true,
         codeLabels: this.codeLabels,
         fileMentions: undefined,
+        linkFavicons: this.linkFavicons,
         targets: frameTargets,
         footnoteOrder: this.frozenFootnoteOrder,
         footnoteCounts: this.frozenFootnoteCounts,
@@ -120,6 +126,7 @@ class StreamingRenderer {
       streaming: true,
       codeLabels: this.codeLabels,
       fileMentions: undefined,
+      linkFavicons: this.linkFavicons,
       targets: frameTargets,
       footnoteOrder: [...this.frozenFootnoteOrder],
       footnoteCounts: new Map(this.frozenFootnoteCounts),
@@ -153,24 +160,26 @@ class StreamingRenderer {
  * relative links, and unsafe protocols are disabled, while absolute HTTP(S)
  * images render directly.
  */
-export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions }: {
+export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions, linkFavicons = false }: {
   text: string
   streaming?: boolean
   codeLabels?: MarkdownCodeLabels | undefined
   fileMentions?: MarkdownFileMentions | undefined
+  /** Prepend the site's favicon beside external anchors (chat surfaces opt in; default off keeps other consumers' DOM unchanged). */
+  linkFavicons?: boolean
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownCodeLabels | undefined>(codeLabels)
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, codeLabels, fileMentions)
+      return renderSettled(text, codeLabels, fileMentions, linkFavicons)
     }
     if (streamRef.current === null || streamLabelsRef.current !== codeLabels) {
-      streamRef.current = new StreamingRenderer(codeLabels)
+      streamRef.current = new StreamingRenderer(codeLabels, linkFavicons)
       streamLabelsRef.current = codeLabels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, codeLabels, fileMentions])
+  }, [text, streaming, codeLabels, fileMentions, linkFavicons])
   return <div className={css.markdown}>{children}</div>
 })

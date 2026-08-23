@@ -41,6 +41,13 @@ export interface SessionListMetadata {
   blank: boolean
   /** Latest source.kind=user message time in the checkpoint prefix. */
   lastPromptAt: number | null
+  /**
+   * The latest turn ended in a terminal failure: `'retry-exhausted'` marks the
+   * "5/5 retries failed" case, `'error'` any other error-ended turn. Set by
+   * the fold at that turn's error `turn/end`, cleared by the next `turn/start`.
+   * Absent = false.
+   */
+  attention?: 'retry-exhausted' | 'error'
 }
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -211,6 +218,14 @@ export interface SessionSummary {
    */
   agentPreset?: string
   /**
+   * The latest turn ended in a terminal failure: `'retry-exhausted'` marks the
+   * "5/5 retries failed" case, `'error'` any other error-ended turn. The
+   * sidebar shows a "needs attention" error dot instead of the green finished
+   * dot. Absent for cold Sessions whose projection hint predates the fold or
+   * carries no such failure. Absent = false.
+   */
+  attention?: 'retry-exhausted' | 'error'
+  /**
    * Projection baseline for this row, with zero log loads: attached sessions
    * read the registry's live watermark cut; cold sessions read the persisted
    * projection cache's stored rows — as stale as that session's last durable
@@ -358,6 +373,24 @@ export interface SessionsApi {
   /** Reads one durable image after proving that this session's log references its id. */
   attachment(request: RpcRequest<{ sessionId: SessionId; attachmentId: AttachmentIdType }>):
   Promise<RpcResponse<{ attachment: ImageAttachmentRef; data: string }>>
+
+  /**
+   * Uploads one browser file into the session's project directory (`.uploads/`),
+   * a durable workspace location the agent can later read by the returned path.
+   * Not logged itself — model visibility comes from the prompt text referencing
+   * the path. The host sanitizes `name` and enforces a fixed 25 MiB size bound.
+   * @param sessionId - project whose cwd the bytes are written into.
+   * @param name - proposed file name; the host sanitizes it into the stored name.
+   * @param data - base64 of the file bytes.
+   * @returns the workspace-relative `.uploads/...` path and decoded byte length,
+   * or an `attachment-error` for an invalid name / empty / oversized file.
+   */
+  uploadAttachment(request: RpcRequest<{
+    sessionId: SessionId
+    name: string
+    data: string
+  }>):
+  Promise<RpcResponse<{ path: string; bytes: number }>>
 
   /**
    * Edits, removes, strictly steers, or reorders one pending queued occurrence

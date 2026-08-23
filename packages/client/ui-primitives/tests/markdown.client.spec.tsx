@@ -15,6 +15,38 @@ describe('MessageText', () => {
   })
 })
 
+describe('link favicons (linkFavicons opt-in)', () => {
+  it('off by default: anchors stay plain', () => {
+    const { container } = render(<MarkdownText text={'[safe](https://example.com)'} />)
+    const anchor = container.querySelector('a')!
+    expect(anchor).not.toBeNull()
+    expect(anchor.className).not.toContain('linkWithIcon')
+    expect(anchor.querySelector('img')).toBeNull()
+  })
+
+  it('opted in: an external anchor gains the site favicon; a linked image does not', () => {
+    const source = '[safe](https://example.com)\n\n[![alt](https://example.com/pic.png)](https://example.com)'
+    const { container } = render(<MarkdownText text={source} linkFavicons />)
+    const anchors = [...container.querySelectorAll('a')]
+    expect(anchors).toHaveLength(2)
+    // The text anchor carries the favicon image inside the token anchor.
+    expect(anchors[0]!.className).toContain('linkWithIcon')
+    expect(anchors[0]!.querySelector('img[src="https://example.com/favicon.ico"]')).not.toBeNull()
+    // A linked image stays bare: the favicon would sit beside a thumbnail.
+    expect(anchors[1]!.className).not.toContain('linkWithIcon')
+    expect(anchors[1]!.querySelector('img[src="https://example.com/favicon.ico"]')).toBeNull()
+  })
+
+  it('a failed favicon swaps to the generic glyph instead of a broken image', () => {
+    const { container } = render(<MarkdownText text={'[safe](https://example.com)'} linkFavicons />)
+    const img = container.querySelector('img')!
+    fireEvent.error(img)
+    // The failed <img> is replaced by the fallback SVG in the same box.
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('svg')).not.toBeNull()
+  })
+})
+
 describe('MarkdownText', () => {
   it('renders CommonMark and GFM elements as semantic DOM', () => {
     const markdown = [
@@ -189,6 +221,32 @@ describe('MarkdownText', () => {
       <MarkdownText text={'`index.html`\n\nmore\n\n'} streaming fileMentions={fileMentions} />,
     )
     expect(streamed.container.querySelector('button')).toBeNull()
+  })
+
+  it('renders # or @ prefixed file references with file type icon and stripped prefix', () => {
+    const source = '`# C:\\Users\\kasto\\.dsh\\settings.yaml` and `@src/main.ts`'
+    const { container } = render(<MarkdownText text={source} />)
+    const codeBlocks = container.querySelectorAll('code')
+    expect(codeBlocks).toHaveLength(2)
+    for (const code of codeBlocks) {
+      expect(code.className).toContain('fileMentionCode')
+      expect(code.querySelector('svg')).not.toBeNull()
+    }
+    expect(container.textContent).toContain('C:\\Users\\kasto\\.dsh\\settings.yaml')
+    expect(container.textContent).not.toContain('# C:\\Users\\kasto\\.dsh\\settings.yaml')
+    expect(container.textContent).toContain('src/main.ts')
+  })
+
+  it('renders link fallback icon before image load and displays favicon when loaded', () => {
+    const { container } = render(<MarkdownText text={'[GitHub](https://github.com)'} linkFavicons />)
+    // Initially renders the fallback link SVG icon while loading in background
+    expect(container.querySelector('svg')).not.toBeNull()
+    const img = container.querySelector('img')!
+    expect(img.style.display).toBe('none')
+    fireEvent.load(img)
+    // After load, image is visible and SVG fallback is unmounted
+    expect(img.style.display).toBe('')
+    expect(container.querySelector('svg')).toBeNull()
   })
 
   it('exposes the CJK strong syntax as a micromark extension needing CommonMark attention markers', () => {

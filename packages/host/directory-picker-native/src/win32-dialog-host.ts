@@ -30,4 +30,4 @@ export function spawnDialogWorker(data: Win32DialogWorkerData): ReturnType<typeo
   return spawn(process.execPath, ['--import', import.meta.resolve('tsx/esm'), fileURLToPath(new URL('./win32-dialog-worker.ts', import.meta.url))], { env, stdio, windowsHide: true })
 }
 
-export { closeThreadWindows } from './win32-dialog-bindings.ts'
+export { closeThreadWindows, raiseThreadWindows } from './win32-dialog-bindings.ts'

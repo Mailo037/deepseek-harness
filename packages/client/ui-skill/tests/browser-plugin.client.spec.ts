@@ -310,7 +310,11 @@ describe('lexicon', () => {
     expect(source.lexicon!(proj('s1'))).toBeUndefined()
     release!()
     await pending
-    expect(source.lexicon!(proj('s1'))).toEqual(['commit-helper', 'code-review', 'deploy'])
+    expect(source.lexicon!(proj('s1'))).toEqual([
+      { name: 'commit-helper', appearance: 'skill' },
+      { name: 'code-review', appearance: 'skill' },
+      { name: 'deploy', appearance: 'skill' },
+    ])
     // Another session's key is independent — cold until its own fetch.
     expect(source.lexicon!(proj('s2'))).toBeUndefined()
   })

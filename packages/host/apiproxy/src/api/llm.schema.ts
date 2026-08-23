@@ -43,6 +43,7 @@ export const discoveredModelViewSchema = z.object({
   contextWindow: z.number().int().positive().optional(),
   maxTokens: z.number().int().positive().optional(),
   inputModalities: z.array(z.string()).optional(),
+  visionInferred: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<DiscoveredModelView>>
 
 /** llm.discoverModels request payload. */

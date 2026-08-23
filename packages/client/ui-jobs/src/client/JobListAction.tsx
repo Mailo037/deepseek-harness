@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconChevronDownOutline14, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -6,9 +8,15 @@ import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './JobListAction.module.css'
 
+/** Injected capability to kill jobs and fetch logs. */
+export interface JobListActionInjected {
+  killJob?(sessionId: SessionId, jobId: JobId): Promise<void>
+  getJobOutput?(sessionId: SessionId, jobId: JobId): Promise<{ text: string; status: JobView['status']; detail?: string }>
+}
+
 /** Full props for the session-header background-job action. */
 export type JobListActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.header.actions'> & JobListActionInjected & PropsLocale<typeof NS>
 
 /** Stable empty list so a session with no jobs keeps one array identity. */
 const NO_TASKS: readonly JobView[] = []
@@ -54,10 +62,7 @@ function statusLabel(status: JobView['status'], t: TranslateNS<typeof NS>): stri
 }
 
 /**
- * Elapsed time in at most two adjacent units. A background job that outlives
- * an hour is already exceptional, so hours is the widest unit — beyond that the
- * figure stays in hours rather than growing a day/month vocabulary no producer
- * currently reaches.
+ * Elapsed time in at most two adjacent units.
  */
 function formatDuration(elapsedMs: number, t: TranslateNS<typeof NS>): string {
   const total = Math.max(0, Math.floor(elapsedMs / 1_000))
@@ -70,9 +75,7 @@ function formatDuration(elapsedMs: number, t: TranslateNS<typeof NS>): string {
 }
 
 /**
- * Live rows first in start order, then settled rows newest-first. Two jobs
- * that settled in the same millisecond fall back to start order, so the sort
- * never depends on the host's map iteration.
+ * Live rows first in start order, then settled rows newest-first.
  */
 function ordered(jobs: readonly JobView[]): JobView[] {
   return [...jobs].sort((left, right) => {
@@ -85,37 +88,77 @@ function ordered(jobs: readonly JobView[]): JobView[] {
 }
 
 /**
- * Session-header entry point for this session's background jobs. It renders
- * nothing at all until the session has at least one job, so an ordinary
- * conversation never grows a control for a capability it is not using.
- * @param props - runtime slot currency plus the namespace translator.
- * @returns the trigger and its popover list, or null when there is nothing to show.
+ * Session-header entry point for this session's background jobs with stopping & logs inspection.
  */
-export function JobListAction({ sessionId, useSessions, t }: JobListActionProps) {
+export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t }: JobListActionProps) {
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_TASKS
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [activeLogJob, setActiveLogJob] = useState<JobView | null>(null)
+  const [logText, setLogText] = useState<string>('')
+  const [copied, setCopied] = useState(false)
+  const [stoppingIds, setStoppingIds] = useState<Set<JobId>>(() => new Set())
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const logContainerRef = useRef<HTMLDivElement>(null)
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveCount = useMemo(() => jobs.filter(isLive).length, [jobs])
 
   useDismissOnOutsidePointer(rootRef, open, setOpen)
 
-  // The clock only runs while an open list is showing something that moves.
+  // Clock for duration tickers
   useEffect(() => {
-    if (!open || liveCount === 0) return
+    if ((!open && !activeLogJob) || liveCount === 0) return
     setNow(Date.now())
     const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
     return () => { clearInterval(timer) }
-  }, [open, liveCount])
+  }, [open, activeLogJob, liveCount])
 
-  // The last job disappearing removes this control; close first so focus does
-  // not vanish from an unmounting node.
+  // Log fetch & polling
+  useEffect(() => {
+    if (!activeLogJob || !getJobOutput) return
+    let active = true
+
+    const fetchLogs = async () => {
+      try {
+        const res = await getJobOutput(sessionId, activeLogJob.id)
+        if (active && res) {
+          setLogText(res.text || (res.detail ? `[detail: ${res.detail}]` : ''))
+        }
+      } catch {
+        if (active) setLogText(t('logs.empty'))
+      }
+    }
+
+    void fetchLogs()
+    // Poll output while job is running
+    const timer = setInterval(() => {
+      if (isLive(activeLogJob)) {
+        void fetchLogs()
+      }
+    }, 1_500)
+
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [activeLogJob, sessionId, getJobOutput, t])
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
+    }
+  }, [logText])
+
+  // Clean up if job disappears
   useEffect(() => {
     if (jobs.length === 0 && open) setOpen(false)
-  }, [jobs.length, open])
+    if (activeLogJob && !jobs.some(j => j.id === activeLogJob.id)) {
+      setActiveLogJob(null)
+    }
+  }, [jobs, open, activeLogJob])
 
   if (jobs.length === 0) return null
 
@@ -131,6 +174,24 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
     triggerRef.current?.focus()
   }
 
+  const handleKill = async (job: JobView, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!killJob || stoppingIds.has(job.id)) return
+    setStoppingIds(prev => new Set(prev).add(job.id))
+    try {
+      await killJob(sessionId, job.id)
+    } finally {
+      // stopping state will arrive via jobs stream
+    }
+  }
+
+  const handleCopyLogs = async () => {
+    if (!logText) return
+    await navigator.clipboard.writeText(logText)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2_000)
+  }
+
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
       <button
@@ -140,10 +201,6 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
         aria-expanded={open}
         aria-label={countLabel}
         onClick={() => {
-          // Sample the clock in the same commit that opens the list: the
-          // mount-time value predates every job, so the first painted frame
-          // would otherwise clamp a long-running row to zero until the
-          // open effect corrects it a frame later.
           setNow(Date.now())
           setOpen(current => !current)
         }}
@@ -152,32 +209,147 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
         <span className={css.count}>{countLabel}</span>
         <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
       </button>
-      {open
-        ? (
-          <ul className={css.menu} aria-label={t('list.aria')}>
-            {rows.map((job) => {
-              const live = isLive(job)
-              const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
-              const duration = formatDuration(elapsed, t)
-              const status = statusLabel(job.status, t)
-              return (
-                <li key={job.id} className={live ? css.row : `${css.row} ${css.rowSettled}`}>
-                  <StateDot state={dotState(job.status)} className={css.rowDot} />
-                  <span className={css.kind}>{job.kind}</span>
-                  <span className={css.label} title={job.label}>{job.label}</span>
-                  <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
-                  <span
-                    className={css.duration}
-                    title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
+
+      {open ? (
+        <ul className={css.menu} aria-label={t('list.aria')}>
+          {rows.map((job) => {
+            const live = isLive(job)
+            const isStopping = stoppingIds.has(job.id) || job.status === 'stopping'
+            const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
+            const duration = formatDuration(elapsed, t)
+            const status = isStopping ? t('status.stopping') : statusLabel(job.status, t)
+
+            return (
+              <li
+                key={job.id}
+                className={live ? css.row : `${css.row} ${css.rowSettled}`}
+                tabIndex={0}
+                onClick={() => {
+                  setActiveLogJob(job)
+                  setOpen(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setActiveLogJob(job)
+                    setOpen(false)
+                  }
+                }}
+              >
+                <StateDot state={dotState(job.status)} className={css.rowDot} />
+                <span className={css.kind}>{job.kind}</span>
+                <span className={css.label} title={job.label}>{job.label}</span>
+                <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
+                <span
+                  className={css.duration}
+                  title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
+                >
+                  {duration}
+                </span>
+
+                <div className={css.actions}>
+                  {live && killJob ? (
+                    <button
+                      type="button"
+                      className={`${css.actionBtn} ${css.killBtn} ${css.iconOnlyBtn}`}
+                      title={t('actions.kill')}
+                      aria-label={t('actions.kill')}
+                      disabled={isStopping}
+                      onClick={e => void handleKill(job, e)}
+                    >
+                      <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                        <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+
+      {/* Subagent-styled Log Modal Dialog with Breadcrumbs and Line Numbers */}
+      {activeLogJob ? (
+        <div className={css.modalBackdrop} onClick={() => setActiveLogJob(null)}>
+          <div className={css.modalCard} onClick={e => e.stopPropagation()}>
+            <div className={css.modalHeader}>
+              <nav className={css.modalBreadcrumbs} aria-label="Hierarchy">
+                <span className={css.crumbItem}>
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" className={css.crumbIcon}>
+                    <rect x="2" y="2" width="12" height="12" rx="2" />
+                    <path d="M5 6l2.5 2L5 10M9 10h2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span>{t('list.aria')}</span>
+                </span>
+                <span className={css.crumbSep}>/</span>
+                <span className={css.crumbKind}>{activeLogJob.kind}</span>
+                <span className={css.crumbSep}>/</span>
+                <span className={css.crumbCurrent} title={activeLogJob.label}>{activeLogJob.label}</span>
+              </nav>
+
+              <div className={css.modalHeaderActions}>
+                <div className={css.statusBadge}>
+                  <StateDot state={dotState(activeLogJob.status)} />
+                  <span>{statusLabel(activeLogJob.status, t)}</span>
+                </div>
+
+                {isLive(activeLogJob) && killJob ? (
+                  <button
+                    type="button"
+                    className={`${css.actionBtn} ${css.killBtn}`}
+                    title={t('actions.kill')}
+                    onClick={e => void handleKill(activeLogJob, e)}
                   >
-                    {duration}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        )
-        : null}
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+                    </svg>
+                    <span>{t('actions.kill')}</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={css.actionBtn}
+                  onClick={() => void handleCopyLogs()}
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="5" y="5" width="8" height="8" rx="1.5" />
+                    <path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11" strokeLinecap="round" />
+                  </svg>
+                  <span>{copied ? t('actions.copied') : t('actions.copy')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={css.closeBtn}
+                  aria-label={t('actions.close')}
+                  onClick={() => setActiveLogJob(null)}
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className={css.modalBody} ref={logContainerRef}>
+              {logText ? (
+                <table className={css.terminalTable}>
+                  <tbody>
+                    {logText.split('\n').map((line, idx) => (
+                      <tr key={idx} className={css.terminalRow}>
+                        <td className={css.lineNumber}>{idx + 1}</td>
+                        <td className={css.lineContent}>{line || ' '}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className={css.emptyLogs}>{t('logs.empty')}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

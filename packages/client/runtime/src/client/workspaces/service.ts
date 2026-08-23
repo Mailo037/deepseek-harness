@@ -22,6 +22,8 @@ export interface WorkspaceListState {
    * build their own transient Set.
    */
   archivedSessionIds: readonly SessionId[]
+  /** Registry-global sidebar pins in durable pin order. */
+  pinnedSessionIds: readonly SessionId[]
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
   error: RpcError | null
@@ -66,7 +68,7 @@ export class WorkspaceRuntime implements IWorkspaces {
   constructor(ctx: Context, private readonly api: IApiClient, private readonly sessions: SessionsPort) {
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'pending', error: null,
       baselinesReady: false, recentWorkspaceId: undefined,
     })
     this.manager.subscribe(() => { this.project() })
@@ -352,6 +354,36 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session archive failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  /** Restore one archived session into its existing workspace account. */
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.unarchiveSession(sessionId)
+    if (!result.ok) throw new Error(`session restore failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /**
+   * Permanently delete one archived session. A non-archived or host-open
+   * session surfaces the wire error message.
+   * @param sessionId - archived session to delete.
+   */
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.deleteSession(sessionId)
+    if (!result.ok) throw new Error(`session deletion failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /**
+   * Permanently delete every deletable archived session.
+   * @returns the remaining archived session ids.
+   */
+  async deleteArchivedSessions(): Promise<readonly SessionId[]> {
+    return await this.manager.deleteArchivedSessions()
+  }
+
+  /** Set one session's durable sidebar pin membership. */
+  async setSessionPinned(sessionId: SessionId, pinned: boolean): Promise<void> {
+    const result = await this.manager.setSessionPinned(sessionId, pinned)
+    if (!result.ok) throw new Error(result.error.message)
+  }
+
   /**
    * Move a session within its Workspace's manual order (DOM-insertBefore-like).
    * @param workspaceId - owning workspace.
@@ -405,6 +437,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.list.set({
       items: workspace.items,
       archivedSessionIds: workspace.archivedSessionIds,
+      pinnedSessionIds: workspace.pinnedSessionIds,
       state: workspace.state,
       phase: workspace.phase,
       error: workspace.error,

@@ -12,6 +12,7 @@ import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { SettingsDocumentStore } from '../src/client/settings-document-store.ts'
 import { UpdateStore } from '../src/client/update-store.ts'
+import { HarnessSyncStore } from '../src/client/harness-sync-store.ts'
 
 /** Store over a real mirror derived from the same fake wire. */
 function derivedDocumentStore(api: object) {
@@ -39,6 +40,15 @@ const kit = { useSessions: unusedHook, useWorkspaces: unusedHook }
 function idleUpdate() {
   const controller = new UpdateStore({ host: {} } as never)
   return { controller, useSnapshot: bindSnapshotSelector(controller.store) }
+}
+
+/** One idle Harness-update controller; tests can replace its wire methods. */
+function idleSync() {
+  return new HarnessSyncStore(
+    { sessions: {} } as never,
+    { binding: vi.fn(), open: vi.fn() } as never,
+    { connectWorkspace: vi.fn() } as never,
+  )
 }
 
 describe('chrome content', () => {
@@ -232,19 +242,32 @@ describe('AboutSection', () => {
   function mount(
     source: ReturnType<typeof describeSource>,
     controller: UpdateStore,
+    syncController: HarnessSyncStore = idleSync(),
   ) {
+    const sessionId = 'about-session' as never
+    const workspaceId = 'about-workspace' as never
+    const close = vi.fn()
     const props = {
-      ...kit,
+      useSessions: ((selector: (value: unknown) => unknown) => selector({
+        current: sessionId,
+        byId: { [sessionId]: { id: sessionId, cwd: '/repo' } },
+      })) as never,
+      useWorkspaces: ((selector: (value: unknown) => unknown) => selector({
+        items: [{ workspaceId, path: '/repo', sessionIds: [sessionId] }],
+        recentWorkspaceId: workspaceId,
+      })) as never,
       t,
-      close: vi.fn(),
+      close,
       controller,
+      syncController,
       useDescribe: bindSnapshotSelector(source),
+      useSyncSnapshot: bindSnapshotSelector(syncController.store),
       useSnapshot: bindSnapshotSelector(controller.store),
     } as never as AboutSectionProps
-    return render(<AboutSection {...props} />)
+    return { ...render(<AboutSection {...props} />), close }
   }
 
-  it('renders identity rows from the describe mirror', () => {
+  it('renders identity rows from the describe mirror', async () => {
     const source = describeSource(description())
     const update = idleUpdate()
     mount(source, update.controller)
@@ -254,6 +277,12 @@ describe('AboutSection', () => {
     // Short commit hash and a live Check control.
     expect(screen.getByText('aaaaaaa')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Check for updates' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Load AI models' })).toBeTruthy()
+    expect(screen.getByText('Mailo037/deepseek-harness')).toBeTruthy()
+    expect(screen.getByText(/loading the model list uses no AI credits/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Update source' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Official DeepSeek Harness' }))
+    expect(screen.getByText('deepseek-ai/deepseek-harness')).toBeTruthy()
   })
 
   it('waits in the offline note until a generation connects', () => {
@@ -326,5 +355,45 @@ describe('AboutSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Check for updates' }).getAttribute('disabled')).toBeNull()
+  })
+
+  it('loads models and starts a visible optional Harness update session', async () => {
+    const prompt = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
+    const open = vi.fn()
+    const sessionId = 'review-session' as never
+    const sync = new HarnessSyncStore(
+      {
+        sessions: {
+          models: vi.fn(() => Promise.resolve({
+            rpcId: 'about-models' as never,
+            result: {
+              ok: true as const,
+              value: {
+                current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+                routable: true,
+                groups: [{
+                  id: 'deepseek-official',
+                  name: 'DeepSeek',
+                  models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }],
+                }],
+                failures: [],
+              },
+            },
+          })),
+          selectModel: vi.fn(),
+        },
+      } as never,
+      { binding: vi.fn(() => ({ session: { prompt } })), open } as never,
+      { connectWorkspace: vi.fn(() => Promise.resolve(sessionId)) } as never,
+    )
+    const mounted = mount(describeSource(description()), idleUpdate().controller, sync)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load AI models' }))
+    expect(await screen.findByLabelText('Review model')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Start AI update' }))
+
+    await waitFor(() => { expect(prompt).toHaveBeenCalledOnce() })
+    expect(open).toHaveBeenCalledWith(sessionId)
+    expect(mounted.close).toHaveBeenCalledOnce()
   })
 })

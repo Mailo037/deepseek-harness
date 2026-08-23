@@ -1,8 +1,8 @@
-/* Settings shell (figma 501:29904 mask context / 501:29947 panel): sidebar
-   foot trigger row + centered 1080x700 modal panel. The trigger uses the
-   sidebar foot's 42px row / 36px rail circle rhythm; the
-   panel is a two-column layout — 188px nav rail + content column with a
-   54px header and the 24px-padded options area. */
+/* Settings shell: sidebar foot trigger row + centered modal panel. The trigger
+   uses the sidebar foot's 42px row / 36px rail circle rhythm; the panel is a
+   single column — header row (title left, actions + close right), the
+   horizontally scrolling section tab row, then the 24px-padded options area
+   that owns all vertical scrolling. */
 
 /* Trigger row: the 42px foot-row box shared with the Cordis footer action. */
 .trigger {
@@ -75,6 +75,7 @@
   position: relative;
   z-index: 1;
   display: flex;
+  flex-direction: column;
   width: 800px;
   height: min(800px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
@@ -91,37 +92,81 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Nav rail (figma .Setting-nav 501:29958): 188 wide, pad (12,22,12,0),
-   gap 18, no own fill — the panel white shows through. */
-.nav {
+/* Header row: panel title top-left, section actions + close top-right. */
+.header {
   flex: none;
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-  width: 188px;
-  padding: 22px 12px 0;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 14px 10px 24px;
   box-sizing: border-box;
 }
 
-/* Title row (figma 501:29959): 16/500 lh24, 12px side padding. */
-.navTitle {
-  padding: 0 12px;
+/* Title (figma 501:29959): 16/500 lh24. */
+.title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 16px;
   line-height: 24px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
 }
 
-/* Cell stack (figma 501:29961): gap 4. */
-.navList {
+.actions {
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
 }
 
-/* Nav cell (figma .Setting-nav-cell 501:29962): 164x40, r12, pad
-   (12,9,16,9), gap 8; label 14/400 lh22; selected fill #EBEEF2. */
+/* Close button (figma .Icon_container 501:29982): 28x28, r28, 14px glyph. */
+.close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Section tab row: one horizontally scrolling line of cells under the
+   header. The scrollbar is hidden — the row is short, drag/scroll still
+   works, and the visible bar read as broken chrome (mobile screenshot). */
+.nav {
+  flex: none;
+  padding: 0 16px;
+}
+
+.navList {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.navList::-webkit-scrollbar {
+  display: none;
+}
+
+/* Nav cell (figma .Setting-nav-cell 501:29962): r12, pad (9,16,9,12), gap 8;
+   label 14/400 lh22; selected fill #EBEEF2. */
 .navCell {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -153,76 +198,24 @@
 }
 
 .navLabel {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
-/* Content column (figma Content 501:29980): header + options. */
-.content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Header (figma .Header 501:29981): h54, pad (10,20,14,8), close right. */
-.header {
-  flex: none;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  height: 54px;
-  padding: 20px 14px 8px 10px;
-  box-sizing: border-box;
-}
-
-.actions {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-left: auto;
-}
-
-/* Close button (figma .Icon_container 501:29982): 28x28, r28, 14px glyph. */
-.close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 28px;
-  background: transparent;
-  cursor: pointer;
-  color: var(--dsw-alias-label-primary);
-}
-
-.close:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-/* Options area (figma Options 501:29983): pad (24,0,24,24), scrolls. */
+/* Options area (figma Options 501:29983): pad (0,24,24), the panel's only
+   vertical scroll container. */
 .options {
   flex: 1;
   min-height: 0;
-  padding: 0 24px 24px;
+  padding: 8px 24px 24px;
   overflow-y: auto;
 }
 
-/* Mobile portrait (matches the sidebar drawer breakpoint): the two-column
-   panel would crush the content column to a sliver, so the panel becomes a
-   full-screen sheet and the nav rail stacks above the content as a
-   horizontally scrolling row of cells. */
+/* Mobile portrait (matches the sidebar drawer breakpoint): the panel becomes
+   a full-screen sheet; the column structure carries over with tighter
+   padding, and `.options` keeps the scrolling role. */
 @media (max-width: 640px) {
   .panel {
-    flex-direction: column;
     width: 100%;
     height: 100vh;
     height: 100dvh;
@@ -230,31 +223,16 @@
     border-radius: 0;
   }
 
+  .header {
+    padding: 14px 12px 8px 16px;
+  }
+
   .nav {
-    flex-direction: row;
-    gap: 12px;
-    width: 100%;
-    padding: 12px 16px 0;
-  }
-
-  .navTitle {
-    flex: none;
-  }
-
-  .navList {
-    flex: 1;
-    min-width: 0;
-    flex-direction: row;
-    gap: 4px;
-    overflow-x: auto;
-  }
-
-  .navCell {
-    flex: none;
+    padding: 0 12px;
   }
 
   .options {
-    padding: 0 16px 16px;
+    padding: 4px 16px 16px;
   }
 }
 

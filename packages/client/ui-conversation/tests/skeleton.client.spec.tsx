@@ -68,7 +68,7 @@ function workspace(id = 'w1'): WorkspaceView {
 }
 
 const workspaceState = (items: readonly WorkspaceView[]): WorkspaceListState => ({
-  items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+  items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   baselinesReady: true, recentWorkspaceId: undefined,
 })
 
@@ -200,11 +200,11 @@ function mount(
           useInput={useInput}
           inputActions={inputActions}
           keyboard={wiring}
-          addImages={() => null}
-          removeImage={() => {}}
-          draftImages={() => []}
+          addFiles={() => Promise.resolve(null)}
+          addTextAttachment={() => null}
+          removeAttachment={() => {}}
+          draftAttachments={() => []}
           resolveSubmitMode={() => 'queue'}
-          toggleCommandMenu={vi.fn()}
           useNotices={bindSnapshotSelector(wiring.notices)}
           useLexicon={bindSnapshotSelector(wiring.lexicon)}
           useMenuLauncher={bindSnapshotSelector(createSnapshotStore<string | null>(null))}
@@ -347,6 +347,64 @@ describe('ConversationRoot resident composer', () => {
     expect(seat?.contains(textarea)).toBe(true)
     expect(b.slotCalls).toContain('conversation.session.header.actions')
     expect(b.slotCalls).toContain('conversation.session.header.utilities')
+  })
+
+  it('drops the title-adjacent actions into the tab strip unconditionally on phone viewports', () => {
+    // No overflow metrics needed: the phone band forces the drop.
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    const b = mount(conversationSnapshot())
+    const container = b.view.container
+    expect(container.querySelector('[data-header-action-tabs]')).not.toBeNull()
+    expect(
+      container.querySelector('[class*="titleCluster"]')?.querySelector('[data-testid="view-conversation.session.header.actions"]'),
+    ).toBeNull()
+  })
+
+  it('drops the title-adjacent actions into the tab strip once they overflow the title row', () => {
+    // Fan-out observer stub: the header's layout effect registers one
+    // observer; firing every registered callback re-runs its overflow
+    // evaluation after the metrics are stubbed.
+    const callbacks = new Set<() => void>()
+    class FanoutObserver {
+      constructor(cb: ResizeObserverCallback) { callbacks.add(() => { cb([], this as never) }) }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void { callbacks.delete(() => { /* noop: set holds wrappers */ }) }
+    }
+    vi.stubGlobal('ResizeObserver', FanoutObserver)
+    const b = mount(conversationSnapshot())
+    const container = b.view.container
+    // Inline by default: the actions seat sits in the title cluster.
+    expect(container.querySelector('[data-header-action-tabs]')).toBeNull()
+    expect(container.querySelector('[data-testid="view-conversation.session.header.actions"]')).not.toBeNull()
+
+    const cluster = container.querySelector('[class*="titleCluster"]') as HTMLElement
+    const row = cluster.parentElement as HTMLElement
+    Object.defineProperties(cluster, {
+      scrollWidth: { configurable: true, value: 900 },
+      clientWidth: { configurable: true, value: 400 },
+    })
+    Object.defineProperties(row, { clientWidth: { configurable: true, value: 400 } })
+    act(() => { for (const fire of callbacks) fire() })
+
+    // Dropped: the actions render inside the tab strip; the inline seat is gone.
+    const dropped = container.querySelector('[data-header-action-tabs]')
+    expect(dropped).not.toBeNull()
+    expect(dropped?.contains(container.querySelector('[data-testid="view-conversation.session.header.actions"]'))).toBe(true)
+    expect(dropped?.parentElement).toBe(container.querySelector('[role="tablist"], [class*="tabs"]'))
+
+    // Room returns: reset the overflow metrics (the real cluster stops
+    // overflowing once the inline seat is gone) and grow the row past the
+    // captured requirement — the actions move back inline.
+    Object.defineProperties(cluster, { scrollWidth: { configurable: true, value: 300 } })
+    Object.defineProperties(row, { clientWidth: { configurable: true, value: 2000 } })
+    act(() => { for (const fire of callbacks) fire() })
+    expect(container.querySelector('[data-header-action-tabs]')).toBeNull()
+    expect(container.querySelector('[class*="titleCluster"]')?.contains(container.querySelector('[data-testid="view-conversation.session.header.actions"]'))).toBe(true)
   })
 
   it('sticky composer seat wraps the whole overlay chain, not only the fallback stack', () => {

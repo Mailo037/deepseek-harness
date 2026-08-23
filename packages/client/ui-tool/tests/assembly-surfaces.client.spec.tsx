@@ -136,6 +136,7 @@ describe('terminal card assembly', () => {
       bashResult(4, 'c-fallback', { call: { name: 'fx-bash', argsRaw: '{"command":"ls -la"}' } }),
     ])
     const view = runtime.renderRoot()
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>('[data-tool-group] button')!)
 
     // Keyed BashRow: collapsed by default, the whole summary row is the toggle.
     const keyedRow = view.container.querySelector('[data-sample="bash"]')

@@ -38,6 +38,17 @@ function item(id: string): AttachmentRailItem {
   return { id, previewUrl: `blob:${id}`, alt: `${id}.png`, removeLabel: `移除图片 ${id}.png` }
 }
 
+function fileItem(id: string, overrides: Partial<AttachmentRailItem> = {}): AttachmentRailItem {
+  return {
+    id,
+    previewUrl: '',
+    alt: `${id}.txt`,
+    removeLabel: `移除文件 ${id}.txt`,
+    file: { name: `${id}.txt`, sizeText: '12.3 KB' },
+    ...overrides,
+  }
+}
+
 /** Stub the rail's scroll geometry (jsdom reports 0 for every metric). */
 function stubGeometry(rail: HTMLElement, { scrollWidth, clientWidth }: { scrollWidth: number; clientWidth: number }) {
   Object.defineProperty(rail, 'scrollWidth', { value: scrollWidth, configurable: true })
@@ -60,7 +71,7 @@ describe('AttachmentRail', () => {
     const onOpen = vi.fn()
     const onRemove = vi.fn()
     const items = [item('a'), item('b')]
-    const view = render(<AttachmentRail items={items} labels={labels} onOpen={onOpen} onRemove={onRemove} />)
+    const view = render(<AttachmentRail items={items} labels={labels} onOpen={onOpen} onRemove={onRemove} onRestore={vi.fn()} />)
     const rail = view.getByRole('group', { name: '待发送图片' })
     expect([...rail.querySelectorAll('img')].map(img => img.getAttribute('alt'))).toEqual(['a.png', 'b.png'])
     fireEvent.click(view.getAllByTitle('查看原图')[0]!)
@@ -71,7 +82,7 @@ describe('AttachmentRail', () => {
 
   it('shows edge arrows from scroll geometry and pages a viewport at a time', () => {
     const view = render(
-      <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     const rail = view.getByRole('group', { name: '待发送图片' })
     const { scrollBy } = stubGeometry(rail, { scrollWidth: 400, clientWidth: 200 })
@@ -97,7 +108,7 @@ describe('AttachmentRail', () => {
 
   it('shows both arrows mid-scroll and recomputes when the rail itself resizes', () => {
     const view = render(
-      <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     const rail = view.getByRole('group', { name: '待发送图片' })
     const { setScrollLeft } = stubGeometry(rail, { scrollWidth: 400, clientWidth: 200 })
@@ -113,7 +124,7 @@ describe('AttachmentRail', () => {
   it('keeps scrolling available when ResizeObserver is unavailable', () => {
     vi.stubGlobal('ResizeObserver', undefined)
     const view = render(
-      <AttachmentRail items={[item('a')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={[item('a')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     expect(view.getByRole('group', { name: '待发送图片' })).toBeTruthy()
     view.unmount()
@@ -121,7 +132,7 @@ describe('AttachmentRail', () => {
 
   it('pans horizontally on a vertical wheel, consuming the event, with clamped normalized travel', () => {
     const view = render(
-      <AttachmentRail items={[item('a'), item('b')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={[item('a'), item('b')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     const rail = view.getByRole('group', { name: '待发送图片' })
     const { scrollBy } = stubGeometry(rail, { scrollWidth: 400, clientWidth: 200 })
@@ -151,7 +162,7 @@ describe('AttachmentRail', () => {
     for (const [matches, behavior] of [[true, 'auto'], [false, 'smooth']] as const) {
       vi.stubGlobal('matchMedia', vi.fn(() => ({ matches }) as MediaQueryList))
       const view = render(
-        <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+        <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
       )
       const rail = view.getByRole('group', { name: '待发送图片' })
       const { scrollBy } = stubGeometry(rail, { scrollWidth: 400, clientWidth: 200 })
@@ -165,16 +176,16 @@ describe('AttachmentRail', () => {
   it('reveals the rail end when an item is added, not when one is removed', () => {
     const first = [item('a'), item('b')]
     const view = render(
-      <AttachmentRail items={first} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={first} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     const rail = view.getByRole('group', { name: '待发送图片' })
     stubGeometry(rail, { scrollWidth: 400, clientWidth: 200 })
     view.rerender(
-      <AttachmentRail items={[...first, item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={[...first, item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     expect(rail.scrollLeft).toBe(200)
     view.rerender(
-      <AttachmentRail items={first} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={first} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     // Removal keeps the position; only growth jumps to the end.
     expect(rail.scrollLeft).toBe(200)
@@ -186,9 +197,48 @@ describe('AttachmentRail', () => {
       warning: 'Model does not support images',
     }
     const view = render(
-      <AttachmentRail items={[warningItem]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+      <AttachmentRail items={[warningItem]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={vi.fn()} />,
     )
     const badge = view.getByLabelText('Model does not support images')
     expect(badge).toBeDefined()
+  })
+
+  it('renders a document chip for a file attachment instead of an image thumbnail', () => {
+    const onOpen = vi.fn()
+    const onRemove = vi.fn()
+    const itemWithFile = fileItem('f', {
+      file: { name: 'report.txt', sizeText: '12.3 KB' },
+      removeLabel: '移除文件 report.txt',
+    })
+    const view = render(
+      <AttachmentRail items={[itemWithFile]} labels={labels} onOpen={onOpen} onRemove={onRemove} onRestore={vi.fn()} />,
+    )
+    // No image thumbnail and no lightbox-open affordance.
+    expect(view.queryByTitle('查看原图')).toBeNull()
+    expect(view.queryByText('查看原图')).toBeNull()
+    // The chip surfaces the file name and size as text.
+    expect(view.getByText('report.txt')).toBeTruthy()
+    expect(view.getByText('12.3 KB')).toBeTruthy()
+    // Remove still routes through onRemove.
+    fireEvent.click(view.getByRole('button', { name: '移除文件 report.txt' }))
+    expect(onRemove).toHaveBeenCalledWith(itemWithFile)
+  })
+
+  it('renders no restore control without a restore label and calls onRestore when one is present', () => {
+    const onRestore = vi.fn()
+    const plain = fileItem('plain')
+    const first = render(
+      <AttachmentRail items={[plain]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={onRestore} />,
+    )
+    expect(first.queryByRole('button', { name: '恢复' })).toBeNull()
+    first.unmount()
+
+    const restorable = fileItem('restorable', { restoreLabel: '恢复 report.txt' })
+    const view2 = render(
+      <AttachmentRail items={[restorable]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} onRestore={onRestore} />,
+    )
+    const restore = view2.getByRole('button', { name: '恢复 report.txt' })
+    fireEvent.click(restore)
+    expect(onRestore).toHaveBeenCalledWith(restorable)
   })
 })

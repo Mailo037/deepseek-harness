@@ -195,9 +195,9 @@ describe('ImageGallery', () => {
       useInput,
       inputActions: {
         setDraft: vi.fn(),
-        addImages: vi.fn(() => true),
-        removeImage: vi.fn(),
-        pruneImages: vi.fn(),
+        addAttachments: vi.fn(() => true),
+        removeAttachment: vi.fn(),
+        pruneAttachments: vi.fn(),
         submit: vi.fn(),
       },
       images: [{ attachment }],

@@ -6,7 +6,7 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 export type ClockTranslate = Translate<'clock.md' | 'clock.ymd'>
 
 /** The elapsed-duration share of the conversation dictionary. */
-export type RunDurationTranslate = Translate<'duration.seconds' | 'duration.minutes'>
+export type RunDurationTranslate = Translate<'duration.seconds' | 'duration.minutes' | 'duration.hours' | 'duration.days'>
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
@@ -35,12 +35,19 @@ export function msUntilNextLocalMidnight(ms: number): number {
 
 /**
  * Localized elapsed-time label shared by running and settled turn chrome.
+ * The unit ladder keeps the two most significant units only: seconds below a
+ * minute, minutes below an hour, hours below a day, then days + hours — a
+ * 70-minute turn reads `1h 10m`, not seventy-something minutes.
  * @param ms - Elapsed duration in milliseconds (negatives clamp to zero).
  * @param t - Translate seat supplying the duration templates.
- * @returns Display string in whole seconds.
+ * @returns Display string in whole seconds (minutes/hours at hour+ scale).
  */
 export function formatRunDuration(ms: number, t: RunDurationTranslate): string {
   const total = Math.max(0, Math.floor(ms / 1000))
+  const days = Math.floor(total / 86_400)
+  if (days > 0) return t('duration.days', { days, hours: Math.floor((total % 86_400) / 3_600) })
+  const hours = Math.floor(total / 3_600)
+  if (hours > 0) return t('duration.hours', { hours, minutes: Math.floor((total % 3_600) / 60) })
   const minutes = Math.floor(total / 60)
   const seconds = total % 60
   return minutes > 0

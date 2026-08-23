@@ -77,6 +77,7 @@ async function harness(
   ctx.provide('storageDomain', storageDomain)
   ctx.provide('sessionPersistence', {
     list: () => Promise.resolve([]),
+    delete: () => Promise.resolve(true),
     // JSONL-shaped artifact location so unlinked-session project directories
     // derive from the session storage root like the real backend's do.
     locate: (meta: { readonly id: string }) => ({
@@ -88,16 +89,22 @@ async function harness(
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
-      const session = ctx.sessions.create(
+      // prepare + enter + announce mirrors sessions.create(), but keeps the
+      // detach disposer so handle.dispose() can mirror the real teardown
+      // order: unregister the agent, then remove the live store attachment.
+      const session = ctx.sessions.prepare(
         options.sessionId,
-        options.meta === undefined ? {} : { meta: options.meta },
+        options.meta === undefined ? undefined : { meta: options.meta },
       )
+      const detachSession = ctx.sessions.enter(session)
+      ctx.sessions.announce(session)
       const agent = stubAgent(session)
       const unregister = ctx.agents.register(agent)
       return {
         agent,
         dispose: () => {
           unregister()
+          detachSession()
           return Promise.resolve()
         },
       }
@@ -577,6 +584,131 @@ describe('Host Workspace increments', () => {
     abort.abort()
   })
 
+  it('stops the session activity when archiving: cancels the agent, kills its jobs, and interrupts continuable descendants', async () => {
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'archive-stop') }))).workspace
+    const sessionId = SessionId('session-archive-stop')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const agent = ctx.agents.get(sessionId)
+    expect(agent).toBeDefined()
+    const cancel = vi.fn()
+    agent!.cancel = cancel
+
+    const kill = vi.fn(() => 'requested' as const)
+    ctx.provide('jobs', {
+      list: (caller: Agent | undefined) => caller === agent
+        ? [{ id: 'job-1', status: 'running' }]
+        : [],
+      kill,
+    } as never)
+    const interrupt = vi.fn()
+    const childId = SessionId('child-continuable')
+    ctx.provide('subagents', {
+      listDescendants: async () => [
+        { kind: 'child', id: childId, activity: 'running', hasChildren: false, mode: 'continuable', label: 'helper', parentId: sessionId, depth: 1 },
+        { kind: 'child', id: SessionId('child-one-shot'), activity: 'running', hasChildren: false, mode: 'one-shot', parentId: sessionId, depth: 1 },
+        { kind: 'diagnostic', id: SessionId('child-broken'), reason: 'corrupt', parentId: sessionId, depth: 1 },
+      ],
+      interrupt,
+    } as never)
+
+    expect(expectOk(await api.workspace.archiveSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([sessionId])
+    // The main agent's turn and queued inbox work are cancelled together.
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+    expect(kill).toHaveBeenCalledWith('job-1', agent, 'session-archived')
+    // Only the continuable descendant is interruptible; one-shot and
+    // diagnostic rows are skipped.
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(interrupt).toHaveBeenCalledWith(childId, { kind: 'user', parentSessionId: sessionId })
+  })
+
+  it('deletes an archived session that this host still has open by closing it first', async () => {
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'archive-delete-live') }))).workspace
+    const sessionId = SessionId('session-archive-delete-live')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const agent = ctx.agents.get(sessionId)
+    expect(agent).toBeDefined()
+    const cancel = vi.fn()
+    agent!.cancel = cancel
+    expect(expectOk(await api.workspace.archiveSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([sessionId])
+
+    // The gateway owns the handle, so the live attachment closes (activity
+    // stopped, agent disposed, session detached) before the log deletion.
+    expect(expectOk(await api.workspace.deleteSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([])
+    expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+  })
+
+  it('still rejects deleting an archived live session whose handle another path owns', async () => {
+    const { api, ctx, root } = await harness()
+    expectOk(await api.workspace.create(request({ path: stageDir(root, 'archive-delete-foreign') })))
+    const sessionId = SessionId('session-archive-delete-foreign')
+    // Attached directly on the context, never through a gateway entry path:
+    // no owned teardown capability exists for it.
+    const session = ctx.sessions.create(sessionId)
+    ctx.agents.register(stubAgent(session))
+    expect(expectOk(await api.workspace.archiveSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([sessionId])
+    const deleted = await api.workspace.deleteSession(request({ sessionId }))
+    expect(deleted.result).toMatchObject({
+      ok: false,
+      error: { code: 'session-live', details: { sessionId } },
+    })
+  })
+
+  it('pins a session durably and streams the registry-global pin order', async () => {
+    const { api, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'pin-home') }))).workspace
+    const first = SessionId('session-pin-first')
+    const second = SessionId('session-pin-second')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId: first })))
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId: second })))
+
+    const abort = new AbortController()
+    const stream: AsyncIterator<RpcRequest<HostFrame>> =
+      api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
+    const firstChanged = nextHostFrame(stream)
+    expect(expectOk(await api.workspace.setSessionPinned(request({ sessionId: first, pinned: true }))).pinnedSessionIds)
+      .toEqual([first])
+    expect(await firstChanged).toMatchObject({
+      payload: { type: 'host/pinned-sessions-changed', pinnedSessionIds: [first] },
+    })
+
+    const secondChanged = nextHostFrame(stream)
+    expect(expectOk(await api.workspace.setSessionPinned(request({ sessionId: second, pinned: true }))).pinnedSessionIds)
+      .toEqual([first, second])
+    expect(await secondChanged).toMatchObject({
+      payload: { type: 'host/pinned-sessions-changed', pinnedSessionIds: [first, second] },
+    })
+    expect(expectOk(await api.workspace.list(request({}))).pinnedSessionIds).toEqual([first, second])
+
+    const unpinned = nextHostFrame(stream)
+    expect(expectOk(await api.workspace.setSessionPinned(request({ sessionId: first, pinned: false }))).pinnedSessionIds)
+      .toEqual([second])
+    expect(await unpinned).toMatchObject({
+      payload: { type: 'host/pinned-sessions-changed', pinnedSessionIds: [second] },
+    })
+
+    const missing = await api.workspace.setSessionPinned(request({ sessionId: SessionId('session-ghost'), pinned: true }))
+    expect(missing.result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId: 'session-ghost' } },
+    })
+    expectOk(await api.workspace.archiveSession(request({ sessionId: second })))
+    const archived = await api.workspace.setSessionPinned(request({ sessionId: second, pinned: true }))
+    expect(archived.result).toMatchObject({
+      ok: false,
+      error: { code: 'session-archived', details: { sessionId: second } },
+    })
+    abort.abort()
+  })
+
   it('creates an unlinked session with an auto-created project directory under the session storage root', async () => {
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-unlinked-')))
     const { api } = await harness(root)
@@ -627,4 +759,3 @@ describe('Host Workspace increments', () => {
     expect(listB.items.find(w => w.workspaceId === wsB.workspaceId)?.sessionIds).toContain(sessionId)
   })
 })
-

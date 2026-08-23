@@ -12,7 +12,7 @@
  * card; the in-menu strip with Retry remains the catalog-load surface.
  */
 import {
-  useEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
+  useEffect, useLayoutEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
   type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
@@ -74,6 +74,68 @@ const MODALITY_ALIASES: Record<string, readonly string[]> = {
   audio: ['audio', 'sound', 'voice', 'ton', 'sprache', 'speech'],
 }
 
+/** Viewport clearance every open menu keeps on each edge (mirrors the Menu primitive's portal margin). */
+const MENU_VIEWPORT_MARGIN = 8
+
+/**
+ * Place the model menu inside the viewport: preferred right-aligned with the
+ * trigger and opening upward (the CSS default), then clamped to the viewport
+ * with an 8px margin on every edge, flipping below the trigger when the space
+ * above is exhausted. Root-relative coordinates keep the menu absolutely
+ * anchored to the trigger, so a scroll moves both together.
+ * @param root - the positioned `.root` box the absolute menu is relative to.
+ * @param trigger - the trigger button rect (viewport coordinates).
+ * @param menu - the open menu element, laid out so offsetWidth/Height are real.
+ * @returns root-relative left/top for the menu's inline style.
+ */
+export function placeMenu(
+  root: { getBoundingClientRect(): DOMRect },
+  trigger: { getBoundingClientRect(): DOMRect },
+  menu: { offsetWidth: number; offsetHeight: number },
+): { left: number; top: number } {
+  const MARGIN = MENU_VIEWPORT_MARGIN
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const rootRect = root.getBoundingClientRect()
+  const t = trigger.getBoundingClientRect()
+  const lw = menu.offsetWidth
+  const lh = menu.offsetHeight
+  // Preferred: right-aligned with the trigger, opening upward (8px gap).
+  let x = t.right - lw
+  let y = t.top - lh - 8
+  if (y < MARGIN && lh > 0 && t.bottom + lh + 8 <= vh - MARGIN) y = t.bottom + 8
+  if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
+  if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
+  return { left: x - rootRect.left, top: y - rootRect.top }
+}
+
+/**
+ * Phone placement: the card spans the viewport (the CSS media query widens
+ * it; only `top` is placed here) and ALWAYS opens upward. The composer sits
+ * at the viewport's bottom edge, so the wide-layout downward flip would push
+ * the absolutely positioned card past the page fold and make the
+ * conversation scroll; overlapping the trigger beats leaving the screen.
+ * @param root - the positioned `.root` box the absolute menu is relative to.
+ * @param trigger - the trigger button rect (viewport coordinates).
+ * @param menu - the open menu element, laid out so offsetHeight is real.
+ * @returns root-relative top for the card's inline style.
+ */
+export function placeMenuPhoneTop(
+  root: { getBoundingClientRect(): DOMRect },
+  trigger: { getBoundingClientRect(): DOMRect },
+  menu: { offsetHeight: number },
+): { top: number } {
+  const MARGIN = MENU_VIEWPORT_MARGIN
+  const vh = window.innerHeight
+  const rootRect = root.getBoundingClientRect()
+  const t = trigger.getBoundingClientRect()
+  const lh = Math.min(menu.offsetHeight, vh - MARGIN * 2)
+  let y = t.top - lh - 8
+  /* v8 ignore next -- the open menu has real height at placement time; a zero-height layout would clamp to the top margin anyway. */
+  if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
+  return { top: y - rootRect.top }
+}
+
 /** Check whether a model's modalities match a search token. */
 function modelMatchesModality(modalities: readonly string[] | undefined, token: string): boolean {
   if (!modalities || modalities.length === 0) return false
@@ -110,8 +172,54 @@ export function ModelSelect(
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
+
+  // Viewport-clamped menu placement: the CSS default (right-aligned, above
+  // the trigger) can run off the screen on phone viewports, so the open menu
+  // is re-placed from the trigger rect before paint, on every resize, and on
+  // every open-menu size change — drilling into a pane, a catalog load, or a
+  // group expansion all grow the card after the initial placement, and a
+  // top-anchored card would otherwise extend past the viewport's bottom edge.
+  // `null` keeps the CSS default — the layout effect resolves it in the same
+  // commit, before anything paints. On phone the card spans the viewport
+  // (CSS media query) and always opens upward (placeMenuPhoneTop).
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(max-width: 639px)')
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
+  const [menuPos, setMenuPos] = useState<
+    { left: number; top: number; stretch?: undefined } | { top: number; stretch: true } | null
+  >(null)
+  useLayoutEffect(() => {
+    if (!open) { setMenuPos(null); return }
+    const place = (): void => {
+      if (rootRef.current === null || triggerRef.current === null || menuRef.current === null) return
+      if (phone) {
+        const top = placeMenuPhoneTop(rootRef.current, triggerRef.current, menuRef.current).top
+        setMenuPos({ top, stretch: true })
+        return
+      }
+      setMenuPos(placeMenu(rootRef.current, triggerRef.current, menuRef.current))
+    }
+    place()
+    window.addEventListener('resize', place)
+    /* v8 ignore next 4 -- jsdom ships no ResizeObserver, so its absence arm
+       only runs under test; the constructor arm runs in every real browser. */
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : undefined
+    if (observer !== undefined && menuRef.current !== null) observer.observe(menuRef.current)
+    return () => {
+      window.removeEventListener('resize', place)
+      observer?.disconnect()
+    }
+  }, [open, phone])
 
   const choices = useMemo(() => state.groups.flatMap(group =>
     group.models.map(model => ({
@@ -335,11 +443,21 @@ export function ModelSelect(
 
       {open && (
         <div
+          ref={menuRef}
           id={`${id}-menu`}
           className={css.menu}
           role="menu"
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
+          style={menuPos === null
+            ? undefined
+            // Explicit right/bottom auto: the CSS default (right:0, bottom:
+            // 100%+8) would otherwise fight the placed top/left and, with an
+            // auto height, stretch the menu between the two. The phone
+            // stretch form spans the viewport between fixed insets.
+            : menuPos.stretch === true
+              ? { top: menuPos.top, left: 8, right: 8, bottom: 'auto', width: 'auto' }
+              : { left: menuPos.left, top: menuPos.top, right: 'auto', bottom: 'auto' }}
         >
           {pane === 'root' && (
             <>
@@ -384,7 +502,7 @@ export function ModelSelect(
                   value={searchQuery}
                   placeholder={t('search.placeholder')}
                   aria-label={t('search.placeholder')}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value) }}
                   onKeyDown={(e) => {
                     if (e.key === 'ArrowDown') {
                       e.preventDefault()
@@ -420,7 +538,7 @@ export function ModelSelect(
                         <button
                           type="button"
                           className={css.groupHeader}
-                          onClick={() => toggleGroup(group.id)}
+                          onClick={() => { toggleGroup(group.id) }}
                           aria-expanded={!isCollapsed}
                           title={group.name}
                         >

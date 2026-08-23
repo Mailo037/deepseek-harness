@@ -621,6 +621,10 @@ interface LlmDiscoveredModel {
   contextWindow?: number
   /** Maximum output tokens, when disclosed. */
   maxTokens?: number
+  /** Input modalities supported by the model, e.g. ['text', 'image', 'video']. */
+  inputModalities?: string[]
+  /** True when vision modality was inferred from model name rather than explicitly declared by provider. */
+  visionInferred?: boolean
 }
 ```
 

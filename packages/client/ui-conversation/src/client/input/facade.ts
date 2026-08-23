@@ -11,7 +11,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
   ReferenceInsert, InputTriggerController, SubmitImageAttachment, SubmitOutcome, TokenSpan,
-  TriggerChar,
+  TriggerChar, TriggerLexiconMember,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {
   DraftAttachmentId, EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
@@ -54,7 +54,7 @@ export interface SessionInputDeps {
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
   defaultSink(
     text: string,
-    imageIds: readonly DraftAttachmentId[],
+    attachmentIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal: AbortSignal,
   ): Promise<SubmitOutcome>
@@ -81,7 +81,7 @@ function guardOf(phase: InputState['phase']): 'plain' | 'claimed' | 'frozen' {
 const EMPTY_QUEUE: readonly QueuedMessage[] = []
 
 /** No-pipeline lexicon: zero text-ref decorations. */
-const EMPTY_LEXICON: ReadonlyMap<TriggerChar, readonly string[]> = new Map()
+const EMPTY_LEXICON: ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]> = new Map()
 
 /**
  * The per-session input facade: scoped-event application verbs +
@@ -95,9 +95,9 @@ export class SessionInputShell implements SessionInput {
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
     setDraft: (text) => { this.setDraft(text) },
-    addImages: ids => this.addImages(ids),
-    removeImage: (id) => { this.removeImage(id) },
-    pruneImages: (ids) => { this.pruneImages(ids) },
+    addAttachments: ids => this.addAttachments(ids),
+    removeAttachment: (id) => { this.removeAttachment(id) },
+    pruneAttachments: (ids) => { this.pruneAttachments(ids) },
     submit: () => { this.submit('queue') },
   }
 
@@ -106,7 +106,7 @@ export class SessionInputShell implements SessionInput {
   private readonly core = new InputMachine({ now: () => Date.now() })
   private noticeSeq = 0
   private lastMirroredDraft = ''
-  private imageIds: readonly DraftAttachmentId[] = []
+  private attachmentIds: readonly DraftAttachmentId[] = []
   /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
   private imageSendInFlight = false
   private disposed = false
@@ -122,7 +122,7 @@ export class SessionInputShell implements SessionInput {
   private queueEditStash: {
     readonly itemId: QueueItemId
     readonly draft: string
-    readonly imageIds: readonly DraftAttachmentId[]
+    readonly attachmentIds: readonly DraftAttachmentId[]
   } | null = null
   /** Set while the queue-edit mutation is in flight; further submits are no-ops. */
   private queueEditInFlight = false
@@ -148,24 +148,24 @@ export class SessionInputShell implements SessionInput {
   }
 
   /** Append ordered image ids unless an admission transaction is locked. */
-  addImages(ids: readonly DraftAttachmentId[]): boolean {
+  addAttachments(ids: readonly DraftAttachmentId[]): boolean {
     if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return false
     if (ids.length === 0) return true
-    this.imageIds = [...this.imageIds, ...ids]
+    this.attachmentIds = [...this.attachmentIds, ...ids]
     this.publish()
     return true
   }
 
   /**
    * Remove one image id from this draft. Busy admission phases refuse, like
-   * {@link addImages}: a removal landing while a command submit serializes
+   * {@link addAttachments}: a removal landing while a command submit serializes
    * would otherwise vanish from the rail yet still ride the in-flight send.
    */
-  removeImage(id: DraftAttachmentId): void {
+  removeAttachment(id: DraftAttachmentId): void {
     if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return
-    const next = this.imageIds.filter(candidate => candidate !== id)
-    if (next.length === this.imageIds.length) return
-    this.imageIds = next
+    const next = this.attachmentIds.filter(candidate => candidate !== id)
+    if (next.length === this.attachmentIds.length) return
+    this.attachmentIds = next
     this.publish()
   }
 
@@ -173,11 +173,11 @@ export class SessionInputShell implements SessionInput {
    * Keep only image ids that still resolve in the browser attachment registry.
    * @param available - live registry ids.
    */
-  pruneImages(available: readonly DraftAttachmentId[]): void {
+  pruneAttachments(available: readonly DraftAttachmentId[]): void {
     const keep = new Set(available)
-    const next = this.imageIds.filter(id => keep.has(id))
-    if (next.length === this.imageIds.length) return
-    this.imageIds = next
+    const next = this.attachmentIds.filter(id => keep.has(id))
+    if (next.length === this.attachmentIds.length) return
+    this.attachmentIds = next
     this.publish()
   }
 
@@ -185,11 +185,11 @@ export class SessionInputShell implements SessionInput {
    * Clear the draft as a successful-send commit: no undo unit is recorded and
    * the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent content
    * (the command path gets the same discipline from submit-settled success).
-   * @param imageIds - admitted image ids to remove from this draft.
+   * @param attachmentIds - admitted image ids to remove from this draft.
    */
-  commitSend(imageIds: readonly DraftAttachmentId[]): void {
-    const submitted = new Set(imageIds)
-    this.imageIds = this.imageIds.filter(id => !submitted.has(id))
+  commitSend(attachmentIds: readonly DraftAttachmentId[]): void {
+    const submitted = new Set(attachmentIds)
+    this.attachmentIds = this.attachmentIds.filter(id => !submitted.has(id))
     this.run(this.core.dispatch({ type: 'send-committed' }))
   }
 
@@ -237,14 +237,14 @@ export class SessionInputShell implements SessionInput {
       this.submitQueueEdit()
       return
     }
-    if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
+    if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
       if (this.snapshot.phase === 'plain' && !this.imageSendInFlight) {
-        const imageIds = [...this.imageIds]
+        const attachmentIds = [...this.attachmentIds]
         this.imageSendInFlight = true
-        void this.deps.defaultSink('', imageIds, mode, new AbortController().signal).then((outcome) => {
+        void this.deps.defaultSink('', attachmentIds, mode, new AbortController().signal).then((outcome) => {
           this.imageSendInFlight = false
           if (this.disposed) return
-          if (outcome.kind === 'success') this.commitSend(imageIds)
+          if (outcome.kind === 'success') this.commitSend(attachmentIds)
           else if (outcome.text !== undefined) this.notify('error', outcome.text)
         }, (error: unknown) => {
           this.imageSendInFlight = false
@@ -258,7 +258,7 @@ export class SessionInputShell implements SessionInput {
     // Enter-time adjudication applies the same policy for unclaimed lines
     // inside the command source itself.
     const before = this.snapshot
-    if (before.phase === 'claimed' && this.imageIds.length > 0 && before.claim?.images !== true) {
+    if (before.phase === 'claimed' && this.attachmentIds.length > 0 && before.claim?.images !== true) {
       this.notify('error', this.deps.commandImages.unsupportedNotice(before.claim?.token ?? before.draft))
       return
     }
@@ -316,8 +316,8 @@ export class SessionInputShell implements SessionInput {
     if (row === undefined || row.text === null) return false
     if (this.queueEditStash !== null) this.restoreQueueEdit()
     const snapshot = this.snapshot
-    this.queueEditStash = { itemId, draft: snapshot.draft, imageIds: snapshot.imageIds }
-    for (const id of snapshot.imageIds) this.removeImage(id)
+    this.queueEditStash = { itemId, draft: snapshot.draft, attachmentIds: snapshot.attachmentIds }
+    for (const id of snapshot.attachmentIds) this.removeAttachment(id)
     this.setDraft(row.text)
     return true
   }
@@ -383,7 +383,7 @@ export class SessionInputShell implements SessionInput {
     if (stash === null) return
     this.queueEditStash = null
     this.setDraft(stash.draft)
-    if (stash.imageIds.length > 0) this.addImages(stash.imageIds)
+    if (stash.attachmentIds.length > 0) this.addAttachments(stash.attachmentIds)
   }
 
   /**
@@ -417,7 +417,7 @@ export class SessionInputShell implements SessionInput {
    * identity per shell; without a pipeline the snapshot is the empty Map and
    * subscribers never fire.
    */
-  readonly lexicon: ObservableSnapshot<ReadonlyMap<TriggerChar, readonly string[]>> = {
+  readonly lexicon: ObservableSnapshot<ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]>> = {
     getSnapshot: () => this.deps.inputTriggers?.()?.lexicon.getSnapshot() ?? EMPTY_LEXICON,
     subscribe: fn => this.deps.inputTriggers?.()?.lexicon.subscribe(fn) ?? (() => {}),
   }
@@ -570,10 +570,10 @@ export class SessionInputShell implements SessionInput {
    * the clipboard text. Chip-free drafts skip the async detour.
    */
   private sinkSerialized(attempt: SubmitAttempt, draft: string, mode: InputSubmitMode): void {
-    const imageIds = [...this.imageIds]
+    const attachmentIds = [...this.attachmentIds]
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.settleSubmit(attempt, this.deps.defaultSink(draft.trim(), imageIds, mode, attempt.signal), imageIds)
+      this.settleSubmit(attempt, this.deps.defaultSink(draft.trim(), attachmentIds, mode, attempt.signal), attachmentIds)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
@@ -597,7 +597,7 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + part.length
         }
         out += draft.slice(cursor)
-        this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), imageIds, mode, attempt.signal), imageIds)
+        this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), attachmentIds, mode, attempt.signal), attachmentIds)
       },
       (error: unknown) => {
         controller.abort()
@@ -612,14 +612,14 @@ export class SessionInputShell implements SessionInput {
   private settleSubmit(
     attempt: SubmitAttempt,
     pending: Promise<SubmitOutcome>,
-    imageIds: readonly DraftAttachmentId[] = [],
+    attachmentIds: readonly DraftAttachmentId[] = [],
   ): void {
     pending.then(
       (outcome) => {
         if (this.dead(attempt)) return
-        if (outcome.kind === 'success' && imageIds.length > 0) {
-          const submitted = new Set(imageIds)
-          this.imageIds = this.imageIds.filter(id => !submitted.has(id))
+        if (outcome.kind === 'success' && attachmentIds.length > 0) {
+          const submitted = new Set(attachmentIds)
+          this.attachmentIds = this.attachmentIds.filter(id => !submitted.has(id))
         }
         this.run(this.core.dispatch({
           type: 'submit-settled',
@@ -648,7 +648,7 @@ export class SessionInputShell implements SessionInput {
       this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome: undefined }))
       return
     }
-    inputTriggers.adjudicate(draft.trim(), attempt.signal, { images: this.imageIds.length }).then(
+    inputTriggers.adjudicate(draft.trim(), attempt.signal, { images: this.attachmentIds.length }).then(
       (outcome: PickOutcome) => {
         if (this.dead(attempt)) return
         this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome }))
@@ -669,10 +669,10 @@ export class SessionInputShell implements SessionInput {
    * for correction.
    */
   private beginSubmit(attempt: SubmitAttempt, claim: CommandClaim, args: string): void {
-    const imageIds = claim.images === true ? [...this.imageIds] : []
+    const attachmentIds = claim.images === true ? [...this.attachmentIds] : []
     Promise.resolve()
       .then(async () => {
-        const images = imageIds.length > 0 ? await this.deps.commandImages.serialize(imageIds) : []
+        const images = attachmentIds.length > 0 ? await this.deps.commandImages.serialize(attachmentIds) : []
         // Serialization may outlive the attempt (large files, session
         // teardown); a dead attempt must not reach the Host executor.
         if (this.dead(attempt)) return undefined
@@ -681,10 +681,10 @@ export class SessionInputShell implements SessionInput {
       .then(
         (outcome) => {
           if (outcome === undefined || this.dead(attempt)) return
-          if (outcome.kind === 'success' && imageIds.length > 0) {
-            const submitted = new Set(imageIds)
-            this.imageIds = this.imageIds.filter(id => !submitted.has(id))
-            this.deps.commandImages.release(imageIds)
+          if (outcome.kind === 'success' && attachmentIds.length > 0) {
+            const submitted = new Set(attachmentIds)
+            this.attachmentIds = this.attachmentIds.filter(id => !submitted.has(id))
+            this.deps.commandImages.release(attachmentIds)
           }
           this.run(this.core.dispatch({
             type: 'submit-settled', attempt, ok: outcome.kind === 'success', outcome,
@@ -708,7 +708,7 @@ export class SessionInputShell implements SessionInput {
     const core = this.core.state
     return {
       ...core,
-      imageIds: this.imageIds,
+      attachmentIds: this.attachmentIds,
       queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
       ...(this.queueEditStash === null ? {} : { queueEdit: { itemId: this.queueEditStash.itemId } }),
     }

@@ -1,6 +1,6 @@
 /** Strict per-session header/body content inserted into the resident conversation layout. */
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import type { SessionId, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -55,6 +55,14 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
 
 /**
  * Renders Session header chrome above the resident conversation scrollport.
+ * The title-adjacent actions (subagent catalog, background jobs) stay inline
+ * while they fit; on phone-sized viewports they always drop into the tab
+ * strip — the title row is too scarce there, and the chat name must stay
+ * readable. On wider viewports the drop is measured: once the cluster would
+ * run into the right-aligned utilities it moves beside the view tabs instead
+ * of being squeezed. Un-dropping waits for the row to grow back beyond the
+ * width captured at drop time, so removing the inline actions cannot
+ * oscillate the decision.
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
  * @returns the hidden blank-session header or visible title and tabs.
  */
@@ -71,6 +79,50 @@ export function ConversationSessionHeader({
   const blank = useSession(s => s.blank)
   const hideChrome = blank && composerPhase === 'blank'
 
+  // Phone viewports drop unconditionally (same breakpoint band as the other
+  // phone-only chrome); wider ones follow the measured overflow below.
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(max-width: 639px)')
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
+
+  // Overflow watch: the cluster carries min-width 0, so an unshrinkable
+  // actions group shows up as scrollWidth beyond clientWidth.
+  const clusterRef = useRef<HTMLDivElement | null>(null)
+  const utilitiesRef = useRef<HTMLDivElement | null>(null)
+  const dropRequirement = useRef(0)
+  const [actionsDropped, setActionsDropped] = useState(false)
+  useLayoutEffect(() => {
+    if (phone) return // dropped unconditionally; nothing to measure
+    const cluster = clusterRef.current
+    const utilities = utilitiesRef.current
+    if (cluster === null || utilities === null || typeof ResizeObserver === 'undefined') return
+    const evaluate = (): void => {
+      if (!actionsDropped) {
+        if (cluster.scrollWidth > cluster.clientWidth + 1) {
+          dropRequirement.current = cluster.scrollWidth + utilities.offsetWidth + 20 + 8
+          setActionsDropped(true)
+        }
+        return
+      }
+      const row = cluster.parentElement
+      if (row !== null && row.clientWidth >= dropRequirement.current + 24) setActionsDropped(false)
+    }
+    evaluate()
+    const observer = new ResizeObserver(evaluate)
+    observer.observe(cluster)
+    observer.observe(utilities)
+    return () => { observer.disconnect() }
+  }, [actionsDropped, phone])
+
+  const dropped = phone || actionsDropped
+
   return (
     <header
       className={clsx(css.header, hideChrome && css.headerHidden)}
@@ -79,7 +131,7 @@ export function ConversationSessionHeader({
       {!hideChrome && (
         <>
           <div className={css.titleRow}>
-            <div className={css.titleCluster}>
+            <div className={css.titleCluster} ref={clusterRef}>
               <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
                   const last = index === ancestry.length - 1
@@ -99,16 +151,20 @@ export function ConversationSessionHeader({
                 })}
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{t('session.blank')}</span>}
               </nav>
-              <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', {})}
-              </div>
+              {/* While dropped the inline seat is absent: the tab-strip copy
+                  below is the one rendered instance. */}
+              {!dropped && (
+                <div className={css.headerActions}>
+                  {renderSlot('conversation.session.header.actions', {})}
+                </div>
+              )}
             </div>
-            <div className={css.headerUtilities}>
+            <div className={css.headerUtilities} ref={utilitiesRef}>
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
           </div>
-          {tabs.length > 1 && (
-            <div className={css.tabs} role="tablist">
+          {(dropped || tabs.length > 1) && (
+            <div className={css.tabs} role={tabs.length > 1 ? 'tablist' : undefined}>
               {tabs.map(viewTab => (
                 <button
                   key={viewTab.id}
@@ -121,6 +177,13 @@ export function ConversationSessionHeader({
                   {viewTab.label}
                 </button>
               ))}
+              {/* Dropped actions trail the view tabs, pinned to the strip's
+                  right edge (margin-left auto). */}
+              {dropped && (
+                <div className={css.actionTabsGroup} data-header-action-tabs="">
+                  {renderSlot('conversation.session.header.actions', {})}
+                </div>
+              )}
             </div>
           )}
         </>

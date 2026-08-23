@@ -1,16 +1,16 @@
 /**
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
- * time->ellipsis, action buttons) are CSS-only. Row ... menus are visual-only
- * except workspace Rename/Delete and session Rename/Fork/Archive; the session
- * and workspace hover cards are suppressed while a menu is open.
+ * time->ellipsis, action buttons) are CSS-only. Session rows expose the same
+ * action menu from their ellipsis trigger and the native context-menu gesture;
+ * session and workspace hover cards are suppressed while a menu is open.
  */
 import { useState } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconArchiveOutline20, IconBranchOutline16, IconEditOutline16,
   IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16,
-  IconPlusOutline16, IconSettingsOutline16, IconTrashOutline16, IconTriangleRightFill14,
+  IconPinOutline16, IconPlusOutline16, IconSettingsOutline16, IconTrashOutline16, IconTriangleRightFill14,
   Menu, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -26,6 +26,15 @@ type RowTranslate = WorkspaceBrowserProps['t']
 /** Row display title: blank rows show the localized New Session label. */
 function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
+}
+
+/** Zero-sized viewport anchor for a pointer-positioned portal menu. */
+function viewportPointRect(x: number, y: number): DOMRect {
+  return {
+    x, y, width: 0, height: 0,
+    top: y, right: x, bottom: y, left: x,
+    toJSON: () => ({ x, y, width: 0, height: 0, top: y, right: x, bottom: y, left: x }),
+  }
 }
 
 /** Localized compact relative time ("刚刚"/"5分钟" in zh, "now"/"5min" in en). */
@@ -127,6 +136,11 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   const label = row.workspaceId === undefined ? t('group.ungrouped') : row.label
   const active = group.expanded && group.containsCurrent
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<DOMRect | null>(null)
+  const closeMenu = () => {
+    setMenuOpen(false)
+    setContextMenuAnchor(null)
+  }
   const workspaceMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     ...actions?.settings !== undefined ? [{ id: 'settings', label: t('menu.projectSettings'), icon: <IconSettingsOutline16 /> }] : [],
@@ -138,6 +152,19 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
       role="treeitem"
       aria-expanded={row.expanded}
       onClick={onToggle}
+      onContextMenu={actions === undefined
+        ? undefined
+        : (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const rowRect = event.currentTarget.getBoundingClientRect()
+          const keyboardAnchor = event.clientX === 0 && event.clientY === 0
+          setContextMenuAnchor(viewportPointRect(
+            keyboardAnchor ? rowRect.left + 8 : event.clientX,
+            keyboardAnchor ? rowRect.bottom : event.clientY,
+          ))
+          setMenuOpen(true)
+        }}
       data-drag-id={row.workspaceId !== undefined ? `w:${row.key}` : undefined}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
@@ -158,26 +185,32 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
       <span className={css.projectText}>
         <span className={css.title}>{label}</span>
       </span>
+      {!row.expanded && row.hasAttention && <StateDot state="warning" />}
       <span className={css.rowActions}>
         {actions !== undefined && (
           <Menu
             open={menuOpen}
-            onClose={() => { setMenuOpen(false) }}
+            onClose={closeMenu}
             items={workspaceMenuItems}
             onSelect={(id) => {
-              setMenuOpen(false)
+              closeMenu()
               if (id === 'rename') actions.rename()
               else if (id === 'settings') actions.settings?.()
               else if (id === 'delete') actions.delete()
             }}
             portal
             closeOnPointerLeave
+            {...(contextMenuAnchor === null ? {} : { getAnchorRect: () => contextMenuAnchor })}
             anchor={(
               <button
                 type="button"
                 className={css.iconButton}
                 aria-label={t('actions.workspace.aria', { name: label })}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setContextMenuAnchor(null)
+                  setMenuOpen(v => !v)
+                }}
               >
                 <IconEllipsisOutline16 />
               </button>
@@ -229,13 +262,13 @@ interface SessionStatus {
  * outranks completion reminders.
  */
 function sessionStatuses(
-  node: Pick<SessionNode, 'pendingInteraction' | 'running' | 'runningSubagentCount' | 'completed'>,
+  node: Pick<SessionNode, 'pendingInteraction' | 'running' | 'backgroundRunning' | 'runningSubagentCount' | 'completed' | 'attention'>,
   t: RowTranslate,
 ): readonly [SessionStatus, ...SessionStatus[]] {
   const subagents: SessionStatus | undefined = node.runningSubagentCount === 0
     ? undefined
     : {
-      state: 'ongoing',
+      state: 'background',
       label: t(
         node.runningSubagentCount === 1
           ? 'status.subagentsRunning.one'
@@ -259,11 +292,19 @@ function sessionStatuses(
     default: return assertNever(node.pendingInteraction)
   }
   if (pending !== undefined) return subagents === undefined ? [pending] : [pending, subagents]
+  if (node.backgroundRunning) {
+    const primary: SessionStatus = { state: 'background', label: t('status.backgroundJobs') }
+    return subagents === undefined ? [primary] : [primary, subagents]
+  }
   if (node.running) {
     const primary: SessionStatus = { state: 'ongoing', label: t('status.running') }
     return subagents === undefined ? [primary] : [primary, subagents]
   }
   if (subagents !== undefined) return [subagents]
+  // A turn that failed after exhausting its retry budget is not "finished":
+  // it needs the user's attention, so the red error dot replaces the green
+  // done/idle dot until a fresh turn supersedes the verdict.
+  if (node.attention !== undefined) return [{ state: 'error', label: t('status.needsAttention') }]
   if (node.completed) return [{ state: 'done', label: t('status.completed') }]
   return [{ state: 'done', label: t('status.idle') }]
 }
@@ -353,13 +394,21 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.onOpen - open a session by id.
  * @param props.onRename - open the session rename dialog (id + current title).
  * @param props.onFork - fork a session at its last completed turn.
+ * @param props.onMove - open the move-to-workspace dialog when available.
  * @param props.onArchive - archive a session by id.
+ * @param props.archived - render archive-view actions instead of active-session actions.
+ * @param props.onRestore - restore an archived session when available.
+ * @param props.pinned - whether the session currently belongs to the Pinned category.
+ * @param props.onSetPinned - update durable pin membership when available.
  * @param props.drag - optional draggable-row wiring.
  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
-export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onMove, onArchive, drag, flat = false, t }: {
+export function SessionNodeItem({
+  node, currentId, now, onOpen, onRename, onFork, onMove, onArchive,
+  archived = false, onRestore, onDelete, pinned = false, onSetPinned, drag, flat = false, t,
+}: {
   node: SessionNode
   currentId: string | undefined
   now: number
@@ -372,6 +421,16 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   onMove?: ((id: SessionNode['id']) => void) | undefined
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** This row is an archived session shown in the archive view. */
+  archived?: boolean | undefined
+  /** Restore this archived session to its existing workspace account. */
+  onRestore?: ((id: SessionNode['id']) => void) | undefined
+  /** Permanently delete this archived session and its durable log. */
+  onDelete?: ((id: SessionNode['id']) => void) | undefined
+  /** Whether this session currently belongs to the Pinned category. */
+  pinned?: boolean | undefined
+  /** Set this session's durable pin membership. */
+  onSetPinned?: ((id: SessionNode['id'], pinned: boolean) => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
@@ -385,15 +444,32 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'done' || row.completed
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<DOMRect | null>(null)
+  const closeMenu = () => {
+    setMenuOpen(false)
+    setContextMenuAnchor(null)
+  }
   // Archive hides the row through the registry-global archive set and never
-  // touches the session log, so it is not styled as destructive and needs no
-  // confirmation dialog.
+  // touches the session log, so it needs no confirmation dialog — but it is
+  // still the row's removing gesture, styled danger like the header menu's.
   const sessionMenuItems = [
-    { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
-    { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
-    ...onMove !== undefined ? [{ id: 'move', label: t('menu.moveSession'), icon: <IconFolderOpenOutline16 /> }] : [],
+    ...(!archived && onSetPinned !== undefined ? [{
+      id: 'pin',
+      label: pinned ? t('menu.unpinSession') : t('menu.pinSession'),
+      icon: <IconPinOutline16 />,
+    }] : []),
+    ...(!archived ? [
+      { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
+      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
+      ...onMove !== undefined ? [{ id: 'move', label: t('menu.moveSession'), icon: <IconFolderOpenOutline16 /> }] : [],
+    ] : []),
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
-    { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
+    ...(archived ? [
+      { id: 'restore', label: t('menu.restoreSession'), icon: <IconArchiveOutline20 size={16} /> },
+      ...(onDelete !== undefined ? [{ id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutline16 />, danger: true }] : []),
+    ] : [
+      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} />, danger: true },
+    ]),
   ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
@@ -406,6 +482,19 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
       role="treeitem"
       aria-selected={selected}
       onClick={() => { onOpen(node.id) }}
+      onContextMenu={row.blank
+        ? undefined
+        : (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const rowRect = event.currentTarget.getBoundingClientRect()
+          const keyboardAnchor = event.clientX === 0 && event.clientY === 0
+          setContextMenuAnchor(viewportPointRect(
+            keyboardAnchor ? rowRect.left + 8 : event.clientX,
+            keyboardAnchor ? rowRect.bottom : event.clientY,
+          ))
+          setMenuOpen(true)
+        }}
       data-drag-id={`s:${node.id as string}`}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
@@ -450,23 +539,31 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
         <span className={css.rowActions}>
           <Menu
             open={menuOpen}
-            onClose={() => { setMenuOpen(false) }}
+            onClose={closeMenu}
             items={sessionMenuItems}
             onSelect={(id) => {
-              setMenuOpen(false)
-              if (id === 'rename') onRename(node.id, row.title)
+              closeMenu()
+              if (id === 'pin') onSetPinned?.(node.id, !pinned)
+              else if (id === 'restore') onRestore?.(node.id)
+              else if (id === 'delete') onDelete?.(node.id)
+              else if (id === 'rename') onRename(node.id, row.title)
               else if (id === 'fork') onFork(node.id)
               else if (id === 'move') onMove?.(node.id)
               else if (id === 'archive') onArchive(node.id)
             }}
             portal
             closeOnPointerLeave
+            {...(contextMenuAnchor === null ? {} : { getAnchorRect: () => contextMenuAnchor })}
             anchor={(
               <button
                 type="button"
                 className={css.iconButton}
                 aria-label={t('actions.session.aria', { name: title })}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setContextMenuAnchor(null)
+                  setMenuOpen(v => !v)
+                }}
               >
                 <IconEllipsisOutline16 />
               </button>

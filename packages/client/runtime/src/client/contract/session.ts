@@ -52,6 +52,13 @@ export interface ISession {
     attachmentId: AttachmentIdType,
   ): Promise<RpcResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>>
   /**
+   * Upload one browser file into the session's project directory (.uploads/).
+   * @param name - proposed file name (host sanitizes it).
+   * @param dataBase64 - base64-encoded file bytes.
+   * @returns the workspace-relative path and byte length, or the business error.
+   */
+  uploadAttachment(name: string, dataBase64: string): Promise<RpcResult<{ path: string; bytes: number }>>
+  /**
    * Apply one edit, remove, strict steer, or reorder action to a still-pending
    * queue occurrence. A reorder (`move`) addresses a queued-turn row and
    * clamps its target index into the current list.

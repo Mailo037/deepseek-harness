@@ -176,11 +176,23 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The unfold chevron rides the line's right end, past the duration text. */
+/* The unfold chevron rides the line's right end, past the duration text,
+   rotating to point up while the fold is open. */
 .turnSummaryChevron {
   flex: none;
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
+  transition: transform 150ms ease;
+}
+
+.turnSummaryChevronOpen {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turnSummaryChevron {
+    transition: none;
+  }
 }
 
 .toolGroupBody {

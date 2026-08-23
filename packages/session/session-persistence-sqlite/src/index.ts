@@ -122,6 +122,10 @@ export class SqliteSessionPersistence extends SessionPersistence {
     return this.coordinator.readFrom(id, fromSeq, signal)
   }
 
+  override delete(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    return this.coordinator.delete(id, signal)
+  }
+
   list(signal?: AbortSignal): Promise<SessionHeader[]> {
     return this.store.list(signal)
   }

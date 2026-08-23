@@ -27,8 +27,10 @@ async function bench() {
   const renameSession = vi.fn(async (title: string) => ({ ok: true, value: { title, seq: 1 } }))
   const binding = vi.fn(() => ({ session: { rename: renameSession } }))
   const fork = vi.fn(async () => 'forked' as never)
+  const deleteSession = vi.fn(async () => {})
+  const deleteArchivedSessions = vi.fn(async () => [])
   ctx.provide('workspaces', {
-    create, startSession, rename, insertSessionBefore,
+    create, startSession, rename, insertSessionBefore, deleteSession, deleteArchivedSessions,
   } as never)
   ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork } as never)
   ctx.provide('connection', {
@@ -42,7 +44,7 @@ async function bench() {
   ctx.provide('locale', locale)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, rename,
-    insertSessionBefore, open, clear, search, renameSession, binding, fork,
+    insertSessionBefore, deleteSession, deleteArchivedSessions, open, clear, search, renameSession, binding, fork,
   }
 }
 
@@ -109,6 +111,10 @@ describe('ui-workspace apply', () => {
     expect(b.rename).toHaveBeenCalledWith('ws', 'renamed')
     await browser.insertSessionBefore('ws' as never, 's1' as never, 's2' as never)
     expect(b.insertSessionBefore).toHaveBeenCalledWith('ws', 's1', 's2')
+    await browser.deleteSession('s1' as never)
+    expect(b.deleteSession).toHaveBeenCalledWith('s1')
+    await browser.deleteArchivedSessions()
+    expect(b.deleteArchivedSessions).toHaveBeenCalled()
     await browser.createWorkspace({ path: '/tmp/browser-project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/browser-project' })
 
@@ -141,6 +147,24 @@ describe('ui-workspace apply', () => {
     dispose()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
     unsubscribe()
+  })
+
+  it('refuses an external picker request until the hero directory flow is live', async () => {
+    const b = await bench()
+    declare(b.slots, 'conversation.hero.workspace')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const requests = b.ctx.get('workspacePickerRequests') as {
+      request: (onSettled: (completed: boolean) => void) => boolean
+    }
+    const settled = vi.fn()
+    expect(requests.request(settled)).toBe(false)
+    expect(settled).not.toHaveBeenCalled()
+
+    const dispose = b.slots.register({ name: 'conversation.hero.workspace.directoryFlow' } as never, () => null)
+    expect(requests.request(settled)).toBe(true)
+    const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
+    expect(picker.hooks.workspacePickerRequest.getSnapshot()).toBe(1)
+    dispose()
   })
 
   it('rejects the browser search callback on a runtime business error', async () => {

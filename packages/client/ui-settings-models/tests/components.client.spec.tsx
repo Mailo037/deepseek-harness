@@ -853,12 +853,14 @@ describe('ModelsSection', () => {
 
     // Change provider-level reasoning effort
     const providerReasoningSelect = screen.getByLabelText(en.providerReasoning)
-    fireEvent.change(providerReasoningSelect, { target: { value: 'low' } })
+    fireEvent.click(providerReasoningSelect)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.reasoningLow }))
 
     // Change model-level reasoning effort
     expandRow(1)
     const modelReasoningSelect = screen.getByLabelText(`${en.modelReasoning} 1`)
-    fireEvent.change(modelReasoningSelect, { target: { value: 'max' } })
+    fireEvent.click(modelReasoningSelect)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.reasoningMax }))
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })

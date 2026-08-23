@@ -14,6 +14,7 @@ import { MENU_CLOSED, menuReduce, seedGroups } from '../core/menu.ts'
 import type { MenuEvent, MenuState, TriggerHit } from '../core/contract.ts'
 import type {
   ArbitrateKey, ArbitrateOutcome, ClientSessionContext, PickOutcome, InputTriggerSource, SubmitEnvelope, TriggerChar, TriggerGuard,
+  TriggerLexiconMember,
 } from '../types.ts'
 
 /** Roster access the controller borrows from the root service (registration order preserved). */
@@ -56,8 +57,8 @@ export class InputTriggerController {
    * spawn/exit) — render-side consumers subscribe instead of re-reading a
    * mutable answer.
    */
-  readonly lexicon: SnapshotStore<ReadonlyMap<TriggerChar, readonly string[]>> =
-    createSnapshotStore<ReadonlyMap<TriggerChar, readonly string[]>>(new Map())
+  readonly lexicon: SnapshotStore<ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]>> =
+    createSnapshotStore<ReadonlyMap<TriggerChar, readonly TriggerLexiconMember[]>>(new Map())
 
   /** The authoritative hit: single truth for span CAS material (menu snapshot never carries it alone). */
   private hit: TriggerHit | null = null
@@ -337,10 +338,10 @@ export class InputTriggerController {
   /** Re-poll every lexicon-bearing source and publish the aggregated rolls (see the store doc). */
   private refreshLexicon(): void {
     const projection = this.project()
-    const rolls = new Map<TriggerChar, readonly string[]>()
+    const rolls = new Map<TriggerChar, readonly TriggerLexiconMember[]>()
     for (const src of this.deps.roster.all()) {
       if (src.lexicon === undefined) continue
-      let names: readonly string[] | undefined
+      let names: readonly TriggerLexiconMember[] | undefined
       try {
         names = src.lexicon(projection)
       } catch (error) {

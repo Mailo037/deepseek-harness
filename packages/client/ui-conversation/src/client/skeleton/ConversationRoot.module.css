@@ -32,6 +32,14 @@
   border-bottom: 1px solid transparent;
 }
 
+/* Phone off-frame layout (AppFrame data-sidebar-offframe): the frame's
+   floating sidebar-reveal button occupies the top-left corner of the TITLE
+   row, so the title clears it. The clearance rides the title row only — the
+   tab strip below keeps its normal indent (nothing overlaps it). */
+:global([data-sidebar-offframe]) .titleRow {
+  padding-left: 32px;
+}
+
 .header::after {
   content: '';
   position: absolute;
@@ -140,6 +148,24 @@
   gap: 36px;
   margin-top: 4px;
   padding-left: 8px;
+}
+
+/* Dropped header actions ride the tab strip beside the view tabs when the
+   title row cannot hold them clear of the utilities — pinned to the strip's
+   RIGHT edge, after the view tabs. The entries gate their own content (no
+   subagents called, no background tasks → each renders nothing); the :empty
+   guard keeps their wrapper from spending width on an empty drop. */
+.actionTabsGroup {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.actionTabsGroup:empty {
+  display: none;
 }
 
 /* figma .Tab 34:11442: 13/16 text (figma wt510, rendered 500), gap 8 to the 2px bar. */

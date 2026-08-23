@@ -6,7 +6,9 @@
 import { z } from 'zod'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobView } from './jobs.ts'
+import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
+import { sessionIdSchema } from './sessions.schema.ts'
 
 /** JobId: one brand cast after non-empty string validation. */
 export const taskIdSchema = z.string().min(1) as unknown as z.ZodType<JobId>
@@ -31,3 +33,34 @@ export const taskViewSchema = z.object({
   startedAt: z.number().int().nonnegative(),
   finishedAt: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<Wire<JobView>>
+
+/** job.kill request payload schema. */
+export const jobKillRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  jobId: taskIdSchema,
+  reason: z.string().optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'job.kill'>>>
+
+/** job.kill response value schema. */
+export const jobKillValueSchema = z.object({
+  result: z.union([z.literal('requested'), z.literal('already-finished')]),
+}) satisfies z.ZodType<Wire<ResponseValue<'job.kill'>>>
+
+/** job.output request payload schema. */
+export const jobOutputRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  jobId: taskIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'job.output'>>>
+
+/** job.output response value schema. */
+export const jobOutputValueSchema = z.object({
+  text: z.string(),
+  status: z.union([
+    z.literal('running'),
+    z.literal('stopping'),
+    z.literal('completed'),
+    z.literal('killed'),
+    z.literal('failed'),
+  ]),
+  detail: z.string().optional(),
+}) satisfies z.ZodType<Wire<ResponseValue<'job.output'>>>

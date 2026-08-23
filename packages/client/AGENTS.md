@@ -110,6 +110,8 @@ One UI feature = one plugin package (`src/client/` browser half). A multi-domain
 
 [docs/web-styling.md](../../docs/web-styling.md) is authoritative. Shared `--dsw-*` tokens and global sheets live in `ui-theme/src/styles/`; feature components consume semantic aliases through CSS Modules and `clsx`, with no literal colors, component library, or Tailwind. Product copy is Chinese; code comments are English.
 
+User-facing controls use the custom atoms in `ui-primitives` or a feature-owned custom component; do not expose browser-native picker, select, dialog, or file-input chrome. A native semantic element may remain underneath only when the custom component owns its complete visible presentation, keyboard behavior, focus state, and reduced-motion behavior ([component rules](../../docs/web-styling.md#component-rules)).
+
 ## Testing and coverage
 
 The GUI test structure (three tiers, lane map) is settled in the [GUI testing system note](../../.agents/notes/implemented/process/2026-07-20-gui-testing-system.md); repo-wide policy in [docs/testing.md](../../docs/testing.md).

@@ -25,6 +25,9 @@ export interface MenuItem {
   icon?: ReactNode
   /** Destructive row: error-colored text/icon and danger hover fill. */
   danger?: boolean
+  /** Elevated-permission row: warn-amber text/icon on the soft warn fill,
+   * matching the active Full access trigger chip. */
+  warn?: boolean
   /** Nested card opened to the right on hover/focus. */
   submenu?: readonly MenuItem[]
 }
@@ -85,13 +88,16 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * scroll/resize; return null to skip placement for that frame.
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
+ * @param props.header - free content pinned above the items area, separated
+ * by a hairline; session context a menu reports rather than acts on.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, header, className }: {
   open: boolean
   anchor: ReactNode
   items: readonly MenuEntry[]
   footer?: readonly MenuEntry[]
+  header?: ReactNode
   selectedId?: string | undefined
   selectedIds?: readonly string[] | undefined
   onSelect: (id: string) => void
@@ -219,7 +225,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
         <button
           type="button"
           role="menuitem"
-          className={clsx(css.item, selected && css.selected, entry.danger === true && css.danger)}
+          className={clsx(css.item, selected && css.selected, entry.danger === true && css.danger, entry.warn === true && css.warn)}
           disabled={entry.disabled}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
@@ -273,6 +279,13 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       // (open/toggle) after onSelect.
       onClick={(e) => { e.stopPropagation() }}
     >
+      {/* Null counts as absent: an occupant that renders nothing (a head
+          hidden on wide layouts) must not pin an empty hairline box. */}
+      {header != null && (
+        <div className={css.menuHead} role="presentation">
+          {header}
+        </div>
+      )}
       <div className={css.viewport} role="presentation">
         {items.map(renderEntry)}
       </div>

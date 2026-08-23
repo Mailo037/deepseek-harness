@@ -67,7 +67,7 @@ function liveSession(initial: ConversationSnapshot) {
 /** InputZone owner stub; `queueEdit` mirrors the shell's published edit state. */
 function inputState(queueEdit?: QueueItemId): InputState {
   return {
-    draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
+    draft: '', attachmentIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
     ...(queueEdit === undefined ? {} : { queueEdit: { itemId: queueEdit } }),
   }
 }

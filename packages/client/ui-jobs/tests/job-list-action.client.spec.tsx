@@ -58,6 +58,7 @@ function rowCells(): string[][] {
   return within(screen.getByRole('list', { name: zh['list.aria'] }))
     .getAllByRole('listitem')
     .map(row => [...row.children]
+      .slice(0, 5) // Skip action buttons container
       .map(cell => cell.textContent ?? '')
       .filter(text => text !== ''))
 }
@@ -235,5 +236,41 @@ describe('JobListAction wire tolerance', () => {
     ])} />)
     fireEvent.click(screen.getByRole('button'))
     expect(rowCells().map(cells => cells[1])).toEqual(['later', 'earlier'])
+  })
+})
+
+describe('JobListAction job control and logs', () => {
+  it('calls killJob when Stop button is clicked', async () => {
+    const killJob = vi.fn().mockResolvedValue(undefined)
+    const base = props([job()])
+    render(<JobListAction {...base} killJob={killJob} />)
+    fireEvent.click(screen.getByRole('button'))
+
+    const stopBtn = screen.getByRole('button', { name: '终止' })
+    fireEvent.click(stopBtn)
+    expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-1')
+  })
+
+  it('opens log modal and fetches logs when row is clicked', async () => {
+    const getJobOutput = vi.fn().mockResolvedValue({ text: 'first line\nsecond line', status: 'running' })
+    const base = props([job()])
+    render(<JobListAction {...base} getJobOutput={getJobOutput} />)
+    fireEvent.click(screen.getByRole('button'))
+
+    const row = within(screen.getByRole('list', { name: zh['list.aria'] })).getAllByRole('listitem')[0]
+    expect(row).toBeDefined()
+    fireEvent.click(row!)
+
+    expect(getJobOutput).toHaveBeenCalledWith(SESSION, 'bash-1')
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('first line')).toBeTruthy()
+    expect(screen.getByText('second line')).toBeTruthy()
+    expect(screen.getByText('1')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+
+    // Close modal
+    const closeBtn = screen.getByRole('button', { name: '关闭' })
+    fireEvent.click(closeBtn)
+    expect(screen.queryByText('first line')).toBeNull()
   })
 })

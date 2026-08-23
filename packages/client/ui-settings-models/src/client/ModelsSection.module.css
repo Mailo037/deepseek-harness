@@ -538,6 +538,13 @@
   border: 1px solid var(--dsw-alias-border-l3);
 }
 
+.modalityHint {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-style: italic;
+}
+
 .inheritRow {
   grid-column: 1 / -1;
   display: flex;

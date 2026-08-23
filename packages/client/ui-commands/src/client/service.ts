@@ -17,7 +17,7 @@ import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-clien
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {
   CandidateRequest, ClientSessionContext, CommandClaim, PickOutcome, InputTriggerCandidate, InputTriggerPick,
-  SubmitEnvelope, SubmitImageAttachment, SubmitOutcome,
+  SubmitEnvelope, SubmitImageAttachment, SubmitOutcome, TriggerLexiconMember,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
@@ -102,15 +102,127 @@ function fuzzyScore(name: string, query: string): number | undefined {
   return best === noMatch ? undefined : best
 }
 
+/** Levenshtein edit distance between two lowercase strings. */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0
+  if (a.length === 0) return b.length
+  if (b.length === 0) return a.length
+  const row: number[] = []
+  for (let i = 0; i <= a.length; i++) row[i] = i
+  for (let j = 1; j <= b.length; j++) {
+    let prev = row[0] ?? 0
+    row[0] = j
+    for (let i = 1; i <= a.length; i++) {
+      const temp = row[i] ?? 0
+      if (a.charAt(i - 1) === b.charAt(j - 1)) {
+        row[i] = prev
+      } else {
+        row[i] = 1 + Math.min(prev, row[i] ?? 0, row[i - 1] ?? 0)
+      }
+      prev = temp
+    }
+  }
+  return row[a.length] ?? 0
+}
+
+/** Score a single search token against a target string (name or description word). */
+function tokenScore(target: string, token: string): number | undefined {
+  if (target === token) return 100
+  if (target.startsWith(token)) return 80 + Math.max(0, 10 - (target.length - token.length))
+  if (target.includes(token)) return 60 - target.indexOf(token)
+  const subScore = fuzzyScore(target, token)
+  if (subScore !== undefined) return 40 + subScore
+  const maxEdits = token.length > 5 ? 2 : token.length >= 3 ? 1 : 0
+  if (maxEdits > 0) {
+    const dist = levenshtein(token, target)
+    if (dist <= maxEdits) return 30 - dist * 10
+    if (target.length >= token.length) {
+      const prefixDist = levenshtein(token, target.slice(0, token.length))
+      if (prefixDist <= 1) return 25
+    }
+  }
+  return undefined
+}
+
+/** Composite match score for a candidate across name, description, and hint. */
+function candidateScore(candidate: InputTriggerCandidate, rawQuery: string): { score: number; prefix: boolean } | undefined {
+  const query = rawQuery.toLowerCase().trim()
+  if (query === '') return { score: 0, prefix: false }
+
+  const name = candidate.name.toLowerCase()
+  const desc = (candidate.description ?? '').toLowerCase()
+  const hint = (candidate.hint ?? '').toLowerCase()
+  const prefix = name.startsWith(query)
+
+  // Direct exact/prefix on command name
+  if (name === query) return { score: 100000, prefix: true }
+  if (prefix) return { score: 50000 + (100 - name.length), prefix: true }
+
+  // Direct whole-query fuzzy check on name (prioritize command name matches)
+  const nameSubScore = fuzzyScore(name, query)
+  if (nameSubScore !== undefined) {
+    return { score: 20000 + nameSubScore * 10, prefix: false }
+  }
+
+  // Check single typo on full command name if query is a single word
+  const tokens = query.split(/\s+/).filter(Boolean)
+  if (tokens.length === 1 && query.length >= 3) {
+    const maxEdits = query.length > 5 ? 2 : 1
+    const dist = levenshtein(query, name)
+    if (dist <= maxEdits) {
+      return { score: 15000 - dist * 1000, prefix: false }
+    }
+    if (name.length >= query.length) {
+      const prefixDist = levenshtein(query, name.slice(0, query.length))
+      if (prefixDist <= 1) {
+        return { score: 14000, prefix: false }
+      }
+    }
+  }
+
+  // Multi-token or description/hint search
+  const descWords = `${desc} ${hint}`.split(/[\s,.:;!?"'()\-_/]+/).filter(Boolean)
+  let totalScore = 0
+
+  // Full phrase match in description
+  if (desc.includes(query)) {
+    totalScore += 5000 - Math.min(100, desc.indexOf(query))
+  }
+
+  for (const token of tokens) {
+    let bestTokenScore: number | undefined
+    const nameScore = tokenScore(name, token)
+    if (nameScore !== undefined) {
+      bestTokenScore = nameScore * 3
+    }
+    for (const word of descWords) {
+      const wScore = tokenScore(word, token)
+      if (wScore !== undefined) {
+        bestTokenScore = Math.max(bestTokenScore ?? 0, wScore)
+      }
+    }
+    if (bestTokenScore === undefined) return undefined
+    totalScore += bestTokenScore
+  }
+
+  return totalScore > 0 ? { score: totalScore, prefix: false } : undefined
+}
+
 /** Case-insensitive fuzzy filtering with stable ordering for equal matches. */
 function fuzzyCandidates(candidates: readonly InputTriggerCandidate[], rawQuery: string): readonly InputTriggerCandidate[] {
-  const query = rawQuery.toLowerCase()
+  const query = rawQuery.toLowerCase().trim()
   if (query === '') return candidates
   const ranked: RankedCandidate[] = []
   candidates.forEach((candidate, index) => {
-    const name = candidate.name.toLowerCase()
-    const score = fuzzyScore(name, query)
-    if (score !== undefined) ranked.push({ candidate, index, prefix: name.startsWith(query), score })
+    const match = candidateScore(candidate, rawQuery)
+    if (match !== undefined) {
+      ranked.push({
+        candidate,
+        index,
+        prefix: match.prefix,
+        score: match.score,
+      })
+    }
   })
   ranked.sort((left, right) =>
     Number(right.prefix) - Number(left.prefix) || right.score - left.score || left.index - right.index)
@@ -150,6 +262,8 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       onPick: pick => this.dispatch(pick),
       matchSpace: (session, token) => this.matchSpace(session, token),
       matchEnter: (session, line, signal, envelope) => this.matchEnter(session, line, signal, envelope),
+      lexicon: session => this.lexiconRoll(session),
+      subscribeLexicon: (session, listener) => this.subscribeLexicon(session.sessionId, listener),
       warm: (session) => { this.directory.warm(session.sessionId) },
     }), 'command: slash source')
     ctx.remote.$on('commands/change', () => { this.directory.invalidateAll() })
@@ -231,6 +345,64 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
 
   /** Composer focus hooks by session (the overlay wiring binds the textarea focus here). */
   private readonly focusHooks = new Map<SessionId, () => void>()
+
+  /** Per-session lexicon invalidation listeners (subscribeLexicon consumers; the controller unsubscribes at scope dispose). */
+  private readonly lexiconListeners = new Map<SessionId, Set<() => void>>()
+
+  /**
+   * The hot command-name roll for one session's plain-token decoration:
+   * resolvable host commands plus currently-available contributions, each
+   * carrying the command token domain. `undefined` while the host catalog is
+   * not warm yet — no decoration, never a fetch.
+   * @param session - the polling source projection.
+   * @returns the roll, or undefined when the directory snapshot is absent.
+   */
+  private lexiconRoll(session: ClientSessionContext): readonly TriggerLexiconMember[] | undefined {
+    const snapshot = this.directory.snapshot(session.sessionId)
+    if (snapshot === undefined) return undefined
+    const seen = new Set(snapshot.map(c => c.name))
+    const roll: TriggerLexiconMember[] = snapshot.map(c => ({ name: c.name, appearance: 'command' as const }))
+    for (const contribution of this.live.contributions.values()) {
+      if (seen.has(contribution.name) || !contribution.available(session)) continue
+      seen.add(contribution.name)
+      roll.push({ name: contribution.name, appearance: 'command' })
+    }
+    return roll
+  }
+
+  /**
+   * Subscribe to this session's catalog settlements so the aggregated roll
+   * republishes after warm, soft invalidation, and reconnect resets.
+   * @param id - session key.
+   * @param listener - invalidation callback.
+   * @returns unsubscribe.
+   */
+  private subscribeLexicon(id: SessionId, listener: () => void): () => void {
+    const listeners = this.lexiconListeners.get(id) ?? new Set()
+    listeners.add(listener)
+    this.lexiconListeners.set(id, listeners)
+    const off = this.directory.onSettle(id, () => { this.notifyLexicon(id) })
+    return () => {
+      off()
+      const current = this.lexiconListeners.get(id)
+      if (current === undefined) return
+      current.delete(listener)
+      if (current.size === 0) this.lexiconListeners.delete(id)
+    }
+  }
+
+  /** Fan one settlement out to the session's lexicon listeners (contained failures). */
+  private notifyLexicon(id: SessionId): void {
+    for (const listener of [...(this.lexiconListeners.get(id) ?? [])]) {
+      try {
+        listener()
+      } catch (error) {
+        // One faulty consumer must not starve the others; settlement runs in
+        // promise continuations where a throw would reject unhandled.
+        console.error('[ui-commands] lexicon listener failed:', error)
+      }
+    }
+  }
 
   /**
    * Bind one session's composer-focus hook (overlay slot wiring; unbind on unmount).

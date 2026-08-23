@@ -88,4 +88,6 @@ export interface DiscoveredModelView {
   maxTokens?: number
   /** Accepted input modalities when known (`text`, `image`, `video`). */
   inputModalities?: string[]
+  /** True when vision modality was inferred from model name rather than explicitly declared by provider. */
+  visionInferred?: boolean
 }

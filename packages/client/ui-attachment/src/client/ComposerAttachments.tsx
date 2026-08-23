@@ -38,6 +38,55 @@ interface ComposerRailItem extends AttachmentRailItem {
   attachment: ComposerAttachment
 }
 
+/**
+ * Format a byte count into a human-readable size string (e.g. `12.3 KB`).
+ * Uses one decimal place; larger values climb B → KB → MB.
+ * @param bytes - integer byte count.
+ * @returns formatted size with unit suffix.
+ */
+function formatSize(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB']
+  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** unit
+  return `${value.toFixed(1)} ${units[unit]}`
+}
+
+/**
+ * Decode one image URL and report its natural pixel size.
+ * @param url - object or data URL of the browser-owned image.
+ * @returns natural width and height in pixels.
+ */
+function measureImage(url: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+    image.onerror = () => reject(new Error('image decode failed'))
+    image.src = url
+  })
+}
+
+/**
+ * Evaluate the per-image resolution criteria against one decoded size.
+ * @param width - natural width in pixels.
+ * @param height - natural height in pixels.
+ * @param limits - projected per-image bounds.
+ * @param t - conversation-namespace translate.
+ * @returns the localized warning text, or null when every criterion passes.
+ */
+export function imageSizeWarning(
+  width: number,
+  height: number,
+  limits: { readonly maxPixels: number; readonly maxDimension: number },
+  t: ComposerAttachmentsProps['t'],
+): string | null {
+  if (width * height > limits.maxPixels) return t('image.tooManyPixels')
+  if (Math.max(width, height) > limits.maxDimension) {
+    return t('image.dimensionTooLarge', { size: String(limits.maxDimension) })
+  }
+  return null
+}
+
 /** Check whether a model ID or catalog entry lacks image capability. */
 function isModelMissingImageSupport(
   modelId: string | undefined,
@@ -91,7 +140,8 @@ function isModelMissingImageSupport(
 
 /** Draft-image rail, document drop target, and original-image preview slot entry. */
 export function ComposerAttachments({
-  attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, warning, directory, t,
+  attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, onRestoreText,
+  dropLimits, imagePixelLimits, warning, directory, t,
 }: ComposerAttachmentsProps & ComposerAttachmentsInjected) {
   const dirState = useSyncExternalStore(
     fn => (directory ? directory.subscribe(fn) : () => {}),
@@ -104,7 +154,37 @@ export function ComposerAttachments({
   }, [dirState?.current?.model, dirState?.groups])
 
   const effectiveWarning = warning ?? (isModelMissingImage ? t('image.modelUnsupported') : undefined)
-  const [preview, setPreview] = useState<ComposerAttachment | null>(null)
+  // Per-image resolution warnings (id → localized text), measured once per
+  // draft attachment against the projected pixel bounds.
+  const [sizeWarnings, setSizeWarnings] = useState<ReadonlyMap<string, string>>(new Map())
+  const measuredIds = useRef(new Set<string>())
+  useEffect(() => {
+    if (imagePixelLimits === undefined) return
+    const imageIds = new Set<string>()
+    for (const attachment of attachments) {
+      if (attachment.kind !== 'image') continue
+      imageIds.add(attachment.id)
+      if (measuredIds.current.has(attachment.id)) continue
+      measuredIds.current.add(attachment.id)
+      void measureImage(attachment.previewUrl).then(
+        ({ width, height }) => {
+          const warningText = imageSizeWarning(width, height, imagePixelLimits, t)
+          if (warningText === null) return
+          setSizeWarnings(prev => new Map(prev).set(attachment.id, warningText))
+        },
+        () => {
+          // A URL that cannot decode owns no client-side verdict; the Host
+          // admission still enforces its own bounds at submit.
+        },
+      )
+    }
+    // Drop entries whose attachment left the draft (removed, pruned, released).
+    setSizeWarnings((prev) => {
+      const next = new Map([...prev].filter(([id]) => imageIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [attachments, imagePixelLimits, t])
+  const [preview, setPreview] = useState<ComposerAttachment & { kind: 'image' } | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
   const closePreview = useCallback(() => { setPreview(null) }, [])
@@ -148,7 +228,7 @@ export function ComposerAttachments({
       if (dataTransfer === null) return
       event.preventDefault()
       reset()
-      if (canAcceptDrop) onAddImages([...dataTransfer.files])
+      if (canAcceptDrop) onAddFiles([...dataTransfer.files])
     }
     document.addEventListener('dragenter', onDragEnter)
     document.addEventListener('dragover', onDragOver)
@@ -162,16 +242,37 @@ export function ComposerAttachments({
       document.removeEventListener('drop', onDrop)
       window.removeEventListener('dragend', reset)
     }
-  }, [canAcceptDrop, onAddImages])
+  }, [canAcceptDrop, onAddFiles])
 
-  const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => ({
-    id: attachment.id,
-    previewUrl: attachment.previewUrl,
-    alt: attachment.file.name || t('image.pending'),
-    removeLabel: t('image.remove', { name: attachment.file.name }),
-    warning: effectiveWarning,
-    attachment,
-  })), [attachments, t, effectiveWarning])
+  const railItems = useMemo<ComposerRailItem[]>(() => attachments.map((attachment) => {
+    // The specific resolution warning outranks the global model warning.
+    const itemWarning = sizeWarnings.get(attachment.id) ?? effectiveWarning
+    if (attachment.kind === 'image') {
+      return {
+        id: attachment.id,
+        previewUrl: attachment.previewUrl,
+        alt: attachment.file.name || t('image.pending'),
+        removeLabel: t('image.remove', { name: attachment.file.name }),
+        warning: itemWarning,
+        attachment,
+      }
+    }
+    const name = attachment.name || t('image.pending')
+    const sizeText = formatSize(attachment.size)
+    const item: ComposerRailItem = {
+      id: attachment.id,
+      previewUrl: '',
+      alt: name,
+      removeLabel: t('file.remove', { name }),
+      file: { name, sizeText },
+      warning: itemWarning,
+      attachment,
+    }
+    if (attachment.kind === 'text' && attachment.restorable === true) {
+      item.restoreLabel = t('file.restore', { name })
+    }
+    return item
+  }), [attachments, t, effectiveWarning, sizeWarnings])
 
   return (
     <>
@@ -186,8 +287,11 @@ export function ComposerAttachments({
           <AttachmentRail
             items={railItems}
             labels={attachmentRailLabels(t)}
-            onOpen={(item) => { setPreview(item.attachment) }}
-            onRemove={(item) => { onRemoveImage(item.attachment.id) }}
+            onOpen={(item) => {
+              if (item.attachment.kind === 'image') setPreview(item.attachment)
+            }}
+            onRemove={(item) => { onRemoveAttachment(item.attachment.id) }}
+            onRestore={(item) => { onRestoreText(item.attachment.id) }}
           />
         </div>
       )}

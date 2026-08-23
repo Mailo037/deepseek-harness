@@ -92,7 +92,13 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
     .filter(o => o.value !== 'custom')
     .map((option) => {
       const icon = permissionGlyph(option.value)
-      return { id: option.value, label: optionLabel(option), ...icon === undefined ? {} : { icon } }
+      return {
+        id: option.value,
+        label: optionLabel(option),
+        ...icon === undefined ? {} : { icon },
+        // Same amber treatment as the active trigger chip below.
+        ...(option.value === FULL_ACCESS ? { warn: true } : {}),
+      }
     })
 
   const submit = (id: string): void => {

@@ -20,7 +20,10 @@ export interface ClientSessionContext {
   readonly sessionId: SessionId
 }
 
-/** Trigger character a source binds to. `!` is adjudication-only: the detector never opens a menu for it, but enter-time adjudication polls its sources. */
+/**
+ * Trigger character a source binds to. `!` is adjudication-only: the detector
+ * never opens a menu for it, but enter-time adjudication polls its sources.
+ */
 export type TriggerChar = '/' | '@' | '!'
 
 /** Where the trigger token sits in the draft: leading (trimmed draft starts with it) or inline. */
@@ -211,11 +214,13 @@ export interface InputTriggerSource {
   /**
    * Synchronous hot-snapshot name roll for plain-text reference decoration.
    * Implementing IS the participation claim: the render side
-   * scans the draft for `<trigger><name>` tokens and decorates exact matches.
+   * scans the draft for `<trigger><name>` tokens and decorates exact matches;
+   * an entry's `appearance` selects the token glyph (a bare string keeps the
+   * color-only highlight).
    * `undefined` = backing data not warm yet — no decoration, never a fetch
    * (the render path must stay synchronous and side-effect free).
    */
-  lexicon?(session: ClientSessionContext): readonly string[] | undefined
+  lexicon?(session: ClientSessionContext): readonly TriggerLexiconMember[] | undefined
   /**
    * Subscribe to changes of this source's {@link InputTriggerSource.lexicon} answer
    * for one session (backing data settled, invalidated, or refreshed). The
@@ -228,6 +233,21 @@ export interface InputTriggerSource {
   subscribeLexicon?(session: ClientSessionContext, listener: () => void): () => void
   /** Reference codec; required for sources producing insert outcomes. */
   readonly codec?: ReferenceCodec
+}
+
+/**
+ * Decoration domain of one hot-lexicon member: the composer's plain-token
+ * scan renders the matching `/name`/`@name` range with the domain's glyph.
+ */
+export type TriggerLexiconAppearance = 'skill' | 'command'
+
+/**
+ * One hot-lexicon member. A bare string keeps the color-only highlight;
+ * an entry names its decoration domain (see {@link TriggerLexiconAppearance}).
+ */
+export type TriggerLexiconMember = string | {
+  readonly name: string
+  readonly appearance?: TriggerLexiconAppearance
 }
 
 /** Trigger availability tier, derived from the input phase by the wiring layer. */

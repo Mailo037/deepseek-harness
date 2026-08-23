@@ -458,7 +458,7 @@ describe('DetailsPanel Output section', () => {
         currentAddress: undefined,
       })
     const workspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     return render(
@@ -470,7 +470,9 @@ describe('DetailsPanel Output section', () => {
         useSessions={bindSnapshotSelector(sessions)}
         useWorkspaces={bindSnapshotSelector(workspaces)}
         useInput={(() => { throw new Error('unused') })}
-        inputActions={{ setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {}, submit: () => {} }}
+        inputActions={{
+          setDraft: () => {}, addAttachments: () => true, removeAttachment: () => {}, pruneAttachments: () => {}, submit: () => {},
+        }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
@@ -652,11 +654,13 @@ describe('DetailsPanel Output section', () => {
             subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
           }))}
         useWorkspaces={bindSnapshotSelector(createSnapshotStore<WorkspaceListState>({
-          items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+          items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
           baselinesReady: true, recentWorkspaceId: undefined,
         }))}
         useInput={(() => { throw new Error('unused') })}
-        inputActions={{ setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {}, submit: () => {} }}
+        inputActions={{
+          setDraft: () => {}, addAttachments: () => true, removeAttachment: () => {}, pruneAttachments: () => {}, submit: () => {},
+        }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}

@@ -750,13 +750,17 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  * @returns the realized fixture text.
  */
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
-  const realized = fixtureText
+  const fixtureCwd = (JSON.parse(fixtureText.split('\n', 1)[0]!) as { cwd?: string }).cwd
+  // Fixture text is JSONL, so a Windows replacement must use JSON escaping
+  // before parsing it again. The prior raw replacement produced invalid JSON
+  // from a path containing backslashes.
+  const realizedCwd = JSON.stringify(scaffold.workspaceCwd).slice(1, -1)
+  const templated = fixtureText
     .split('{{sessionId}}').join(id)
-    .split('{{cwd}}').join(scaffold.workspaceCwd)
-  const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
+    .split('{{cwd}}').join(realizedCwd)
   return fixtureCwd === undefined
-    ? realized
-    : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
+    ? templated
+    : templated.split(fixtureCwd).join(realizedCwd)
 }
 
 export async function seedSession(

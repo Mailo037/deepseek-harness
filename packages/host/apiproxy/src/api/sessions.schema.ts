@@ -58,6 +58,7 @@ export const sessionSummarySchema = z.object({
   origin: z.literal('subagent').optional(),
   cwd: z.string().optional(),
   agentPreset: z.string().optional(),
+  attention: z.union([z.literal('retry-exhausted'), z.literal('error')]).optional(),
   projections: z.lazy(() => sessionProjectionsBlockSchema).optional(),
 }) as unknown as z.ZodType<Wire<SessionSummary>>
 
@@ -217,10 +218,11 @@ export const sessionProjectionsBlockSchema = z.object({
 }) as unknown as z.ZodType<Wire<SessionProjectionsBlock>>
 
 /** Host-side validation for the persisted Session-list projection. */
-export const sessionListMetadataProjectionSchema: z.ZodType<SessionListMetadata> = z.object({
+export const sessionListMetadataProjectionSchema = z.object({
   blank: z.boolean(),
   lastPromptAt: z.number().nullable(),
-})
+  attention: z.union([z.literal('retry-exhausted'), z.literal('error')]).optional(),
+}) as unknown as z.ZodType<SessionListMetadata>
 
 /**
  * imageLimits projection unit schema (host-side view validation). zod widens
@@ -327,6 +329,22 @@ export const sessionAttachmentValueSchema = z.object({
   attachment: imageAttachmentRefSchema,
   data: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.attachment'>>>
+
+/**
+ * session.uploadAttachment request payload. The sanitization / size bounds
+ * are enforced on the host; the wire only requires non-empty strings.
+ */
+export const sessionUploadAttachmentRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  name: z.string().min(1).max(512),
+  data: z.string().min(1),
+}) satisfies z.ZodType<Wire<RequestPayload<'session.uploadAttachment'>>>
+
+/** session.uploadAttachment response value (workspace-relative path and decoded byte length). */
+export const sessionUploadAttachmentValueSchema = z.object({
+  path: z.string().min(1),
+  bytes: z.number().int().positive(),
+}) satisfies z.ZodType<Wire<ResponseValue<'session.uploadAttachment'>>>
 
 /** session.updateQueue request payload. */
 export const sessionUpdateQueueRequestSchema = z.object({

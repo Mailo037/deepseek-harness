@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, TurnLocation,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { isAppendSurfaceEvent, toAssistantBlocks } from '@deepseek-ai/dsh-client-runtime/client'
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import type {
   AssistantChatData, FinalAssistantChatData, TurnTailChatData,
@@ -29,27 +29,6 @@ interface TurnTailState {
   readonly end?: ConversationMatch
 }
 
-interface StepEvidence {
-  readonly streamedText: boolean
-  readonly finalized: boolean
-}
-
-function hasTextAssistant(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
-  return event.type === 'assistant/message'
-    && isAppendSurfaceEvent(event)
-    && toAssistantBlocks(event.data.message.content)
-      .some(block => block.kind === 'text' && block.text.trim() !== '')
-}
-
-function chunkHasText(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
-  if (event.type !== 'assistant/chunk') return false
-  const chunk = event.data.chunk
-  if (chunk.type === 'text-delta') return chunk.text.trim() !== ''
-  return chunk.type === 'block-end'
-    && chunk.block.type === 'text'
-    && chunk.block.text.trim() !== ''
-}
-
 function turnCoordinates(event: Parameters<ConversationNodeDefinition['match']>[0]): {
   readonly turn: number
   readonly step?: number
@@ -63,38 +42,41 @@ function turnCoordinates(event: Parameters<ConversationNodeDefinition['match']>[
   return undefined
 }
 
-function closingAnchor(context: ConversationNodeContext<TurnTailState>): number {
-  let anchor = context.matches.find(match => match.event.type === 'turn/end')?.event.seq
-    ?? context.start?.event.seq
-    ?? context.matches[0]?.event.seq
-    ?? 0
-  const steps = new Map<number, StepEvidence>()
+/** Place the footer after every rendered model/tool row but before later steering. */
+function outputTailAnchor(context: ConversationNodeContext<TurnTailState>): number {
+  let anchor = context.start?.event.seq ?? context.matches[0]?.event.seq ?? 0
+  const streamingSteps = new Set<number>()
   for (const match of context.matches) {
     const event = match.event
-    if (event.type === 'turn/end') continue
     const coordinates = turnCoordinates(event)
-    if (coordinates?.step === undefined) continue
-    const previous = steps.get(coordinates.step) ?? { streamedText: false, finalized: false }
-    if (event.type === 'assistant/chunk') {
-      steps.set(coordinates.step, {
-        ...previous,
-        streamedText: previous.streamedText || chunkHasText(event),
-      })
+    if (event.type === 'assistant/chunk' && coordinates?.step !== undefined) {
+      streamingSteps.add(coordinates.step)
       continue
     }
     if (event.type === 'assistant/message') {
-      steps.set(coordinates.step, { streamedText: false, finalized: true })
-      if (hasTextAssistant(event)) {
-        anchor = event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.finalizedFollowup
-      }
+      streamingSteps.delete(event.data.step)
+      anchor = Math.max(anchor, event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.turnTail)
+      continue
+    }
+    if (event.type === 'step/end' && streamingSteps.has(event.data.step)) {
+      anchor = Math.max(
+        anchor,
+        event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.interruptedFollowup + CHAT_SYNTHETIC_SEQ_OFFSETS.turnTail,
+      )
       continue
     }
     if (event.type === 'llm/retry') {
-      steps.set(coordinates.step, { streamedText: false, finalized: false })
+      streamingSteps.delete(event.data.step)
+      anchor = Math.max(anchor, event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.turnTail)
       continue
     }
-    if (event.type === 'step/end' && previous.streamedText && !previous.finalized) {
-      anchor = event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.interruptedFollowup
+    if (event.type === 'tool/call'
+      || (event.type === 'tool/result' && isAppendSurfaceEvent(event))) {
+      anchor = Math.max(anchor, event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.turnTail)
+      continue
+    }
+    if (event.type === 'turn/end' && event.data.reason.kind === 'error') {
+      anchor = Math.max(anchor, event.seq + CHAT_SYNTHETIC_SEQ_OFFSETS.turnTail)
     }
   }
   return anchor
@@ -183,7 +165,9 @@ export const turnTailDefinition: ConversationNodeDefinition<TurnTailState> = {
   buildViewNode: (context) => {
     const turn = turnLocation(context)
     const data = turn?.data.get('turn-tail')
-    return data === undefined ? null : chatNode(context, 'turn-tail', closingAnchor(context), data)
+    return data === undefined
+      ? null
+      : chatNode(context, 'turn-tail', outputTailAnchor(context), data)
   },
 }
 

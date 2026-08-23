@@ -78,12 +78,13 @@ export const hostFrameSchema = z.discriminatedUnion('type', [
     agentPreset: z.string().optional(),
   }),
   z.object({ type: z.literal('host/session-removed'), sessionId: sessionIdSchema }),
-  z.object({ type: z.literal('host/session-status'), sessionId: sessionIdSchema, running: z.boolean() }),
+  z.object({ type: z.literal('host/session-status'), sessionId: sessionIdSchema, running: z.boolean(), attention: z.union([z.literal('retry-exhausted'), z.literal('error'), z.null()]) }),
   z.object({ type: z.literal('host/agent-error'), sessionId: sessionIdSchema, message: z.string() }),
   z.object({ type: z.literal('host/workspace-changed'), workspace: workspaceViewSchema }),
   z.object({ type: z.literal('host/workspace-removed'), workspaceId: workspaceIdSchema }),
   z.object({ type: z.literal('host/workspace-order-changed'), workspaceIds: z.array(workspaceIdSchema) }),
   z.object({ type: z.literal('host/archived-sessions-changed'), archivedSessionIds: z.array(sessionIdSchema) }),
+  z.object({ type: z.literal('host/pinned-sessions-changed'), pinnedSessionIds: z.array(sessionIdSchema) }),
   // args stays wide, the same posture as session/projection's value: the frame
   // arrives from JSON.parse, so every element is already a JSON value, and the
   // structural contract belongs to the owner package's cordis `Events`

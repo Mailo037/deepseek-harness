@@ -4,7 +4,9 @@
 }
 
 /* Dropdown card (figma MenuDropdown 122:9481 / 419:16920): menu surface,
- * r12, inverted hairline border, shadow-lv3, 4px inset padding. */
+ * r12, inverted hairline border, shadow-lv3, 4px inset padding. The width
+ * cap bounds both cards to the viewport (24px = 2 × the portal margin), so
+ * an anchor near either screen edge can never push a menu off the viewport. */
 .list,
 .submenu {
   /* min-widths below are the design's outer card widths — include the pad. */
@@ -17,6 +19,7 @@
   border-radius: 12px;
   background: var(--dsw-specific-menu);
   box-shadow: var(--dsw-shadow-lv3);
+  max-width: min(360px, calc(100vw - 24px));
   /* Elevated surface: the scrollbar thumb takes the l2 elevation tokens. The
      declaration sits on the card rather than on `.scrollable .viewport`
      because the elevation is a property of this surface, and the custom
@@ -26,14 +29,16 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Primary card is 218 wide in the design across both hosts. */
+/* Primary card is 218 wide in the design across both hosts. In-place lists
+ * can never exceed the viewport (an anchor near an edge would otherwise push
+ * the card off-screen; portal mode clamps in JS instead). */
 .list {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 100;
   min-width: 218px;
-  max-width: 360px;
+  max-width: calc(100vw - 24px);
 }
 
 /* Portal mode: fixed in the viewport, coordinates supplied inline from the
@@ -86,6 +91,22 @@
   margin-top: 4px;
   padding-top: 4px;
   border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* Pinned context above the scroll region; mirrors the .footer hairline.
+ * When empty or when its only occupant is an empty slot container, collapse
+ * so no orphaned border or spacing renders. */
+.menuHead {
+  flex: none;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.menuHead:empty,
+.menuHead:has(> :global([data-slot]):empty),
+.menuHead:not(:has(*:not(:global([data-slot]):empty))) {
+  display: none;
 }
 
 .itemWrap {
@@ -200,6 +221,23 @@
 
 .danger:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+/* Elevated-permission row: warn-amber text/icon on the soft warn fill, the
+   same pairing as the active Full access trigger chip. The fill stays on
+   hover (like the chip) and sits after .selected so a selected warn row
+   keeps the tint instead of the transparent selected background. */
+.warn {
+  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.warn:hover:not(:disabled) {
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.warn .itemIcon {
+  color: var(--dsw-alias-state-warn-label);
 }
 
 /* Heading row: non-interactive small grey text, padding aligned with items. */

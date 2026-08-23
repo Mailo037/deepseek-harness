@@ -12,38 +12,50 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
+import type { TriggerLexiconMember } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ComposerBlock } from '../input/blocks.ts'
 import type {
-  ComposerKeyboard, DraftAttachmentId, EditSelection, InputActions, InputNotice, InputState,
+  ComposerKeyboard, DraftAttachmentId, InputActions, InputNotice, InputState,
 } from '../input/contract.ts'
 import type { createChatStore } from '../stores.ts'
 import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
 
-/** Browser-owned image that has not crossed the durable host boundary. */
-export interface ComposerAttachment {
-  kind: 'image'
-  id: DraftAttachmentId
-  file: File
-  previewUrl: string
-}
+/**
+ * Browser-owned draft attachment that has not crossed the durable host
+ * boundary. `image` rides the image prompt path; `text` rides as prompt text
+ * (uploaded text file or a large paste converted at intake); `workspace-file`
+ * was uploaded into the session's project directory and rides as a text
+ * reference the agent resolves with its own read tools.
+ */
+export type ComposerAttachment =
+  | { kind: 'image'; id: DraftAttachmentId; file: File; previewUrl: string }
+  | { kind: 'text'; id: DraftAttachmentId; name: string; size: number; content: string; restorable?: boolean }
+  | { kind: 'workspace-file'; id: DraftAttachmentId; name: string; size: number; path: string }
 
 /** Input state handed to the optional attachment presentation plugin. */
 export interface ComposerAttachmentsOwnerProps {
-  /** Browser-owned draft images in input order. */
+  /** Browser-owned draft attachments in input order. */
   attachments: readonly ComposerAttachment[]
-  /** Whether a document-level file drop may add images now. */
+  /** Whether a document-level file drop may add attachments now. */
   canAcceptDrop: boolean
-  /** Add one dropped batch through the composer's validation path. */
-  onAddImages: (files: readonly File[]) => void
-  /** Remove one draft image through the conversation service. */
-  onRemoveImage: (id: DraftAttachmentId) => void
+  /** Add one dropped or picked batch through the composer's intake path. */
+  onAddFiles: (files: readonly File[]) => void
+  /** Remove one draft attachment through the conversation service. */
+  onRemoveAttachment: (id: DraftAttachmentId) => void
+  /** Put one converted large-paste attachment back into the draft text. */
+  onRestoreText: (id: DraftAttachmentId) => void
   /** Warning tooltip when the active model does not support this attachment. */
   warning?: string | undefined
   /** Display-ready limits for the drop invitation. */
   dropLimits?: { readonly count: number; readonly size: string } | undefined
+  /**
+   * Per-image resolution bounds for the intake warning triangle (from the
+   * `imageLimits` projection); absent = no client-side resolution check.
+   */
+  imagePixelLimits?: { readonly maxPixels: number; readonly maxDimension: number } | undefined
 }
 
 /** Historical image group handed to the optional attachment presentation plugin. */
@@ -540,20 +552,25 @@ export interface ComposerBarOwnerProps {
 export interface ComposerBarInjected {
   /** The InputBar-exclusive keyboard/DOM command face (private plane); absent with the session. */
   keyboard: ComposerKeyboard | undefined
-  /** Create previews and append image ids to the session input. */
-  addImages: ((files: readonly File[]) => string | null) | undefined
-  /** Release one preview and remove its id from session input. */
-  removeImage: ((id: DraftAttachmentId) => void) | undefined
-  /** Resolve ordered input ids to browser-owned draft images. */
-  draftImages: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
+  /**
+   * Run one picked/pasted/dropped file batch through the composer's intake
+   * (images through the image path, text files as inline attachments, other
+   * files as workspace uploads). Resolves to the localized rejection reason,
+   * or null when every file was admitted.
+   */
+  addFiles: ((files: readonly File[]) => Promise<string | null>) | undefined
+  /** Register one converted large paste as a restorable text attachment; resolves to a rejection reason or null. */
+  addTextAttachment: ((name: string, content: string) => string | null) | undefined
+  /** Release one attachment and remove its id from session input. */
+  removeAttachment: ((id: DraftAttachmentId) => void) | undefined
+  /** Resolve ordered input ids to browser-owned draft attachments. */
+  draftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
   /** Resolve one keyboard submission gesture against the current running state and persisted preference. */
   resolveSubmitMode: (
     running: boolean,
     gesture: ComposerSubmitGesture,
     steeringAvailable: boolean,
   ) => InputSubmitMode
-  /** Toggle the shared slash menu with only its command source; absent without ui-input-trigger or a session. */
-  toggleCommandMenu: ((selection: EditSelection) => void) | undefined
   /** Cancel the in-flight turn; absent with the session. */
   stop: (() => void) | undefined
   /**
@@ -573,7 +590,7 @@ export interface ComposerBarInjected {
     notices: ObservableSnapshot<InputNotice | null>
     /** Hot plain-text reference lexicon for the decoration scan (plain-text-reference decision;
      *  see .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md). */
-    lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@' | '!', readonly string[]>>
+    lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@' | '!', readonly TriggerLexiconMember[]>>
     /** Source name opened by the programmatic menu launcher, or null. */
     menuLauncher: ObservableSnapshot<string | null>
   }
