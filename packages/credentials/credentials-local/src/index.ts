@@ -249,8 +249,24 @@ export function renderFlatLayoutMigration(text: string): string | undefined {
     // the `refs:` block; no shipped writer ever emitted one here.
     if (/^(%|---|\.\.\.)/.test(line)) return undefined
   }
+  // A stray current-version header beside flat keys is layout, not a secret:
+  // the migration drops the line and nests the remaining entries under `refs:`.
+  // With that header present, `refs`/`records` pairs are structural — the
+  // document claims the versioned layout, so anything wrong inside it gets the
+  // reader's loud rejection, not a rewrite. Without the header they are plain
+  // pre-release credentials, exactly as earlier builds stored them.
+  let sawVersionHeader = false
   for (const pair of flat.items) {
-    if (!isScalar(pair.key) || typeof pair.key.value !== 'string' || pair.key.value === 'version') return undefined
+    if (!isScalar(pair.key) || typeof pair.key.value !== 'string') return undefined
+    if (pair.key.value === 'version') {
+      if (!isScalar(pair.value) || pair.value.value !== DOCUMENT_VERSION) return undefined
+      sawVersionHeader = true
+    } else if (sawVersionHeader && (pair.key.value === 'refs' || pair.key.value === 'records')) {
+      return undefined
+    }
+  }
+  for (const pair of flat.items) {
+    if (!isScalar(pair.key) || typeof pair.key.value !== 'string' || pair.key.value === 'version') continue
     try {
       credentialRef(pair.key.value)
     } catch {
@@ -261,7 +277,10 @@ export function renderFlatLayoutMigration(text: string): string | undefined {
     }
     if (!isScalar(pair.value) || typeof pair.value.value !== 'string' || pair.value.value.length === 0) return undefined
   }
-  const body = text.split('\n').map(line => (line.length === 0 ? line : `  ${line}`)).join('\n')
+  const body = text.split('\n')
+    .filter(line => !(sawVersionHeader && /^version:(\s|$)/.test(line)))
+    .map(line => (line.length === 0 ? line : `  ${line}`))
+    .join('\n')
   return `version: ${DOCUMENT_VERSION}\nrefs:\n${body}${text.endsWith('\n') ? '' : '\n'}`
 }
 
