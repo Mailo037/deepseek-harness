@@ -1,5 +1,6 @@
 /** Run serial browser owners before one bounded snapshot pool. */
 import { spawn } from 'node:child_process'
+import { pnpmInvocation } from './pnpm-invocation.ts'
 
 const serialFiles = [
   'apps/web/tests/hmr-live.e2e.ts',
@@ -10,17 +11,15 @@ const workers = Number.parseInt(workerRaw ?? '', 10)
 if (!Number.isSafeInteger(workers) || workers < 2 || String(workers) !== workerRaw) {
   throw new Error(`DSH_WEB_SNAPSHOT_WORKERS must be an integer greater than 1, got ${JSON.stringify(workerRaw)}.`)
 }
-import { pnpmInvocation } from './pnpm-invocation.ts'
-
-const baseInvocation = pnpmInvocation(['exec', 'vitest', 'run', '--config', 'vitest.web.config.ts'])
+const invocation = pnpmInvocation(['exec', 'vitest', 'run', '--config', 'vitest.web.config.ts'])
 let serialStatus = 0
 for (const file of serialFiles) {
-  serialStatus = await run(baseInvocation.command, [...baseInvocation.args, file])
+  serialStatus = await run(invocation.command, [...invocation.args, file])
   if (serialStatus !== 0) break
 }
 if (serialStatus === 0) {
-  process.exitCode = await run(baseInvocation.command, [
-    ...baseInvocation.args,
+  process.exitCode = await run(invocation.command, [
+    ...invocation.args,
     ...serialFiles.map(file => `--exclude=${file}`),
     '--fileParallelism',
     `--maxWorkers=${String(workers)}`,

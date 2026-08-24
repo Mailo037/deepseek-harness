@@ -17,9 +17,9 @@ export const COVERAGE_TEST_TIMEOUT_ENV = 'DSH_COVERAGE_TEST_TIMEOUT_MS'
 export interface CoverageCommand {
   /** Diagnostic identity. */
   label: string
-  /** Executable binary to spawn; defaults to Node when absent. */
-  command?: string
-  /** Child command arguments. */
+  /** Executable launched without a platform shell. */
+  command: string
+  /** Arguments passed to the executable. */
   args: string[]
   /** Environment additions for the child. */
   env: Record<string, string | undefined>
@@ -50,7 +50,7 @@ export interface CoveragePartitionCoordinatorOptions {
   root: string
   /** Number of concurrent single-worker Vitest processes. */
   partitions: number
-  /** pnpm JavaScript entrypoint from `npm_execpath`. */
+  /** pnpm JavaScript or executable entrypoint from `npm_execpath`. */
   pnpmEntrypoint: string
   /** Additional arguments shared by every partition. */
   vitestArgs?: string[]
@@ -158,11 +158,10 @@ export class CoveragePartitionCoordinator {
       `--outputFile.blob=${this.relativePath(blobPath)}`,
       `--coverage.reportsDirectory=${this.relativePath(reportsDirectory)}`,
       ...this.vitestArgs,
-    ], this.pnpmEntrypoint)
+    ], { npm_execpath: this.pnpmEntrypoint })
     return {
       label: `partition ${index}/${this.partitions}`,
-      command: invocation.command,
-      args: invocation.args,
+      ...invocation,
       env: {
         [COVERAGE_PARTITIONS_ENV]: undefined,
         [COVERAGE_PARTITION_MODE_ENV]: '1',
@@ -178,11 +177,10 @@ export class CoveragePartitionCoordinator {
       'vitest',
       `--merge-reports=${this.relativePath(this.blobsRoot)}`,
       '--coverage',
-    ], this.pnpmEntrypoint)
+    ], { npm_execpath: this.pnpmEntrypoint })
     return {
       label: 'merged coverage report',
-      command: invocation.command,
-      args: invocation.args,
+      ...invocation,
       env: {
         [COVERAGE_PARTITIONS_ENV]: undefined,
         [COVERAGE_PARTITION_MODE_ENV]: undefined,
@@ -218,7 +216,7 @@ function runCoverageCommand(command: CoverageCommand): Promise<CoverageCommandRe
       if (value === undefined) Reflect.deleteProperty(env, name)
       else env[name] = value
     }
-    const child = spawn(command.command ?? process.execPath, command.args, {
+    const child = spawn(command.command, command.args, {
       cwd: command.cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

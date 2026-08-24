@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-goal-round-nudge-and-cost-wrapup.md
 2026-08-21-goal-round-nudge-and-cost-wrapup.md: 7ca8c21bf36d5d82926e491fd4d2128d8ac0a4cd
-2026-08-21-goal-round-nudge-and-cost-wrapup.zh.md: dd2992c9c8e2de10780d4a6a80ef80f9122238d4
+2026-08-21-goal-round-nudge-and-cost-wrapup.zh.md: cff936ef9fbac5349f4758680c17671bc75a150b

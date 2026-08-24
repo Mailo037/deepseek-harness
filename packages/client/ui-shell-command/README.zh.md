@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`!` shell 命令功能的 Web 客户端一半：仅裁决的 `!` 输入触发源、持久的 `shell-command` 会话节点及其终端卡片渲染器。与主机端 [`@deepseek-ai/dsh-shell-command`](../../shell/shell-command/README.md) 服务配对使用。
+`!` shell 命令功能的 Web 客户端一半：仅裁决的 `!` 输入触发源、持久的 `shell-command` 会话节点及其终端卡片渲染器。与主机端 [`@deepseek-ai/dsh-shell-command`](../../shell/shell-command/README.zh.md) 服务配对使用。
 
 ## 客户端契约
 

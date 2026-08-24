@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-07-web-inline-file-mentions.md
 2026-08-07-web-inline-file-mentions.md: 46cccb9604237fc808dc8b8e614c79c32bd6cef1
-2026-08-07-web-inline-file-mentions.zh.md: 703082e60a5d8a1c850b8cfff7269f2697f4b453
+2026-08-07-web-inline-file-mentions.zh.md: 4c6852cea2e3e093f81475a358066dbee165dcb6

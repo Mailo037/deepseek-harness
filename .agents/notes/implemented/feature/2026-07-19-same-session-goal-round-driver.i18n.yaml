@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-19-same-session-goal-round-driver.md
 2026-07-19-same-session-goal-round-driver.md: fa5f5918cc466972bf7dd18e7021125eddb4823d
-2026-07-19-same-session-goal-round-driver.zh.md: 1af2de1db239308a6121a9ef1d273e998dab392e
+2026-07-19-same-session-goal-round-driver.zh.md: b7c00521ac57fb0fb52f2be2bb96dd0febdd18d2

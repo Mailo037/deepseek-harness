@@ -1,33 +1,20 @@
-/** Resolve the executable command and arguments for spawning pnpm. */
-
-export interface PackageManagerInvocation {
-  /** The executable binary to spawn. */
-  command: string
-  /** Arguments to pass to the binary. */
-  args: string[]
-}
+/** Resolve shell-free child-process invocations for the pnpm process that launched a package script. */
 
 /**
- * Resolve the command and argument array for a pnpm invocation.
- *
- * When pnpm is invoked through a JavaScript entrypoint (e.g. `pnpm.cjs` or `pnpm.js`),
- * running `node <entrypoint> ...args` avoids Windows shell shims and maintains shell-free child processes.
- * When pnpm is invoked through a native binary executable (e.g. `pnpm.exe` on Windows via Scoop or standalone
- * `@pnpm/exe`, or an ELF/Mach-O binary), spawning through Node fails with `ERR_UNKNOWN_FILE_EXTENSION`.
- * In that case, the native binary is executed directly.
- *
- * @param args - Arguments to pass to pnpm (e.g. `['run', 'build:lib']`).
- * @param entrypoint - Custom entrypoint path, defaulting to `process.env.npm_execpath`.
- * @returns Executable path and argument list ready for `spawn` or `spawnSync`.
+ * Resolve pnpm's executable and arguments from its lifecycle environment.
+ * @param args - Arguments to pass to pnpm.
+ * @param environment - Lifecycle environment containing `npm_execpath`.
+ * @returns A command and argument array suitable for `spawn` or `spawnSync` without a shell.
  */
 export function pnpmInvocation(
   args: readonly string[],
-  entrypoint: string | undefined = process.env.npm_execpath,
-): PackageManagerInvocation {
+  environment: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  const entrypoint = environment.npm_execpath
   if (entrypoint === undefined || entrypoint === '') {
-    throw new Error('pnpm invocation: npm_execpath is unavailable; invoke the runner through a pnpm package script.')
+    throw new Error('pnpm invocation: npm_execpath is unavailable; invoke the script through pnpm run.')
   }
-  if (/\.[cm]?[jt]s$/i.test(entrypoint)) {
+  if (/\.[cm]?js$/iu.test(entrypoint)) {
     return { command: process.execPath, args: [entrypoint, ...args] }
   }
   return { command: entrypoint, args: [...args] }

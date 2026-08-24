@@ -134,6 +134,8 @@ export function detectRepositoryRoot(start: string): string | null {
 export class SelfUpdateService extends Service {
   static inject = ['agents']
 
+  static Config: z<Config> = Config
+
   private readonly runner: GitCommandRunner
   private readonly fetchImpl: FetchImpl
   private readonly config: Config
@@ -154,16 +156,14 @@ export class SelfUpdateService extends Service {
    */
   constructor(
     ctx: Context,
-    config: Config | undefined,
+    config: Config,
     runner: GitCommandRunner = execGit,
     fetchImpl: FetchImpl = globalThis.fetch.bind(globalThis),
   ) {
     super(ctx, 'selfUpdate')
     this.runner = runner
     this.fetchImpl = fetchImpl
-    // The schema callable applies its own defaults; the argument cast only
-    // satisfies the declared input type, which the patch row never meets.
-    this.config = config ?? Config({} as never)
+    this.config = config
     this.root = this.config.root !== '' ? this.config.root : detectRepositoryRoot(PACKAGE_DIR)
   }
 

@@ -18,7 +18,7 @@ Status: implemented
 - 按钮位于 `role="status"` 元素之外，屏幕阅读器播报的仍然恰好是失败文本本身。
 - 每个历史轮次错误都显示该操作条，而不只是最新一个；运行中点击重试只会排在队列后面（发送路径的 queue 模式）。
 
-背景：失败本身及其 AUTH 净化由 [bounded LLM request recovery](../architecture/2026-06-21-bounded-llm-request-recovery.md) 负责；本笔记只是在该节点之上增加呈现层 affordance。
+背景：失败本身及其 AUTH 净化由 [bounded LLM request recovery](../architecture/2026-06-21-bounded-llm-request-recovery.zh.md) 负责；本笔记只是在该节点之上增加呈现层 affordance。
 
 ## 备选方案
 

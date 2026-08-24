@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/goal/goal-round-driver/README.md
 README.md: 8b9f796ee08da98d1ba7e8604bfa6fe247157266
-README.zh.md: 608a1801a207d16bc012473f7223d306907404d6
+README.zh.md: 4c562138c4ee972977d3c4bf4d697c4981ba2c7a

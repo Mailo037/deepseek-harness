@@ -14,9 +14,9 @@ Web 会话从每个轮次中最后一个文本非空的 Assistant 节点派生�
 
 仅当目标 Assistant 同时也是已完成轮次的最后一个 transcript（文本记录）节点时，分支才会启用。稍后的工具结果、只有推理内容的中断、轮次错误或其他 transcript 节点会让分支保持不可用，而复制、反馈与计时仍可在轮次尾部使用。不可用的控件仍然可见、可聚焦、可悬停；`aria-disabled`、tooltip 与 `aria-describedby` 会说明已完成尾部这一要求，且不会发送 Host 请求。Host 按已完成轮次 fork 的语义保持不变。
 
-本资格判定中消息气泡的那一半已被 [user 气泡分支移除决策](../simplification/2026-08-06-user-bubbles-drop-the-branch-action.md)取代：user 与 steering 气泡不再渲染该控件，因此只有含内容的 assistant 尾部可以 fork；assistant 侧门禁及其可见但不可用的呈现保持有效。
+本资格判定中消息气泡的那一半已被 [user 气泡分支移除决策](../simplification/2026-08-06-user-bubbles-drop-the-branch-action.zh.md)取代：user 与 steering 气泡不再渲染该控件，因此只有含内容的 assistant 尾部可以 fork；assistant 侧门禁及其可见但不可用的呈现保持有效。
 
-本决策收紧了较早的 [Web 会话 fork 操作决策](../feature/2026-07-27-web-session-fork-actions.md)所定义的消息资格。Session 行 fork 仍选择最新的已完成轮次；符合条件的消息操作仍通过共享 client 运行时操作传递其事件 seq。
+本决策收紧了较早的 [Web 会话 fork 操作决策](../feature/2026-07-27-web-session-fork-actions.zh.md)所定义的消息资格。Session 行 fork 仍选择最新的已完成轮次；符合条件的消息操作仍通过共享 client 运行时操作传递其事件 seq。
 
 ## 考虑过的替代方案
 

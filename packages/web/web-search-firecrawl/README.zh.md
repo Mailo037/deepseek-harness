@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-由 [Firecrawl](https://firecrawl.dev) 支持的 `WebSearchProvider`，用于 harness [web 能力 seam](../web/README.md)（`ctx.web`）。它调用 Firecrawl 的 `POST /v1/search` 端点（raw 结果模式），把扁平 `data[]` 映射为 seam 规范化的 `WebSearchResult`。
+由 [Firecrawl](https://firecrawl.dev) 支持的 `WebSearchProvider`，用于 harness [web 能力 seam](../web/README.zh.md)（`ctx.web`）。它调用 Firecrawl 的 `POST /v1/search` 端点（raw 结果模式），把扁平 `data[]` 映射为 seam 规范化的 `WebSearchResult`。
 
 这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有 `ctx.web` 键，也不注册面向模型的工具（后者属于 `@deepseek-ai/dsh-tool-web`）。与 `@deepseek-ai/dsh-web-search-deepseek` 一样，它是函数／命名空间插件（`inject: ['web']`），负责注册后端，而非默认导出服务。
 
@@ -30,7 +30,7 @@ Firecrawl 返回扁平 `data[]`，不返回生成答案，因此省略 `content`
 
 ## 模型体验
 
-通过 [`dsh-tool-web`](../tool-web/README.md) 间接影响；该工具保留此提供方经 `maxResults` 限制的 URL、标题与描述，或将确切的错误消息 `Firecrawl search aborted`、`Firecrawl search request failed: <error>` 和 `Firecrawl returned an unprocessable response body: <error>` 置于消费方的错误包装层内；生成答案与提供方私有字段不进入上下文。
+通过 [`dsh-tool-web`](../tool-web/README.zh.md) 间接影响；该工具保留此提供方经 `maxResults` 限制的 URL、标题与描述，或将确切的错误消息 `Firecrawl search aborted`、`Firecrawl search request failed: <error>` 和 `Firecrawl returned an unprocessable response body: <error>` 置于消费方的错误包装层内；生成答案与提供方私有字段不进入上下文。
 
 #### KV Cache 影响
 
@@ -39,5 +39,5 @@ Firecrawl 返回扁平 `data[]`，不返回生成答案，因此省略 `content`
 ## 已知限制与暂缓事项
 
 - **仅使用 raw 结果模式**：不请求 Firecrawl 的 markdown/搜索结果模式内容；有 `description` 时映射为 `snippet`，没有描述的结果仅含 URL。
-- **只公开 `limit`**：Firecrawl 的其他控制项（语言、国家、时效过滤、scrape 选项）等待提供方无关的 Service Definition 字段（见 [seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)）。
+- **只公开 `limit`**：Firecrawl 的其他控制项（语言、国家、时效过滤、scrape 选项）等待提供方无关的 Service Definition 字段（见 [seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.zh.md)）。
 - **按错误形状分类中止**：只有 `DOMException` 且名为 `AbortError` 时才映射为 `WEB_ABORTED`；携带自定义原因的中止（例如 `dsh-timeout` 的 `TimeoutReason`）会呈现为 `WEB_PROVIDER_ERROR`。

@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-24-provider-retry-policies.md
 2026-07-24-provider-retry-policies.md: 7bb8d3c54489693103fa75d5e1f5215e44e14933
-2026-07-24-provider-retry-policies.zh.md: 7d7d06036a3b2c1376889e7c1bf615057862a3ed
+2026-07-24-provider-retry-policies.zh.md: d57873f9862cd8335eb9350791ebc9d0f67615e8

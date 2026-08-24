@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/electron/README.md
 README.md: f48586ecfdb29d91a3fd709a4db7816b79a18291
-README.zh.md: ff514636706eab9119102080e9a72aaef6ad2ccd
+README.zh.md: 009790d2ae69ca6df9a993124824c20ffe9e6ac5

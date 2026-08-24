@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-web-composer-slash-token-lexicon.md
 2026-08-23-web-composer-slash-token-lexicon.md: 79999abcb1d72d8581fcdb777e00d7160e9d8c4e
-2026-08-23-web-composer-slash-token-lexicon.zh.md: 3649bf7072519ba681123267a55ba1f9c132203b
+2026-08-23-web-composer-slash-token-lexicon.zh.md: 3fc41f5e87045282b48c63a1806160a235b0a51f

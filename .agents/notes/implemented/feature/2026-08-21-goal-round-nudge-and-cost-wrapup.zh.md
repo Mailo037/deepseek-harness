@@ -10,7 +10,7 @@ English | [中文](2026-08-21-goal-round-nudge-and-cost-wrapup.md)
 
 ## Decision
 
-[goal-round 驱动器](2026-07-19-same-session-goal-round-driver.md)与[面向模型的 goal 工具](2026-07-19-model-facing-goal-tools.md)获得三项行为。全部通过驱动器上的新配置加入。
+[goal-round 驱动器](2026-07-19-same-session-goal-round-driver.zh.md)与[面向模型的 goal 工具](2026-07-19-model-facing-goal-tools.zh.md)获得三项行为。全部通过驱动器上的新配置加入。
 
 ### 周期性 nudge
 
@@ -36,7 +36,7 @@ English | [中文](2026-08-21-goal-round-nudge-and-cost-wrapup.md)
 ## Consequences
 
 - 一次瞬时 round 错误会在下一次空闲检查点或 nudge 时自动重试，直至 `consecutiveErrorLimit`；一旦超过上限目标便以 `repeated-error` 阻止，符合「失败要大声，绝不静默烧预算」。
-- 驱动器现在有两个可调参数（`nudgeIntervalMs`、`consecutiveErrorLimit`），因此[驱动器笔记](2026-07-19-same-session-goal-round-driver.md)中此前的「插件无配置」声明在此不再成立；本笔记取代该部分，新值只写在本笔记与包 README 中。
+- 驱动器现在有两个可调参数（`nudgeIntervalMs`、`consecutiveErrorLimit`），因此[驱动器笔记](2026-07-19-same-session-goal-round-driver.zh.md)中此前的「插件无配置」声明在此不再成立；本笔记取代该部分，新值只写在本笔记与包 README 中。
 - 完成后或阻止时的收尾消息以整目标耗时、并在 provider 报告 usage 时以 token 总量为依据，因此模型（与用户）无需额外记账 UI 就能得到具体的成本摘要。
 - 重试是盲目的：每次已接纳 round 失败都计数，因此持续 provider 中断会在 `consecutiveErrorLimit` 次 round 后到达 `repeated-error`，而非无限重试或静默解除激活。
 

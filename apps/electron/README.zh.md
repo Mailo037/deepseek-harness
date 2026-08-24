@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-electron
 
-[English](README.md)
+[English](README.md) | 中文
 
 ## 为什么存在
 

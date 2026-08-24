@@ -15,7 +15,7 @@ import { pnpmInvocation } from './pnpm-invocation.ts'
 
 /** Run one package script through the package manager that invoked this build. */
 function runScript(script: string, environment: NodeJS.ProcessEnv): void {
-  const invocation = pnpmInvocation(['run', script])
+  const invocation = pnpmInvocation(['run', script], environment)
   const result = spawnSync(invocation.command, invocation.args, {
     cwd: resolve(import.meta.dirname, '..'),
     env: environment,

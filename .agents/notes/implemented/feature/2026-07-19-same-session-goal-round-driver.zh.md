@@ -16,7 +16,7 @@ Status: implemented
 
 层次关系为目标（Goal）→ Goal Round → 轮次（Turn）→ 步骤（Step）。Goal Round 是外层继续执行策略的一次迭代；它会成为一个归属于目标的会话轮次，而该轮次可以包含任意数量的普通模型或工具步骤。同一会话中的人类轮次不是 Goal Round，也绝不会增加 `roundsStarted`。
 
-该插件没有配置项。`maxGoalRounds` 由 `dsh-goal` 解析并持久化；「相同阻塞条件」的门槛由 `dsh-tool-goal` 解析并写入提示词。若驱动器重复声明这些可调值，一个策略就会出现多个所有者。此部分被[后续续行策略笔记](2026-08-21-goal-round-nudge-and-cost-wrapup.md)取代，后者加入了 `nudgeIntervalMs` 与 `consecutiveErrorLimit`。
+该插件没有配置项。`maxGoalRounds` 由 `dsh-goal` 解析并持久化；「相同阻塞条件」的门槛由 `dsh-tool-goal` 解析并写入提示词。若驱动器重复声明这些可调值，一个策略就会出现多个所有者。此部分被[后续续行策略笔记](2026-08-21-goal-round-nudge-and-cost-wrapup.zh.md)取代，后者加入了 `nudgeIntervalMs` 与 `consecutiveErrorLimit`。
 
 ### 预留与接纳
 
@@ -47,7 +47,7 @@ Status: implemented
 | `disposed` 或 `interrupted` | 解除激活 |
 | 插件新增的未知结果 | 阻塞并等待检查 |
 
-异常结果都不会请求自动重试。之后的人类提示词可以用任何语言要求继续；模型读取已停止目标并调用目标工具的 resume 动作，记录新修订并重新激活继续执行。此段对 round 错误结果而言被[后续续行策略笔记](2026-08-21-goal-round-nudge-and-cost-wrapup.md)取代：它会自动重试已准入 Round 的错误，直至 `consecutiveErrorLimit`，否则以 `repeated-error` 阻塞；非 Round 失败仍按此处描述停止。
+异常结果都不会请求自动重试。之后的人类提示词可以用任何语言要求继续；模型读取已停止目标并调用目标工具的 resume 动作，记录新修订并重新激活继续执行。此段对 round 错误结果而言被[后续续行策略笔记](2026-08-21-goal-round-nudge-and-cost-wrapup.zh.md)取代：它会自动重试已准入 Round 的错误，直至 `consecutiveErrorLimit`，否则以 `repeated-error` 阻塞；非 Round 失败仍按此处描述停止。
 
 ### 持久性与取消约定
 

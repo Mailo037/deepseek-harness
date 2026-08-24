@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-mobile-sidebar-drawer-and-settings-sheet.md
 2026-08-21-mobile-sidebar-drawer-and-settings-sheet.md: 5a050ee4c7f7c89bb10fc8e0b44d6f1076388d14
-2026-08-21-mobile-sidebar-drawer-and-settings-sheet.zh.md: 5f02293b5209d649af77945161622a56406a8d81
+2026-08-21-mobile-sidebar-drawer-and-settings-sheet.zh.md: 07bd6aa7ea8f22d36f292adbd41ddf5fa062d37c
