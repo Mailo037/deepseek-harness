@@ -30,6 +30,7 @@ type SelfUpdateStub = {
   check: ReturnType<typeof vi.fn>
   quiesceAgents: ReturnType<typeof vi.fn>
   pull: ReturnType<typeof vi.fn>
+  createWebUpdateHandoff: ReturnType<typeof vi.fn>
 }
 
 /** A structural selfUpdate stub; the gateway reads the service with ctx.get. */
@@ -48,6 +49,7 @@ function selfUpdateStub(overrides?: Partial<SelfUpdateStub>): SelfUpdateStub {
     check: vi.fn(() => Promise.resolve(check)),
     quiesceAgents: vi.fn(() => Promise.resolve({ cancelled: 0, drained: true })),
     pull: vi.fn(() => Promise.resolve({ advanced: true, previousCommit: 'a'.repeat(40), commit: 'b'.repeat(40) })),
+    createWebUpdateHandoff: vi.fn(() => ({ command: 'node', args: ['runner'], cwd: '/tmp' })),
     ...overrides,
   }
 }
@@ -61,7 +63,7 @@ async function harness(stub: SelfUpdateStub | undefined, restart?: ReturnType<ty
   await ctx.plugin(UserQuestionService)
   ctx.provide('agents', { list: () => [] })
   if (stub !== undefined) ctx.provide('selfUpdate', stub)
-  if (restart !== undefined) ctx.provide('appRestart', restart)
+  ctx.provide('appLifecycle', restart === undefined ? { exit: () => {} } : { exit: () => {}, restart })
   const api = createApiProxy(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
     cwd: '/tmp',
@@ -142,7 +144,7 @@ describe('host domain update plane', () => {
     await ctx.fiber.dispose()
   })
 
-  it('quiesces agents before pulling and schedules one respawn after the response', async () => {
+  it('quiesces agents before pulling and schedules one native respawn after the response', async () => {
     vi.useFakeTimers()
     const order: string[] = []
     const stub = selfUpdateStub({
@@ -161,14 +163,26 @@ describe('host domain update plane', () => {
     const value = expectValue(await pending)
     // The response lands before any process replacement is scheduled.
     expect(order).toEqual(['quiesce', 'pull'])
-    expect(value).toEqual({
-      advanced: true,
-      previousCommit: 'a'.repeat(40),
-      commit: 'b'.repeat(40),
-    })
+    expect(value).toEqual({ started: true })
     await vi.advanceTimersByTimeAsync(500)
     expect(restart).toHaveBeenCalledTimes(1)
     expect(order).toEqual(['quiesce', 'pull', 'restart'])
+    await ctx.fiber.dispose()
+  })
+
+  it('hands a Web update to a detached runner without pulling in the host process', async () => {
+    vi.useFakeTimers()
+    const handoff = { command: 'node', args: ['runner'], cwd: '/tmp' }
+    const stub = selfUpdateStub({ createWebUpdateHandoff: vi.fn(() => handoff) })
+    const restart = vi.fn()
+    const { ctx, api } = await harness(stub, restart)
+    ctx.provide('webServer', { host: '127.0.0.1', port: 4567 })
+
+    expectValue(await api.host.applyUpdate(request({})))
+    expect(stub.createWebUpdateHandoff).toHaveBeenCalledWith({ host: '127.0.0.1', port: 4567 })
+    expect(stub.pull).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(restart).toHaveBeenCalledWith(handoff)
     await ctx.fiber.dispose()
   })
 

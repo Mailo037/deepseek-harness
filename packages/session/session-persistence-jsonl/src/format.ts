@@ -359,8 +359,18 @@ export class SessionLogScanner {
       return
     }
 
-    const rowStart = this.events.length
+    let rowStart = this.events.length
     for (const event of decoded) {
+      const previous = this.events.at(-1)
+      if (event.seq === this.events.length - 1
+        && previous?.type === 'session/end-seed'
+        && previous.seq === event.seq) {
+        // A stale writer can win the marker append after the active lifecycle
+        // has already chosen the same next seq. The marker is log-only; retain
+        // the lifecycle event and keep every other seq conflict fail-loud.
+        this.events.pop()
+        rowStart -= 1
+      }
       if (event.seq !== this.events.length) {
         const expected = this.events.length
         this.events.length = rowStart

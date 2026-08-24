@@ -30,6 +30,9 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../boot/cmdline"
+    },
+    {
       "path": "../../attachment/attachment"
     },
     {
@@ -97,6 +100,9 @@
     },
     {
       "path": "../self-update"
+    },
+    {
+      "path": "../webserver"
     },
     {
       "path": "../../extensions/cordis-host-runner"

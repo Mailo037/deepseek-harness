@@ -71,17 +71,10 @@ export interface UpdateCheck {
   checkedAt: number
 }
 
-/**
- * host.applyUpdate response value: the tree was quiesced and fast-forwarded;
- * the host replaces its own process moments after this response flushes.
- */
+/** host.applyUpdate response value: the update handoff was accepted. */
 export interface ApplyUpdateOutcome {
-  /** Whether HEAD moved (false when the tree already sat on the upstream commit). */
-  advanced: boolean
-  /** HEAD before the pull. */
-  previousCommit: string
-  /** HEAD after the pull (the commit the restarted app serves). */
-  commit: string
+  /** True after quiescence and update-runner preparation complete. */
+  started: true
 }
 
 /** Host-level unary methods. */
@@ -125,9 +118,11 @@ export interface HostApi {
   /**
    * Apply an available update: cancel every live agent's active turn (queued
    * work survives in the durable session), wait for them to reach quiescence,
-   * fast-forward the working tree to its upstream, then answer — the host
-   * respawns itself right after the response flushes, and the browser reloads
-   * onto the new process. Only served under the loopback fence. Fails with
+   * and accept a bounded process handoff. The Web launcher starts a detached
+   * updater before shutdown; that updater fast-forwards, builds, serves status
+   * on the retained port, and starts the same invocation with `--no-open`.
+   * Electron keeps its native pull/relaunch path. Only served under the
+   * loopback fence. Fails with
    * `self-update-unavailable`, `self-update-no-upstream`,
    * `self-update-not-fast-forward` (a diverged tree refuses), or
    * `restart-unavailable` (this launcher cannot respawn itself).

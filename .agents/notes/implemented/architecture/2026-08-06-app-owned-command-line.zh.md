@@ -12,7 +12,7 @@ profile 落地之后，组合可以安装，命令行却不能。`apps/cli` 仍�
 
 启动器只解析属于自己的部分（`--profile`、`--patch`、配置 dump），并把**自己 flag 之后的一切**原样交给引导起来的配置树。切分按位置进行：启动器不认识的第一个 token 就是应用参数的起点（依靠 commander 的 `passThroughOptions` + `allowUnknownOption` + `helpOption(false)`）。裸的 `dsh -h` 没有可交付的应用，仍然打印启动器自己的 help。
 
-新包 `@deepseek-ai/dsh-cmdline` 持有这次交接。启动器在任何条目挂载之前调用 `provideCmdline(ctx, host)`，提供 `ctx.cmdlineArgs`（其全部接口就是 `get(): readonly string[]`）与 `ctx.appExit`。任何普通应用插件都可以注入 `cmdlineArgs`，用自己的 commander program 调用 `parseCmdline(ctx, program)`，再在 program 自己的 action 中把解析出的取值作为应用自有服务提供出去。它的 Loader 行不携带启动器标记或特殊类型，启动器也不会检查组合中的所有者。多个插件可以读取同一份不可变快照；没有读取方的 profile 会忽略自己的应用参数。由提供方配置的行注入其服务，并在惰性配置表达式中直接读取它（`port: !!js ctx.webStartup.port ?? 3080`），因此 flag 胜过写在它旁边的值，也没有任何东西被写回任何一行。
+新包 `@deepseek-ai/dsh-cmdline` 持有这次交接。启动器在任何条目挂载之前调用 `provideCmdline(ctx, host)`，提供 `ctx.cmdlineArgs`（其全部接口就是 `get(): readonly string[]`）与 `ctx.appLifecycle`（`exit` 加可选的 `restart`）。任何普通应用插件都可以注入这两项服务，用自己的 commander program 调用 `parseCmdline(ctx, program)`，再在 program 自己的 action 中把解析出的取值作为应用自有服务提供出去。它的 Loader 行不携带启动器标记或特殊类型，启动器也不会检查组合中的所有者。多个插件可以读取同一份不可变快照；没有读取方的 profile 会忽略自己的应用参数。由提供方配置的行注入其服务，并在惰性配置表达式中直接读取它（`port: !!js ctx.webStartup.port ?? 3080`），因此 flag 胜过写在它旁边的值，也没有任何东西被写回任何一行。
 
 boot 只挂载一次整套组合。Cordis 让每一行等待其注入激活；Loader 随后在激活前一刻，基于已注入就绪的插件上下文插值该行的 `!!js`。Include 会保留嵌套的行表达式，直到目标行到达这一时点。`--help` 会让提供方服务保持缺失，因此依赖行永不激活；活动 patch 重载会针对仍然在线的服务再次插值，所以已经服务中的端口不会被悄悄重置。
 
@@ -35,14 +35,14 @@ boot 只挂载一次整套组合。Cordis 让每一行等待其注入激活；Lo
 - **把解析出的取值写进每一行**（逐行一次配置更新，外加交还给启动器的一层 patch，使重载无法撤销它）：它能工作，但这意味着 patch 在应用与启动器之间来回传递、同一件事有两套机制，以及一套其正确性依赖 Loader 重启内部细节的回收重建。维护者否决了这次往返；供各行读取的服务取代了这一切。
 - **通过清空行的 `inject` 来放行**：孤立测试可行，在真实 web 树上失败，因为清空 `inject` 恰恰会丢失插件的静态注入。在插件真的去读它声明过的服务之前，这个失败是静默的。
 - **由启动器管理两趟挂载**：它可以让提供方先于读取行激活，但会重复组合、把顺序变成启动器职责，还掩盖了 Loader 的缺陷——嵌套表达式在 include 上下文而不是目标行的注入上下文中求值。
-- **由启动器在 boot 之前运行每个组合包的命令函数**（完全不经过 Cordis）：严格早于「先 boot 再 help」，但这会让应用启动成为配置树之外的第二套插件协议。使用注入 `cmdlineArgs` 的普通提供方只保留一套协议，并且仍可 dump、可 patch。
+- **由启动器在 boot 之前运行每个组合包的命令函数**（完全不经过 Cordis）：严格早于「先 boot 再 help」，但这会让应用启动成为配置树之外的第二套插件协议。使用注入 `appLifecycle` 与 `cmdlineArgs` 的普通提供方只保留一套协议，并且仍可 dump、可 patch。
 - **由启动器强制指定命令行所有者**：拒绝零个或多个读取方可以裁决 `-h` 等重叠项，但 `get()` 是不可变读取，普通组合也可能需要多个应用自有服务。因此插件共享该快照，并通过普通组合持有各自解析器的交互。
 - **`instanceof CommanderError`**：树外插件会带来自己的一份 commander 副本，类身份因此不同，已经打印出来的 `--help` 会被重新抛成致命的加载失败。改为按结构识别 commander 的控制流错误。
 
 ## 后果
 
 - 应用的 flag、help 文本和用法错误与它们所配置的行放在一起；给已安装的插件加一个 flag 不需要改动启动器。
-- 启动器完全不识别任何应用行：telemetry 行仍是它唯一的组合探测（用于环境开关），SIGTERM 在所有 surface 上以 0 退出，每次启动都监视用户 patch 层，一次性 runner 像任何应用一样经 `ctx.appExit` 退出。
+- 启动器完全不识别任何应用行：telemetry 行仍是它唯一的组合探测（用于环境开关），SIGTERM 在所有 surface 上以 0 退出，每次启动都监视用户 patch 层，一次性 runner 像任何应用一样经 `ctx.appLifecycle.exit` 退出。
 - `--help` 会让所有依赖提供方服务的行保持待处理并请求有边界的退出；无关行可能在拆除前并发激活。
 - 应用自有服务没有静态声明的提供方：交付了消费行却缺少对应提供方的组合包会在结算时失败，报出指向该服务的待处理条目，而不是在加载时失败。
 - 用户 patch 若整体替换某行的 `config`，会连同其中的表达式一起丢掉，该行上 flag 的优先级也随之消失。

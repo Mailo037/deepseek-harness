@@ -225,6 +225,40 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
+ * Remove one session from the durable archive set. Workspace accounting is
+ * unchanged, so an accounted session returns to its prior position. A
+ * repeated restore resolves without writing.
+ * @param sessionId - The archived session to restore.
+ * @returns resolution after durability.
+ */
+unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Permanently delete one archived session: remove its durable log through
+ * session persistence, detach its workspace account slot, and drop it from
+ * the archive set. Only archived sessions are deletable — a non-archived id
+ * rejects with {@link WorkspaceSessionNotArchivedError} and a session open
+ * in this process with {@link WorkspaceSessionLiveError}. The log removal
+ * runs first: a failure leaves every registry fact untouched and retryable,
+ * while a state failure after log removal is healed by the next attempt
+ * (the absent log deletes as `false`, the state write then commits).
+ * Emits `workspace/session-deleted` only after durability.
+ * @param sessionId - The archived session to delete.
+ * @returns resolution after durability.
+ */
+deleteSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Set one session's durable sidebar pin membership. Pinning requires a live
+ * or persisted, non-archived session; repeated requests resolve without a
+ * write. Unpinning is idempotent and retains workspace accounting.
+ * @param sessionId - session whose pin membership changes.
+ * @param pinned - true to append to the pin list, false to remove.
+ * @returns resolution after durability.
+ */
+setSessionPinned(sessionId: SessionId, pinned: boolean): Promise<void>
+
+/**
  * Resolve by canonical directory path without creating or mutating a
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.
@@ -232,6 +266,47 @@ archiveSession(sessionId: SessionId): Promise<void>
  * @returns the workspace owning the canonical path, when one exists.
  */
 async resolveByPath(path: string): Promise<Workspace | undefined>
+
+/**
+ * Look up which workspace accounts a session id.
+ * @param sessionId - Session id.
+ * @returns the owning workspace, or undefined when unlinked/ungrouped.
+ */
+findBySessionId(sessionId: SessionId): Workspace | undefined
+
+/**
+ * Move a session to a target workspace. Detaches the session from any
+ * currently accounting workspace, updates the session path in the registry,
+ * and attaches it to the target workspace.
+ * @param sessionId - Session to move.
+ * @param targetWorkspaceId - Target workspace id.
+ */
+async moveSession(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void>
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="workspace-events"></a>
+
+### `workspace/*` events
+
+<a id="workspacesession-deleted--emit"></a>
+
+#### `workspace/session-deleted` — emit
+
+Emitted after one archived session's durable log was deleted and the registry state committed. Unfiltered: every surface showing the session must drop it.
+
+```ts cordis-catalog
+/**
+ * Emitted after one archived session's durable log was deleted and the
+ * registry state committed. Unfiltered: every surface showing the session
+ * must drop it.
+ * @param sessionId - the deleted session's id.
+ * @mode emit
+ */
+'workspace/session-deleted'(sessionId: SessionId): void
 ```
 
 Types: [SessionId](core.md)

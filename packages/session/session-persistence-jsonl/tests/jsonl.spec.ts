@@ -972,6 +972,37 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
     expect(() => scanLog(Buffer.from(log))).toThrow(/seq gap in committed region/)
   })
 
+  it('recovers a stale end-seed marker that collides with the next committed lifecycle', () => {
+    const log = [
+      JSON.stringify({ type: 'session', version: 0, id: 'end-seed-race', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
+      JSON.stringify({ type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } }),
+      JSON.stringify({ type: 'session/end-seed', seq: 2, time: 3, data: {} }),
+      JSON.stringify({ type: 'turn/start', seq: 2, time: 4, data: { turn: 2 } }),
+      JSON.stringify({ type: 'turn/end', seq: 3, time: 5, data: { turn: 2, reason: { kind: 'completed' } } }),
+    ].join('\n') + '\n'
+
+    const scanned = scanLog(Buffer.from(log))
+    expect(scanned.events.map(event => [event.type, event.seq])).toEqual([
+      ['turn/start', 0],
+      ['turn/end', 1],
+      ['turn/start', 2],
+      ['turn/end', 3],
+    ])
+    expect(scanned.committedBytes).toBe(Buffer.byteLength(log))
+  })
+
+  it('rejects an ordinary duplicate seq before a later committed turn/end', () => {
+    const log = [
+      JSON.stringify({ type: 'session', version: 0, id: 'duplicate', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', seq: 0, time: 2, data: { turn: 1, step: 1 } }),
+      JSON.stringify({ type: 'turn/end', seq: 1, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }),
+    ].join('\n') + '\n'
+
+    expect(() => scanLog(Buffer.from(log))).toThrow(/seq gap in committed region/)
+  })
+
   it('rejects a corrupt line BEFORE a later committed turn/end (committed data damaged)', () => {
     const log = [
       JSON.stringify({ type: 'session', version: 0, id: 'c', createdAt: 1, delegationDepth: 0 }),

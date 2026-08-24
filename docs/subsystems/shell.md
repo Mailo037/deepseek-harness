@@ -268,6 +268,41 @@ abstract start(spec: ShellExecSpec): ShellProcess
 
 Source: [`packages/shell/shell/src/index.ts`](../../packages/shell/shell/src/index.ts)
 
+<a id="ctxshellcommand--shellcommandservice"></a>
+
+### `ctx.shellCommand` — `ShellCommandService`
+
+The `ctx.shellCommand` service: one Remote admission entry per `!` line. The gateway resolves the wire session identity to the exact live Agent, whose session carries the working directory and log.
+
+```ts cordis-catalog
+/**
+ * Execute one `!` shell command against the composed `ctx.shell` executor
+ * and record its durable lifecycle. The command runs in the session's
+ * working directory under the session's resolved sandbox policy; the
+ * executor applies its configured timeout and output bounds.
+ *
+ * In `direct` mode a settled command — clean, non-zero exit, signal, timeout,
+ * or caller cancellation — resolves with `result.kind: 'success'` because the
+ * `shell/done` event owns the presentation; only an infrastructure failure
+ * that prevents settling (e.g. a sandbox runner that cannot launch) throws.
+ * In `tool` mode the RPC resolves immediately after the command is admitted
+ * as a background job; the machine observes its lifecycle through the
+ * model-facing job tools and the settled `shell/done` card.
+ *
+ * @param agent - exact live agent whose session receives the lifecycle.
+ * @param command - the trimmed line after the leading `!`.
+ * @param signal - cancellation owned by the dispatching UI request; a signal
+ *   abort in `direct` mode kills the command; `tool` mode honors its own job
+ *   cancellation and ignores the dispatching signal once the job is admitted.
+ * @returns the lifecycle pairing id and admission outcome.
+ */
+@Remote('run') async run(agent: Agent, command: string, signal: AbortSignal): Promise<ShellCommandExecution>
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/shell/shell-command/src/index.ts`](../../packages/shell/shell-command/src/index.ts)
+
 <a id="ctxshellenv--shellenvregistry"></a>
 
 ### `ctx.shellEnv` — `ShellEnvRegistry`

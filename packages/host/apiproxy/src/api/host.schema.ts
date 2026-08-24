@@ -58,9 +58,7 @@ export const hostApplyUpdateRequestSchema = z.object({}) satisfies z.ZodType<Wir
 
 /** host.applyUpdate response value. */
 export const hostApplyUpdateValueSchema = z.object({
-  advanced: z.boolean(),
-  previousCommit: z.string(),
-  commit: z.string(),
+  started: z.literal(true),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.applyUpdate'>>>
 
 /** host.pickDirectory request payload (empty object literal). */

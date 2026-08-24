@@ -4,7 +4,7 @@
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { join } from 'node:path'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -14,6 +14,7 @@ import { saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/harness-update-settings', import.meta.url))
 const CARD_EXPECTED = join(SNAPSHOT_DIR, 'card.expected.md')
+const APPLYING_EXPECTED = join(SNAPSHOT_DIR, 'applying.expected.md')
 const MODE = webSnapshotMode()
 
 describe('web e2e: optional AI-assisted Harness updates', () => {
@@ -23,7 +24,22 @@ describe('web e2e: optional AI-assisted Harness updates', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ restart: () => {} })
+    const selfUpdate = scaffold.ctx.selfUpdate
+    vi.spyOn(selfUpdate, 'check').mockResolvedValue({
+      available: true,
+      branch: 'master',
+      commit: 'a'.repeat(40),
+      upstream: 'origin/master',
+      behind: 1,
+      latest: { commit: 'b'.repeat(40), subject: 'feat: updated application' },
+      checkedAt: 1,
+    })
+    vi.spyOn(selfUpdate, 'createWebUpdateHandoff').mockReturnValue({
+      command: process.execPath,
+      args: ['update-runner'],
+      cwd: process.cwd(),
+    })
     await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1280, height: 900 }, locale: 'en-US' })
@@ -66,7 +82,36 @@ describe('web e2e: optional AI-assisted Harness updates', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
+  it('projects bounded update logs through the assembled shell without a model call', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-applying-update'))
+    await page.route('**/__dsh_update/status', async route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        updateId: 'snapshot-update',
+        phase: 'building',
+        status: 'Building the updated app…',
+        logs: [
+          { seq: 1, stream: 'system', text: '$ pnpm run build' },
+          { seq: 2, stream: 'stdout', text: 'Build complete in 2.4s' },
+        ],
+        logLimit: 80,
+        issueUrl: 'https://github.com/deepseek-ai/deepseek-harness/issues/new',
+      }),
+    }))
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Check for updates' }).click()
+    const apply = dialog.getByRole('button', { name: 'Update and restart' })
+    await apply.waitFor()
+    await apply.click()
+    const overlay = page.locator('[data-applying-update]')
+    await overlay.waitFor()
+    await overlay.getByText('Build complete in 2.4s', { exact: true }).waitFor()
+    const snapshot = await captureStableAria(page, '[data-applying-update]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(APPLYING_EXPECTED, snapshot, MODE)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 30_000)
+
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['card.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['applying.expected.md', 'card.expected.md'])
   })
 })

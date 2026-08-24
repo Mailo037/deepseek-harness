@@ -54,6 +54,74 @@ interface Config {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxselfupdate--selfupdateservice"></a>
+
+### `ctx.selfUpdate` — `SelfUpdateService`
+
+The self-update service. One instance per context; consumers are the API gateway's host domain methods. All git work goes through the injectable runner seam and a github.com remote's compare request through the injectable fetch seam, so tests script the replies deterministically.
+
+```ts cordis-catalog
+/**
+ * Whether this host can serve repository facts and updates at all. The
+ * `.git` entry is re-checked per call so an explicit root that stopped
+ * being a checkout degrades like an undetectable one.
+ * @returns the working-tree root when a checkout was found, else the reason.
+ */
+status(): { kind: 'git'; root: string } | { kind: 'unavailable'; reason: string }
+
+/**
+ * Read the repository identity (branch, commit, remote URL), cached briefly
+ * because every reconnect handshake's describe carries it.
+ * @returns the identity facts, or null when no checkout is configured.
+ * @throws {GitError} propagated from the underlying commands.
+ */
+async describe(): Promise<RepositoryIdentity | null>
+
+/**
+ * Report how far behind the upstream the tree is. A github.com remote is
+ * compared with one public Compare-API request (no network git); every
+ * other remote fetches through git. Results are cached per
+ * {@link Config.checkCacheMs}; `force` bypasses the cache. Concurrent
+ * checks share one chain so two clients never race two network steps into
+ * one working tree.
+ * @param options - `force` skips the cache.
+ * @returns the check result.
+ * @throws {GitError} propagated from the compare request or the underlying commands.
+ */
+check(options?: { force?: boolean }): Promise<UpdateCheck>
+
+/**
+ * Cancel every live agent's active turn (queued inbox work survives for the
+ * resumed session) and wait for them to reach quiescence inside a bounded
+ * span, so no agent is mid-write when the tree disposes.
+ * @param timeoutMs - whole-drain bound; defaults to {@link QUIESCE_TIMEOUT_MS}.
+ * @returns the cancel count and whether the drain completed.
+ */
+async quiesceAgents(timeoutMs: number = QUIESCE_TIMEOUT_MS): Promise<QuiesceResult>
+
+/**
+ * Apply an update: fast-forward the current branch to its upstream after a
+ * fetch. Serialized with {@link check}; a diverged tree refuses rather than
+ * rewriting local history.
+ * @returns whether HEAD advanced, with both hashes.
+ * @throws {GitError} propagated from the underlying commands.
+ */
+pull(): Promise<PullOutcome>
+
+/**
+ * Build the detached Web update handoff. The helper starts before host
+ * shutdown, waits for this process to release the listening port, serves
+ * bounded status and command logs there, fast-forwards and builds, then starts this exact Web
+ * invocation with the resolved port and `--no-open` forced.
+ * @param address - authoritative address of the active Web server.
+ * @returns the no-shell process request for the launcher.
+ * @throws {GitError} when the checkout was not launched through pnpm.
+ */
+createWebUpdateHandoff(address: UpdateWebAddress): UpdateHandoff
+```
+
+Source: [`packages/host/self-update/src/index.ts`](../../packages/host/self-update/src/index.ts)
+
 <a id="ctxwebserver--webserver"></a>
 
 ### `ctx.webServer` — `WebServer`

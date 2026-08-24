@@ -445,7 +445,9 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+    const officialRepositoryGate = "github.repository == 'deepseek-harness/deepseek-harness'"
+    const automatedPullRequestGate = "github.event.pull_request.user.type != 'Bot' && github.event.pull_request.user.type != 'App'"
+    const gated = `\${{ ${officialRepositoryGate} && (${automatedPullRequestGate}) && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}`
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
@@ -455,6 +457,10 @@ describe('Issue lifecycle workflow', () => {
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
     expect(policyPullRequest.types).toContain('ready_for_review')
+    const policyJob = workflowJob(policy, 'policy')
+    if (!Array.isArray(policyJob.steps)) throw new TypeError('Issue policy job must define steps')
+    const validateStep = policyJob.steps.filter(isRecord).find(step => step.name === 'Validate pull request')
+    expect(validateStep).toMatchObject({ if: `\${{ ${officialRepositoryGate} && ${automatedPullRequestGate} }}` })
   })
 })
 

@@ -399,6 +399,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The model-facing shell tools and hook bridges consume this seam; sandboxed, remote, or PowerShell executors replace bash-local without touching them.',
   },
   {
+    key: 'shellCommand',
+    pkg: 'shell-command',
+    title: 'Human shell-command lifecycle',
+    mode: 'core',
+    consumers: ['apiproxy'],
+    note: 'Executes human-prefixed commands through ctx.shell, records their durable lifecycle, and optionally hands background work to ctx.jobs.',
+  },
+  {
     key: 'shellEnv',
     pkg: 'shell-env',
     title: 'Managed bash environment registry',
@@ -530,6 +538,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['directory-picker-native', 'directory-picker-browse'],
     consumers: ['apiproxy'],
     note: 'Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement).',
+  },
+  {
+    key: 'selfUpdate',
+    pkg: 'self-update',
+    title: 'Checkout self-update lifecycle',
+    mode: 'core',
+    consumers: ['apiproxy'],
+    note: 'Owns repository checks, agent quiescence, fast-forward pulls, and the detached Web updater handoff consumed by the host gateway.',
   },
   {
     key: 'webServer',

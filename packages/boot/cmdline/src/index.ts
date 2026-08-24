@@ -41,26 +41,44 @@ export interface AppExit {
   (code: number): void
 }
 
+/** A detached helper process that takes ownership before the current app exits. */
+export interface AppRestartHandoff {
+  /** Executable to start without a shell. */
+  command: string
+  /** Verbatim executable arguments. */
+  args: readonly string[]
+  /** Working directory inherited by the helper. */
+  cwd: string
+}
+
 /**
  * Request bounded process replacement; the launcher wires it to its shutdown
- * controller. After the tree has been disposed the launcher starts this same
- * invocation anew and exits, so a restarted app serves updated code from the
- * same command line. A launcher that cannot replace itself provides no value,
- * and `ctx.get('appRestart')` reads `undefined`.
+ * controller. With no handoff, the launcher disposes the tree and starts this
+ * same invocation anew. A handoff starts first as a detached process and must
+ * wait for the current process to exit before taking its resources; the
+ * launcher disposes only after the operating system confirms that start.
+ * A launcher that cannot replace itself leaves {@link AppLifecycle.restart}
+ * absent.
  */
 export interface AppRestart {
-  /** Request dispose → respawn → exit exactly once; repeat calls are no-ops. */
-  (): void
+  /** Request handoff or dispose → respawn → exit exactly once; repeat calls are no-ops. */
+  (handoff?: AppRestartHandoff): void
+}
+
+/** Process lifecycle controls owned by the launcher. */
+export interface AppLifecycle {
+  /** Request bounded process exit. */
+  exit: AppExit
+  /** Request bounded process replacement when the launcher supports it. */
+  restart?: AppRestart
 }
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The invocation's inner arguments; provided by a launcher before the tree mounts. */
     cmdlineArgs?: CmdlineArgs
-    /** Bounded process-exit request; provided by a launcher before the tree mounts. */
-    appExit?: AppExit
-    /** Bounded process-replacement request; provided only by launchers that can respawn themselves. */
-    appRestart?: AppRestart
+    /** Process lifecycle controls; provided by a launcher before the tree mounts. */
+    appLifecycle?: AppLifecycle
   }
 }
 
@@ -87,8 +105,10 @@ export interface CmdlineHost {
 export function provideCmdline(ctx: Context, host: CmdlineHost): void {
   const snapshot: readonly string[] = Object.freeze([...host.args])
   ctx.provide('cmdlineArgs', { get: () => snapshot })
-  ctx.provide('appExit', host.exit)
-  if (host.restart !== undefined) ctx.provide('appRestart', host.restart)
+  ctx.provide('appLifecycle', Object.freeze({
+    exit: host.exit,
+    ...(host.restart === undefined ? {} : { restart: host.restart }),
+  }))
 }
 
 /** The process streams commander output is written to; production writes to the process. */
@@ -106,22 +126,22 @@ export const internals: { stdout: { write(chunk: string): unknown }; stderr: { w
  *
  * Help, version, and rejected arguments — from the grammar or from an action
  * — are terminal for the process: commander writes the text and the helper
- * requests `ctx.appExit`. The action never runs on help, version, or a
+ * requests `ctx.appLifecycle.exit`. The action never runs on help, version, or a
  * grammar rejection; an action must reject before it publishes, because
  * statements before its `program.error(...)` have already run.
- * @param ctx - plugin context carrying `cmdlineArgs` and `appExit`.
+ * @param ctx - plugin context carrying `cmdlineArgs` and `appLifecycle`.
  * @param program - the app's commander program, with its flags, description,
  * actions, and any subcommands already declared.
  * @throws when the launcher did not provide the command line and exit request,
  * or when no command in the program declares an action.
  */
 export function parseCmdline(ctx: Context, program: Command): void {
-  // Read through the global service store, not the property proxy: appExit is
-  // an optional host value and the plugin only needs to inject cmdlineArgs.
+  // Read through the global service store because this helper can be called
+  // outside a plugin with declared injections.
   const args = ctx.get('cmdlineArgs')
-  const exit = ctx.get('appExit')
-  if (args === undefined || exit === undefined) {
-    throw new Error(`${program.name()}: the launcher must provide ctx.cmdlineArgs and ctx.appExit before the tree mounts`)
+  const lifecycle = ctx.get('appLifecycle')
+  if (args === undefined || lifecycle === undefined) {
+    throw new Error(`${program.name()}: the launcher must provide ctx.cmdlineArgs and ctx.appLifecycle before the tree mounts`)
   }
   if (!hasAction(program)) {
     throw new Error(`${program.name()}: no command in the program declares an action; parseCmdline runs the invoked command's action on a successful parse, and app code there publishes its service`)
@@ -134,7 +154,7 @@ export function parseCmdline(ctx: Context, program: Command): void {
     // program.error() into a CommanderError; commander has already written the
     // text through the output configured above.
     if (!isCommanderError(error)) throw error
-    exit(error.exitCode)
+    lifecycle.exit(error.exitCode)
   }
 }
 
@@ -160,7 +180,7 @@ function hasAction(command: Command): boolean {
  * Commander copies `exitOverride` and output configuration into a subcommand
  * only at registration, so a root-only override would let an
  * already-registered subcommand's rejection write to the process streams and
- * call `process.exit` directly, bypassing `ctx.appExit`.
+ * call `process.exit` directly, bypassing `ctx.appLifecycle.exit`.
  * @param command - the root of the command tree to configure.
  */
 function configureExitAndOutput(command: Command): void {

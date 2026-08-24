@@ -317,7 +317,7 @@ describe('AboutSection', () => {
     }))
     const applyUpdate = vi.fn(() => Promise.resolve({
       rpcId: 'about-apply' as never,
-      result: { ok: true as const, value: { advanced: true, previousCommit: 'a'.repeat(40), commit: 'b'.repeat(40) } },
+      result: { ok: true as const, value: { started: true as const } },
     }))
     const controller = new UpdateStore({ host: { checkUpdate, applyUpdate } } as never)
     const source = describeSource(description())

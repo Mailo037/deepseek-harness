@@ -14,6 +14,8 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // merge. Cross-plugin collaboration goes through the service, never a value
 // import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: imports the layout-owned `shell.overlay` slot declaration.
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls ctx.locale into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {
@@ -29,6 +31,9 @@ import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
 import { UpdateStore, updatePlaneAvailable } from './update-store.ts'
+import {
+  ApplyingUpdateOverlay, clearUpdateRefreshMarker, type ApplyingUpdateOverlayInjected,
+} from './ApplyingUpdateOverlay.tsx'
 import { HarnessSyncStore } from './harness-sync-store.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
 
@@ -44,6 +49,8 @@ export type { SettingsDocumentState } from './settings-document-store.ts'
 export { SettingsDocumentStore } from './settings-document-store.ts'
 export type { UpdatePhase, UpdateState, UpdateCheckView } from './update-store.ts'
 export { UpdateStore, updatePlaneAvailable } from './update-store.ts'
+export type { ApplyingUpdateOverlayInjected, ApplyingUpdateOverlayProps } from './ApplyingUpdateOverlay.tsx'
+export { ApplyingUpdateOverlay, clearUpdateRefreshMarker, parseRunnerProgress, updateRefreshUrl } from './ApplyingUpdateOverlay.tsx'
 export type {
   HarnessSyncModelOption, HarnessSyncPhase, HarnessSyncState, HarnessUpdateSource,
 } from './harness-sync-store.ts'
@@ -72,6 +79,7 @@ export const inject = ['slots', 'locale', 'connection', 'settingsScope', 'sessio
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  clearUpdateRefreshMarker()
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-general: dictionaries')
 
   // Copy freshness is framework-owned: components read the standard `t`
@@ -121,6 +129,10 @@ export function apply(ctx: ClientContext): void {
       describe: connection.hostDescription,
       syncSnapshot: syncController.store,
     },
+  })
+  const updateOverlayInjected = (): ApplyingUpdateOverlayInjected => ({
+    connection,
+    snapshot: updateController.store,
   })
   // The settings shell: this package occupies the sidebar-owned hole and
   // declares the settings slots. Ledger → nav-row projection as an observable
@@ -226,4 +238,11 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: aboutInjected,
   }, AboutSection))
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'self-update-progress',
+    order: 1000,
+    locale: NS,
+    inject: updateOverlayInjected,
+  }, ApplyingUpdateOverlay))
 }

@@ -193,11 +193,7 @@ export class FakeApiClient implements IApiClient {
       latest: null,
       checkedAt: 0,
     }))),
-    applyUpdate: (payload: unknown) => this.record('host.applyUpdate', payload, Promise.resolve(ok({
-      advanced: true,
-      previousCommit: 'f1xture00000000000000000000000000000000',
-      commit: 'a11c0de000000000000000000000000000000000',
-    }))),
+    applyUpdate: (payload: unknown) => this.record('host.applyUpdate', payload, Promise.resolve(ok({ started: true }))),
     pickDirectory: (payload: unknown) => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
     listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),

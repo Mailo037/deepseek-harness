@@ -157,7 +157,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         }
       },
       async applyUpdate(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { advanced: false as const, previousCommit: 'c', commit: 'c' } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { started: true as const } } }
       },
       async pickDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }

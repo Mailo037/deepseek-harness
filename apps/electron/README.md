@@ -37,7 +37,7 @@ The desktop app needs a built frontend dist (`apps/web/dist`), which the reposit
 
 ## Windows distribution
 
-`pnpm --filter @deepseek-ai/dsh-electron run package:win` builds the complete official client/runtime graph, then creates an NSIS installer in `apps/electron/release/`. `package:dir` creates the same unpacked Windows application, and `smoke:package` launches that application with the updater disabled, waits for the real Electron window to load, and verifies its clean exit.
+`pnpm --filter @deepseek-ai/dsh-electron run package:win` builds the complete official client/runtime graph, then creates an NSIS installer in `apps/electron/release/`. `package:dir` creates the same unpacked Windows application, and `smoke:package` launches that application with the updater disabled and an isolated first-run home, waits for the real Electron window to load, and verifies its clean exit.
 
 `electron-builder.yml` packages the emitted Electron main tree, shipped agent presets, runtime dependencies, and the built `@deepseek-ai/dsh-web-frontend` dist that `dsh-web-app` resolves through its package export. The Windows executable and installer use the committed application id, product name, and `.ico` icon.
 

@@ -206,7 +206,7 @@ interface StartupFixture {
 }
 
 /**
- * A custom profile whose ordinary provider plugin injects `cmdlineArgs`, plus
+ * A custom profile whose ordinary provider plugin injects `appLifecycle` and `cmdlineArgs`, plus
  * a row that reads its app-owned service through a `!!js` config expression.
  * Both plugin modules resolve
  * `@deepseek-ai/dsh-cmdline` and `commander` through the profile module
@@ -224,7 +224,7 @@ function createStartupFixture(): StartupFixture {
     "import { Command } from 'commander'",
     "import { parseCmdline } from '@deepseek-ai/dsh-cmdline'",
     "export const name = 'fixture-startup'",
-    "export const inject = ['cmdlineArgs']",
+    "export const inject = ['appLifecycle', 'cmdlineArgs']",
     'export function apply(ctx) {',
     "  const program = new Command().name('fixture').option('--generation <value>', 'echoed generation')",
     "  program.action(() => ctx.provide('fixtureStartup', { generation: program.opts().generation }))",

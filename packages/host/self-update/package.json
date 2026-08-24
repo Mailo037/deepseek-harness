@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-host-self-update",
   "description": "Git-backed self-update service (ctx.selfUpdate) for a dsh host running from a checkout: repository identity, upstream update checks, agent quiescence, and fast-forward pulls",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -28,6 +28,7 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/startup.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

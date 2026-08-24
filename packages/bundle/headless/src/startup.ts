@@ -13,7 +13,7 @@ import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 export const name = 'headless-startup'
 
 /** Services required before the task can be resolved. */
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 
 /** Service provided by this plugin and injected by the one-shot runner. */
 export const HEADLESS_STARTUP_SERVICE = 'headlessStartup'

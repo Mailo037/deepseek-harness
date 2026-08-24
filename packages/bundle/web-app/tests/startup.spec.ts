@@ -47,7 +47,7 @@ export function apply(_ctx, config) { globalThis.__webStartupObserved.readerConf
   // to the source-plane plugin already imported by this test.
   writeFileSync(join(dir, 'provider.mjs'), `
 export const name = 'web-startup'
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 export const apply = ctx => globalThis.__webStartupApply(ctx)
 `)
   writeFileSync(join(dir, 'cordis.yml'), [

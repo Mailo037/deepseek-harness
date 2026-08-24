@@ -733,7 +733,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-headless`
 
-需要：`agentDefaultModel` · `agents` · `sessions`
+需要：`agentDefaultModel` · `agents` · `appLifecycle` · `sessions`
 
 ```ts config-catalog
 /** Plugin config: the task resolved from this app's injected provider service. */
@@ -814,7 +814,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+需要：`agentDefaultModel` · `agents` · `appLifecycle` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -901,7 +901,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/self-update/src/index.ts:48`](../packages/host/self-update/src/index.ts)
+来源：[`packages/host/self-update/src/index.ts:50`](../packages/host/self-update/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 

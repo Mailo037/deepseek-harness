@@ -5,7 +5,7 @@
 # A patch replaces the targeted row's whole `config`, so each row below
 # restates every key it owns.
 #
-# The web-startup plugin injects `cmdlineArgs` and provides `webStartup` as an
+# The web-startup plugin injects `appLifecycle` and `cmdlineArgs`, then provides `webStartup` as an
 # ordinary Cordis service. Rows configured from flags inject that service, so
 # Loader resolves their expressions only after it exists. The web runtime then
 # provides bind-dependent `webRuntime` values to the trust fence.
@@ -122,7 +122,7 @@
       name: '@deepseek-ai/dsh-cordis-host-runner'
 
     # Ordinary provider for the parsed Web flags. Its plugin-level injection
-    # waits for cmdlineArgs; no launcher metadata or special row kind is needed.
+    # waits for appLifecycle and cmdlineArgs; no launcher metadata or special row kind is needed.
     - id: web-startup
       name: '@deepseek-ai/dsh-web-app/startup'
 

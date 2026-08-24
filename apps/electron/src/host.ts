@@ -81,10 +81,10 @@ export interface BootWebHostOptions {
   /** Called when a booted app requests exit (for example `--help`). */
   onExit?: (code: number) => void
   /**
-   * Called when a booted app requests process replacement (`ctx.appRestart`,
+   * Called when a booted app requests process replacement (`ctx.appLifecycle.restart`,
    * the self-update flow): the implementation schedules Electron's relaunch
    * and then shuts the host down, so the app re-executes into the updated
-   * code. Absent, `ctx.appRestart` stays unserved and the GUI reports the
+   * code. Absent, `ctx.appLifecycle.restart` stays unavailable and the GUI reports the
    * restart capability as unavailable.
    */
   onRestart?: () => void

@@ -1177,6 +1177,53 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'selfUpdate',
+    summary: 'The self-update service.',
+    description: 'The self-update service. One instance per context; consumers are the API gateway\'s host domain methods. All git work goes through the injectable runner seam and a github.com remote\'s compare request through the injectable fetch seam, so tests script the replies deterministically.',
+    methods: [
+      {
+        signature: 'status(): { kind: \'git\'; root: string } | { kind: \'unavailable\'; reason: string }',
+        description: 'Whether this host can serve repository facts and updates at all. The `.git` entry is re-checked per call so an explicit root that stopped being a checkout degrades like an undetectable one.',
+        parameters: [],
+        returns: 'the working-tree root when a checkout was found, else the reason.',
+      },
+      {
+        signature: 'async describe(): Promise<RepositoryIdentity | null>',
+        description: 'Read the repository identity (branch, commit, remote URL), cached briefly because every reconnect handshake\'s describe carries it.',
+        parameters: [],
+        returns: 'the identity facts, or null when no checkout is configured.',
+        throws: ['{GitError} propagated from the underlying commands.'],
+      },
+      {
+        signature: 'check(options?: { force?: boolean }): Promise<UpdateCheck>',
+        description: 'Report how far behind the upstream the tree is. A github.com remote is compared with one public Compare-API request (no network git); every other remote fetches through git. Results are cached per Config.checkCacheMs; `force` bypasses the cache. Concurrent checks share one chain so two clients never race two network steps into one working tree.',
+        parameters: [{ name: 'options', description: '`force` skips the cache.' }],
+        returns: 'the check result.',
+        throws: ['{GitError} propagated from the compare request or the underlying commands.'],
+      },
+      {
+        signature: 'async quiesceAgents(timeoutMs: number = QUIESCE_TIMEOUT_MS): Promise<QuiesceResult>',
+        description: 'Cancel every live agent\'s active turn (queued inbox work survives for the resumed session) and wait for them to reach quiescence inside a bounded span, so no agent is mid-write when the tree disposes.',
+        parameters: [{ name: 'timeoutMs', description: 'whole-drain bound; defaults to {@link QUIESCE_TIMEOUT_MS}.' }],
+        returns: 'the cancel count and whether the drain completed.',
+      },
+      {
+        signature: 'pull(): Promise<PullOutcome>',
+        description: 'Apply an update: fast-forward the current branch to its upstream after a fetch. Serialized with check; a diverged tree refuses rather than rewriting local history.',
+        parameters: [],
+        returns: 'whether HEAD advanced, with both hashes.',
+        throws: ['{GitError} propagated from the underlying commands.'],
+      },
+      {
+        signature: 'createWebUpdateHandoff(address: UpdateWebAddress): UpdateHandoff',
+        description: 'Build the detached Web update handoff. The helper starts before host shutdown, waits for this process to release the listening port, serves bounded status and command logs there, fast-forwards and builds, then starts this exact Web invocation with the resolved port and `--no-open` forced.',
+        parameters: [{ name: 'address', description: 'authoritative address of the active Web server.' }],
+        returns: 'the no-shell process request for the launcher.',
+        throws: ['{GitError} when the checkout was not launched through pnpm.'],
+      },
+    ],
+  },
+  {
     key: 'sessionPersistence',
     summary: 'Durable append-only session storage.',
     description: 'Durable append-only session storage. Implementations preserve contiguous, losslessly JSON-serializable events; append resolves only after durability, and load balances a complete interrupted tail without rewriting committed events.',
@@ -1238,6 +1285,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Lightweight listing from metadata, without a full-log parse.',
         parameters: [{ name: 'signal', description: 'optional cancellation for backend listing work.' }],
         returns: 'one header per materialized session.',
+      },
+      {
+        signature: 'delete(_id: SessionId, signal?: AbortSignal): Promise<boolean>',
+        description: 'Durably remove one session\'s stored log and metadata. The operation is serialized against the session\'s own reads and writes; a live Session rejects, a retained cold preparation is discarded, and an absent id resolves to `false`. A backend that cannot delete rejects with its own error.',
+        parameters: [{ name: '_id', description: 'the persisted session whose log is removed (unused by the default).' }, { name: 'signal', description: 'optional cancellation for backend deletion work.' }],
+        returns: 'whether a materialized log was removed.',
       },
       {
         signature: 'abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>',
@@ -1645,6 +1698,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Start a background process and return its handle immediately.',
         parameters: [{ name: 'spec', description: 'a resolved spec from {@link resolve}, never a raw request.' }],
         returns: 'the live process handle (reads, kill, quiescence promise).',
+      },
+    ],
+  },
+  {
+    key: 'shellCommand',
+    summary: 'The `ctx.shellCommand` service: one Remote admission entry per `!` line.',
+    description: 'The `ctx.shellCommand` service: one Remote admission entry per `!` line. The gateway resolves the wire session identity to the exact live Agent, whose session carries the working directory and log.',
+    methods: [
+      {
+        signature: '@Remote(\'run\') async run(agent: Agent, command: string, signal: AbortSignal): Promise<ShellCommandExecution>',
+        description: 'Execute one `!` shell command against the composed `ctx.shell` executor and record its durable lifecycle. The command runs in the session\'s working directory under the session\'s resolved sandbox policy; the executor applies its configured timeout and output bounds.\n\nIn `direct` mode a settled command — clean, non-zero exit, signal, timeout, or caller cancellation — resolves with `result.kind: \'success\'` because the `shell/done` event owns the presentation; only an infrastructure failure that prevents settling (e.g. a sandbox runner that cannot launch) throws. In `tool` mode the RPC resolves immediately after the command is admitted as a background job; the machine observes its lifecycle through the model-facing job tools and the settled `shell/done` card.',
+        parameters: [{ name: 'agent', description: 'exact live agent whose session receives the lifecycle.' }, { name: 'command', description: 'the trimmed line after the leading `!`.' }, { name: 'signal', description: 'cancellation owned by the dispatching UI request; a signal abort in `direct` mode kills the command; `tool` mode honors its own job cancellation and ignores the dispatching signal once the job is admitted.' }],
+        returns: 'the lifecycle pairing id and admission outcome.',
       },
     ],
   },
@@ -2225,6 +2291,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The web access service. Registered as `ctx.web` (one instance per context).\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
     methods: [
       {
+        signature: 'setSearchProvider(id: string | undefined): void',
+        description: 'Pin the search provider selection at runtime. Unlike the constructor config, this is not validated against the registry: providers register after the seam boots, and selection resolution happens per search.',
+        parameters: [{ name: 'id', description: 'the provider id to select, or `undefined` for auto-selection.' }],
+      },
+      {
+        signature: 'setFetchProvider(id: string | undefined): void',
+        description: 'Pin the fetch provider selection at runtime; see setSearchProvider.',
+        parameters: [{ name: 'id', description: 'the provider id to select, or `undefined` for auto-selection.' }],
+      },
+      {
         signature: 'registerSearchProvider(provider: WebSearchProvider): () => void',
         description: 'Register a search provider. Throws WebError `WEB_DUPLICATE_PROVIDER` if its id is already registered for search. Returns a disposer; disposed with the calling fiber.',
         parameters: [{ name: 'provider', description: 'the provider; its `id` is the registry key.' }],
@@ -2354,10 +2430,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one session from the durable archive set. Workspace accounting is unchanged, so an accounted session returns to its prior position. A repeated restore resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'The archived session to restore.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'deleteSession(sessionId: SessionId): Promise<void>',
+        description: 'Permanently delete one archived session: remove its durable log through session persistence, detach its workspace account slot, and drop it from the archive set. Only archived sessions are deletable — a non-archived id rejects with WorkspaceSessionNotArchivedError and a session open in this process with WorkspaceSessionLiveError. The log removal runs first: a failure leaves every registry fact untouched and retryable, while a state failure after log removal is healed by the next attempt (the absent log deletes as `false`, the state write then commits). Emits `workspace/session-deleted` only after durability.',
+        parameters: [{ name: 'sessionId', description: 'The archived session to delete.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'setSessionPinned(sessionId: SessionId, pinned: boolean): Promise<void>',
+        description: 'Set one session\'s durable sidebar pin membership. Pinning requires a live or persisted, non-archived session; repeated requests resolve without a write. Unpinning is idempotent and retains workspace accounting.',
+        parameters: [{ name: 'sessionId', description: 'session whose pin membership changes.' }, { name: 'pinned', description: 'true to append to the pin list, false to remove.' }],
+        returns: 'resolution after durability.',
+      },
+      {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
         parameters: [{ name: 'path', description: 'Existing directory path in any spelling.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
+      },
+      {
+        signature: 'findBySessionId(sessionId: SessionId): Workspace | undefined',
+        description: 'Look up which workspace accounts a session id.',
+        parameters: [{ name: 'sessionId', description: 'Session id.' }],
+        returns: 'the owning workspace, or undefined when unlinked/ungrouped.',
+      },
+      {
+        signature: 'async moveSession(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void>',
+        description: 'Move a session to a target workspace. Detaches the session from any currently accounting workspace, updates the session path in the registry, and attaches it to the target workspace.',
+        parameters: [{ name: 'sessionId', description: 'Session to move.' }, { name: 'targetWorkspaceId', description: 'Target workspace id.' }],
       },
     ],
   },
@@ -2836,6 +2941,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A workflow run started — the script\'s meta block validated, the body about to execute.',
     description: 'A workflow run started — the script\'s meta block validated, the body about to execute. Paired with Events[\'workflow/end\'].',
     parameters: [{ name: 'info', description: 'the run\'s identity snapshot (id + meta).' }],
+  },
+  {
+    name: 'workspace/session-deleted',
+    mode: 'emit',
+    signature: '\'workspace/session-deleted\'(sessionId: SessionId): void',
+    summary: 'Emitted after one archived session\'s durable log was deleted and the registry state committed.',
+    description: 'Emitted after one archived session\'s durable log was deleted and the registry state committed. Unfiltered: every surface showing the session must drop it.',
+    parameters: [{ name: 'sessionId', description: 'the deleted session\'s id.' }],
   },
 ]
 
@@ -3471,7 +3584,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Inbox',
-    declaration: 'export class Inbox {\n    constructor(private readonly session: Session, private readonly notifications: InboxNotifications);\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}',
+    declaration: 'export class Inbox {\n    constructor(private readonly session: Session, private readonly notifications: InboxNotifications);\n    get nextTurn(): readonly UserMessage[];\n    get nextStep(): readonly UserMessage[];\n    get hasPending(): boolean;\n    clear(): void;\n    claim(target: InboxTarget, turn: number): UserMessage[];\n    append(target: InboxTarget, message: UserMessage): void;\n    prepend(target: InboxTarget, message: UserMessage): void;\n    move(messageId: MessageId, toIndex: number): boolean;\n    replace(messageId: MessageId, newMessage: UserMessage): boolean;\n    remove(messageId: MessageId): boolean;\n    splice(target: InboxTarget, start: number, deleteCount: number, inserted: UserMessage[]): UserMessage[];\n}',
   },
   {
     name: 'InboxNotifications',
@@ -3611,7 +3724,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmDiscoveredModel',
-    declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n}',
+    declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n    inputModalities?: string[];\n    visionInferred?: boolean;\n}',
   },
   {
     name: 'LlmFailure',
@@ -3795,7 +3908,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelModalityMap',
-    declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
+    declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n    video: \'video\';\n}',
   },
   {
     name: 'ObjectJsonSchema',
@@ -3894,6 +4007,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
   },
   {
+    name: 'PullOutcome',
+    declaration: 'export interface PullOutcome {\n    advanced: boolean;\n    previousCommit: string;\n    commit: string;\n}',
+  },
+  {
+    name: 'QuiesceResult',
+    declaration: 'export interface QuiesceResult {\n    cancelled: number;\n    drained: boolean;\n}',
+  },
+  {
     name: 'ReadFileLine',
     declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
   },
@@ -3916,6 +4037,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReplayEnvelope',
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
+  },
+  {
+    name: 'RepositoryIdentity',
+    declaration: 'export interface RepositoryIdentity {\n    branch: string;\n    commit: string;\n    remoteUrl: string | null;\n}',
   },
   {
     name: 'RequestContext',
@@ -3979,7 +4104,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n      /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'session-archived\': {\n        sessionId: SessionId;\n    };\n    \'session-not-archived\': {\n        sessionId: SessionId;\n    };\n    \'session-live\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent- /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',
@@ -4340,6 +4465,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsUpdateSource',
     declaration: 'export type SettingsUpdateSource = \'update\' | \'provider\';',
+  },
+  {
+    name: 'ShellCommandExecution',
+    declaration: 'export interface ShellCommandExecution {\n    readonly commandId: ShellCommandId;\n    readonly result: ShellCommandResult;\n}',
+  },
+  {
+    name: 'ShellCommandId',
+    declaration: 'export type ShellCommandId = Branded<\'ShellCommandId\'>;',
+  },
+  {
+    name: 'ShellCommandResult',
+    declaration: 'export type ShellCommandResult = {\n    readonly kind: \'success\';\n} | {\n    readonly kind: \'error\';\n    readonly text: string;\n};',
   },
   {
     name: 'ShellExecRequest',
@@ -4926,8 +5063,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
   },
   {
+    name: 'UpdateHandoff',
+    declaration: 'export interface UpdateHandoff {\n    command: string;\n    args: readonly string[];\n    cwd: string;\n}',
+  },
+  {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
+    name: 'UpdateWebAddress',
+    declaration: 'export interface UpdateWebAddress {\n    host: \'127.0.0.1\' | \'0.0.0.0\';\n    port: number;\n}',
   },
   {
     name: 'UserMessage',

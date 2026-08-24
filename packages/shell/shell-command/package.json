@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-shell-command",
   "description": "Human ! shell command executor over ctx.shell for DeepSeek Harness UIs",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

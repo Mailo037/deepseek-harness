@@ -117,6 +117,9 @@ import { readInstallationVersion } from './host-version.ts'
 // Value edge: the wire boundary narrows the git layer's typed failure; the
 // import also resolves `ctx.get('selfUpdate')`.
 import { GitError } from '@deepseek-ai/dsh-host-self-update'
+// Type-only: the Web self-update handoff reads the authoritative bound address
+// instead of reconstructing it from optional command-line flags.
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { ApplyUpdateOutcome, HostRepository, UpdateCheck } from './api/index.ts'
 
 /** Page size when history is called without maxMessages. */
@@ -3266,7 +3269,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           home: homedir(),
           canOpenPath: canOpenPaths(),
           repository: value,
-          canRestart: ctx.get('appRestart') !== undefined,
+          canRestart: ctx.get('appLifecycle')?.restart !== undefined,
           // The Electron main process is the only surface where this field of
           // process.versions exists; every plain Node host is the web CLI.
           surface: process.versions.electron !== undefined ? 'electron' : 'web',
@@ -3292,7 +3295,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async applyUpdate(request) {
-        const restart = ctx.get('appRestart')
+        const restart = ctx.get('appLifecycle')?.restart
         if (restart === undefined) {
           return err(request, {
             code: 'restart-unavailable',
@@ -3314,21 +3317,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // for the resumed sessions, and wait for quiescence so no agent is
           // mid-write when the tree disposes.
           await selfUpdate.quiesceAgents()
-          let outcome
+          // Web checkouts hand work to a detached runner before this process
+          // exits. It temporarily owns the same port, pulls, builds, and then
+          // starts the exact invocation with `--no-open`. Electron retains its
+          // native relaunch path and therefore prepares the tree in-process.
+          const webServer = process.versions.electron === undefined ? ctx.get('webServer') : undefined
+          if (webServer !== undefined) {
+            let handoff
+            try {
+              handoff = selfUpdate.createWebUpdateHandoff({ host: webServer.host, port: webServer.port })
+            } catch (error: unknown) {
+              if (error instanceof GitError) return err(request, selfUpdateError(error))
+              throw error
+            }
+            setTimeout(() => { restart(handoff) }, RESTART_FLUSH_DELAY_MS)
+            return ok(request, { started: true })
+          }
           try {
-            outcome = await selfUpdate.pull()
+            await selfUpdate.pull()
           } catch (error: unknown) {
             if (error instanceof GitError) return err(request, selfUpdateError(error))
             throw error
           }
-          // The response flushes inside this window, then the launcher
-          // disposes the tree and respawns this exact invocation.
-          setTimeout(restart, RESTART_FLUSH_DELAY_MS)
-          return ok(request, {
-            advanced: outcome.advanced,
-            previousCommit: outcome.previousCommit,
-            commit: outcome.commit,
-          })
+          setTimeout(() => { restart() }, RESTART_FLUSH_DELAY_MS)
+          return ok(request, { started: true })
         })
         applyChain = applied.catch(() => undefined)
         return applied

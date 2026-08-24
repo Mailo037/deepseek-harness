@@ -367,6 +367,18 @@ abstract readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise
 abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
 
 /**
+ * Durably remove one session's stored log and metadata. The operation is
+ * serialized against the session's own reads and writes; a live Session
+ * rejects, a retained cold preparation is discarded, and an absent id
+ * resolves to `false`. A backend that cannot delete rejects with its own
+ * error.
+ * @param _id - the persisted session whose log is removed (unused by the default).
+ * @param signal - optional cancellation for backend deletion work.
+ * @returns whether a materialized log was removed.
+ */
+delete(_id: SessionId, signal?: AbortSignal): Promise<boolean>
+
+/**
  * List materialized sessions with cheap per-log change tokens.
  *
  * Repeated observations of an unchanged log return the same revision. A

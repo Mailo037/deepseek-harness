@@ -2674,11 +2674,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         latest: { commit: 'a11c0de000000000000000000000000000000000', subject: 'fixture: newest upstream commit' },
         checkedAt: 0,
       }),
-      applyUpdate: request => ok(request, {
-        advanced: true,
-        previousCommit: 'f1xture00000000000000000000000000000000',
-        commit: 'a11c0de000000000000000000000000000000000',
-      }),
+      applyUpdate: request => ok(request, { started: true }),
       // Deterministic native pick: the keyless lanes drive the full
       // pick-then-adopt path without an OS chooser (design-mock content,
       // same tree the browse primitives serve).

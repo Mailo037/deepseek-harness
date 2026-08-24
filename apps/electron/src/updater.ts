@@ -8,7 +8,7 @@
 
 import type { BrowserWindow, MessageBoxOptions } from 'electron'
 import { Notification, dialog } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import electronUpdater from 'electron-updater'
 
 /** Six-hour cadence after the first installed-app check. */
 export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000
@@ -175,7 +175,7 @@ function readPercent(value: unknown): number {
 
 /** Build the production presenter around the current main-process window. */
 export function createDesktopUpdater(window: () => BrowserWindow | undefined): DesktopUpdater {
-  return new DesktopUpdater(autoUpdater, {
+  return new DesktopUpdater(electronUpdater.autoUpdater, {
     notify: (title, body) => { new Notification({ title, body }).show() },
     message: (options) => {
       const owner = window()

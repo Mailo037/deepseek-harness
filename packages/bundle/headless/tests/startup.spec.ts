@@ -43,7 +43,7 @@ async function bootStartup(args: string[]): Promise<{ task: HeadlessStartupValue
   // source-plane plugin already imported by the test.
   writeFileSync(join(dir, 'startup.mjs'), `
 export const name = 'headless-startup'
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 export const apply = ctx => globalThis.__headlessStartupApply(ctx)
 `)
   const rowUrl = pathToFileURL(join(dir, 'row.mjs')).href

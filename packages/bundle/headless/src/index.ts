@@ -17,7 +17,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await
-// and the cmdline Context merge for the appExit host value.
+// and the cmdline Context merge for the appLifecycle host value.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 
@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-cmdline'
 export const name = 'headless-runner'
 
 /** Core services required before the one-shot turn can start. */
-export const inject = ['agentDefaultModel', 'agents', 'sessions']
+export const inject = ['agentDefaultModel', 'agents', 'appLifecycle', 'sessions']
 
 /** Plugin config: the task resolved from this app's injected provider service. */
 export interface Config {
@@ -139,12 +139,10 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
  * @param config - validated task config.
  */
 export function apply(ctx: Context, config: Config): void {
-  // Read through the global service store, not the property proxy: appExit is
-  // an optional host value, never an injected dependency.
-  const exit = ctx.get('appExit')
-  if (exit === undefined) {
-    throw new Error('headless-runner: the launcher must provide ctx.appExit before the tree mounts')
+  const lifecycle = ctx.get('appLifecycle')
+  if (lifecycle === undefined) {
+    throw new Error('headless-runner: the launcher must provide ctx.appLifecycle before the tree mounts')
   }
-  const io: HeadlessIo = { stdout: internals.stdout, stderr: internals.stderr, exit }
+  const io: HeadlessIo = { stdout: internals.stdout, stderr: internals.stderr, exit: lifecycle.exit }
   void run(ctx, config.task, io).catch((error: unknown) => { fail(io, error) })
 }

@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type {} from '@deepseek-ai/dsh-agent'
 import { GitError, SelfUpdateService, detectRepositoryRoot,
-  type GitCommandRunner } from '../src/index.ts'
+  forceWebRestartArgs, type GitCommandRunner } from '../src/index.ts'
 
 /** One reply or a sequence of replies per bare argv (joined, no -C prefix). */
 type Reply = string | readonly string[]
@@ -213,5 +213,40 @@ describe('SelfUpdateService', () => {
     expect(detectRepositoryRoot(outside)).toBeNull()
     // And the source layout's own package directory finds this repository.
     expect(detectRepositoryRoot(join(import.meta.dirname, '..', '..'))).not.toBeNull()
+  })
+
+  it('pins the active Web port and no-open flag without duplicating old values', () => {
+    expect(forceWebRestartArgs(
+      ['web', '--patch', './local.yml', '--port', '3080', '--no-open', '--trusted-host', 'localhost'],
+      4567,
+    )).toEqual([
+      'web', '--patch', './local.yml', '--trusted-host', 'localhost', '--port', '4567', '--no-open',
+    ])
+  })
+
+  it('encodes the cached GitHub repository and same-port restart in the detached plan', async () => {
+    const replies = identityReplies()
+    replies.set('remote get-url origin', 'https://github.com/Mailo037/deepseek-harness.git\n')
+    const service = serviceOf(repo, replies)
+    await service.describe()
+    const previousPnpm = process.env.npm_execpath
+    process.env.npm_execpath = join(repo, 'pnpm.cjs')
+    try {
+      const handoff = service.createWebUpdateHandoff({ host: '127.0.0.1', port: 4567 })
+      const encoded = handoff.args.at(-1)
+      expect(encoded).toBeDefined()
+      const plan = JSON.parse(Buffer.from(encoded as string, 'base64url').toString('utf8')) as {
+        port: number
+        restartArgs: string[]
+        issueUrl: string
+      }
+      expect(plan.port).toBe(4567)
+      expect(plan.restartArgs).toContain('4567')
+      expect(plan.restartArgs.at(-1)).toBe('--no-open')
+      expect(plan.issueUrl).toBe('https://github.com/Mailo037/deepseek-harness/issues/new')
+    } finally {
+      if (previousPnpm === undefined) delete process.env.npm_execpath
+      else process.env.npm_execpath = previousPnpm
+    }
   })
 })

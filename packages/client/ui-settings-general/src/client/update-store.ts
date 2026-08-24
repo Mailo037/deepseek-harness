@@ -56,9 +56,6 @@ const FIRST_CHECK_DELAY_MS = 5_000
 /** Cadence of automatic background checks. */
 const AUTO_CHECK_INTERVAL_MS = 10 * 60_000
 
-/** Poll cadence while waiting for the restarted host to answer again. */
-const RESTART_POLL_MS = 1_000
-
 /**
  * Derive the update surface's availability from the shared describe mirror:
  * the plane needs a git repository behind the installation and a launcher
@@ -79,7 +76,6 @@ export class UpdateStore {
 
   private autoCheckTimer: ReturnType<typeof setTimeout> | undefined
   private autoCheckInterval: ReturnType<typeof setInterval> | undefined
-  private restartPoll: ReturnType<typeof setInterval> | undefined
 
   /**
    * @param api - loopback-pinned host wire face carrying the update methods.
@@ -137,7 +133,6 @@ export class UpdateStore {
       this.store.update((state) => {
         state.phase = 'restarting'
       })
-      this.watchRestart()
     } catch (error) {
       this.store.update((state) => {
         state.phase = 'available'
@@ -160,29 +155,7 @@ export class UpdateStore {
   dispose(): void {
     clearTimeout(this.autoCheckTimer)
     clearInterval(this.autoCheckInterval)
-    clearInterval(this.restartPoll)
     this.autoCheckTimer = undefined
     this.autoCheckInterval = undefined
-    this.restartPoll = undefined
-  }
-
-  /**
-   * Reload once the restarted host is back: wait for the old process to drop
-   * (one failed describe), then reload on the first answer — reloading inside
-   * the shutdown window would land on the stale build again.
-   */
-  private watchRestart(): void {
-    if (this.restartPoll !== undefined) return
-    let sawOutage = false
-    this.restartPoll = setInterval(() => {
-      void this.api.host.describe({}).then(
-        () => {
-          if (!sawOutage) return
-          this.dispose()
-          location.reload()
-        },
-        () => { sawOutage = true },
-      )
-    }, RESTART_POLL_MS)
   }
 }

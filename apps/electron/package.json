@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-electron",
   "description": "Electron desktop app over the dsh web profile: boots the same host as dsh web inside the Electron main process and renders the browser UI in a window, with a close grace that lets agents finish before the app exits",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

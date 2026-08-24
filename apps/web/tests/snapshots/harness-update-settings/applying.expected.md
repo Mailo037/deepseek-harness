@@ -1,0 +1,4 @@
+- status:
+  - text: HARNESS Applying update Update log Showing up to the latest 80 lines
+  - log "Update log": $ pnpm run build Build complete in {{duration}}
+  - text: Building the updated app…

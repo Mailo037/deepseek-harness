@@ -41,7 +41,11 @@ export type GitCommandRunner = (
 /** Child environment for one git run: credential prompts would hang a headless host. */
 const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
 
-/** Production runner over the shared native-command executor. */
+/**
+ * Run one production git command through the shared native-command executor.
+ * @param args - git arguments without the executable name.
+ * @param timeoutMs - command wall-clock bound.
+ */
 export const execGit: GitCommandRunner = async (args, timeoutMs) => {
   try {
     const { stdout } = await runNativeCommand('git', [...args], AbortSignal.timeout(timeoutMs), { env: GIT_ENV })

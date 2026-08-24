@@ -78,7 +78,7 @@ export function apply(ctx, config) { globalThis.__observed.started = config }
   // imported through the source-plane path mapping.
   writeFileSync(join(dir, 'startup.mjs'), `
 export const name = 'demo-startup'
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 export function apply(ctx) { return globalThis.__provideDemoArgs(ctx) }
 `)
   writeFileSync(join(dir, 'cordis.yml'), '[]\n')
@@ -212,7 +212,7 @@ describe('provideCmdline', () => {
   it('fails loud when a parser runs without the launcher values', () => {
     const ctx = new Context()
     expect(() => { parseCmdline(ctx, demoCommand()) })
-      .toThrow('the launcher must provide ctx.cmdlineArgs and ctx.appExit')
+      .toThrow('the launcher must provide ctx.cmdlineArgs and ctx.appLifecycle')
   })
 
   it('lets multiple parsers read the same immutable snapshot', () => {

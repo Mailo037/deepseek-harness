@@ -9,18 +9,17 @@ dsh 启动器交给它所引导应用的那条命令行。启动器只解析属�
 启动器在任何配置树条目挂载之前调用 `provideCmdline(ctx, host)`，它提供：
 
 - `ctx.cmdlineArgs`：本次调用的内层参数。`get()` 就是它的全部接口，返回一份快照：`dsh --profile tui --resume abc` 得到 `['--resume', 'abc']`。
-- `ctx.appExit`：一个有边界的进程退出请求，接到启动器的关停控制器上。
-- `ctx.appRestart`（可选）：一个有边界的进程替换请求：启动器弃置配置树、以完全相同的调用再次启动（CLI 为分离重生；Electron 为 `app.relaunch()`）并退出，因此重启后的应用从同一条命令行服务更新后的代码。无法替换自身的启动器不提供该值，`ctx.get('appRestart')` 读取为 `undefined`——消费方随之降级（GUI 隐藏自更新手势），而不是迟来失败。
+- `ctx.appLifecycle`：启动器提供的有边界进程控制。`exit` 始终存在；`restart` 可选。不带参数时，`restart` 会 dispose（资源释放）配置树、以完全相同的调用再次启动（CLI 为分离重生；Electron 为 `app.relaunch()`）并退出。调用方也可以提供一个分离的辅助进程命令：CLI 会先启动它，只有操作系统确认 spawn 后才 dispose，因此交接失败时当前应用仍继续提供服务。辅助进程必须等父进程退出后才能接管其资源。消费方注入这个稳定服务，并在提供进程替换前检查 `restart`。
 
 没有命令行的嵌入宿主提供空列表；这是诚实的答案，而不是缺失的值。
 
 ## 普通提供方与注入配置
 
-任何应用插件都可以注入 `cmdlineArgs`、解析它，再发布一个普通的应用自有服务。`parseCmdline(ctx, program)` 只适配 commander；校验与发布的服务都归 program 自己的 action 持有：
+任何应用插件都可以注入 `appLifecycle` 与 `cmdlineArgs`、解析参数，再发布一个普通的应用自有服务。`parseCmdline(ctx, program)` 只适配 commander；校验与发布的服务都归 program 自己的 action 持有：
 
 ```ts ignore
 export const name = 'web-startup'
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 
 export function apply(ctx: Context): void {
   const program = webCommand()

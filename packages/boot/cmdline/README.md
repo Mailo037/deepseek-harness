@@ -9,18 +9,17 @@ The command line a dsh launcher hands to the app it boots. The launcher parses o
 A launcher calls `provideCmdline(ctx, host)` before any tree entry mounts, which provides:
 
 - `ctx.cmdlineArgs` — the invocation's inner arguments. `get()` is the whole interface, and it returns a snapshot: `dsh --profile tui --resume abc` yields `['--resume', 'abc']`.
-- `ctx.appExit` — a bounded process-exit request, wired to the launcher's shutdown controller.
-- `ctx.appRestart` (optional) — a bounded process-replacement request: the launcher disposes the tree, starts this exact invocation again (a detached respawn for the CLI; `app.relaunch()` for Electron), and exits, so a restarted app serves updated code from the same command line. A launcher that cannot replace itself provides no value, and `ctx.get('appRestart')` reads `undefined` — consumers degrade (the GUI hides the self-update gesture) instead of failing late.
+- `ctx.appLifecycle` — the launcher's bounded process controls. `exit` is always present. `restart` is optional: with no argument, it disposes the tree, starts this exact invocation again (a detached respawn for the CLI; `app.relaunch()` for Electron), and exits. A caller may instead provide a detached helper command: the CLI starts it first and disposes only after the operating system confirms the spawn, so a failed handoff leaves the current app serving. The helper must wait for the parent to exit before taking its resources. Consumers inject this stable service and test `restart` before offering process replacement.
 
 An embedding host with no command line provides an empty list; that is the honest answer, not a missing value.
 
 ## Ordinary providers and injected config
 
-Any app plugin may inject `cmdlineArgs`, parse it, and publish an ordinary app-owned service. `parseCmdline(ctx, program)` is only a commander adapter; the program's own action owns validation and the published service:
+Any app plugin may inject `appLifecycle` and `cmdlineArgs`, parse the arguments, and publish an ordinary app-owned service. `parseCmdline(ctx, program)` is only a commander adapter; the program's own action owns validation and the published service:
 
 ```ts ignore
 export const name = 'web-startup'
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 
 export function apply(ctx: Context): void {
   const program = webCommand()

@@ -100,6 +100,7 @@ export async function fetchGithubCompare(
  * @param root - absolute git working tree.
  * @param run - runner seam.
  * @param timeoutMs - per-command wall-clock bound.
+ * @returns current branch's plain name.
  */
 export function readShortBranch(root: string, run: GitCommandRunner, timeoutMs: number): Promise<string> {
   return run(['-C', root, 'rev-parse', '--abbrev-ref', 'HEAD'], timeoutMs).then(value => value.trim())

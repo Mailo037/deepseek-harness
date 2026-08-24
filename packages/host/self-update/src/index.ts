@@ -2,7 +2,7 @@
  * @deepseek-ai/dsh-host-self-update — the `ctx.selfUpdate` service for a dsh
  * host running from a git checkout: repository identity for the GUI's About
  * surface, upstream update checks, safe agent quiescence, and fast-forward
- * pulls. The restart itself is the launcher's `ctx.appRestart` capability —
+ * pulls. The restart itself is the launcher's `ctx.appLifecycle.restart` capability —
  * this service only prepares the tree for it.
  *
  * Every git fact is read through one no-shell `git` invocation against the
@@ -14,7 +14,9 @@
  * @module @deepseek-ai/dsh-host-self-update
  */
 
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -101,6 +103,24 @@ export interface QuiesceResult {
   drained: boolean
 }
 
+/** Network address the detached updater temporarily occupies while rebuilding. */
+export interface UpdateWebAddress {
+  /** Existing webserver bind host. */
+  host: '127.0.0.1' | '0.0.0.0'
+  /** Existing webserver's resolved listening port. */
+  port: number
+}
+
+/** Detached process handoff accepted structurally by `ctx.appLifecycle.restart`. */
+export interface UpdateHandoff {
+  /** Current Node executable. */
+  command: string
+  /** Runner module plus its encoded validated plan. */
+  args: readonly string[]
+  /** Repository root inherited by the runner. */
+  cwd: string
+}
+
 /** Where the service's default root search starts: this package's own directory. */
 const PACKAGE_DIR = fileURLToPath(new URL('../..', import.meta.url))
 
@@ -109,6 +129,9 @@ const IDENTITY_CACHE_MS = 5_000
 
 /** Default whole-drain bound for agent quiescence. */
 const QUIESCE_TIMEOUT_MS = 15_000
+
+/** Public issue form used when no github.com remote identity has been cached. */
+const DEFAULT_ISSUE_URL = 'https://github.com/deepseek-ai/deepseek-harness/issues/new'
 
 /**
  * Walk up from `start` to the nearest ancestor carrying a `.git` entry.
@@ -293,6 +316,50 @@ export class SelfUpdateService extends Service {
     })
   }
 
+  /**
+   * Build the detached Web update handoff. The helper starts before host
+   * shutdown, waits for this process to release the listening port, serves
+   * bounded status and command logs there, fast-forwards and builds, then starts this exact Web
+   * invocation with the resolved port and `--no-open` forced.
+   * @param address - authoritative address of the active Web server.
+   * @returns the no-shell process request for the launcher.
+   * @throws {GitError} when the checkout was not launched through pnpm.
+   */
+  createWebUpdateHandoff(address: UpdateWebAddress): UpdateHandoff {
+    const place = this.assertAvailable()
+    const pnpmCli = process.env.npm_execpath
+    if (pnpmCli === undefined || pnpmCli === '') {
+      throw new GitError('git-failed', 'self-update requires a pnpm-launched source checkout')
+    }
+    const sourceRunner = new URL('./startup.ts', import.meta.url)
+    const runner = fileURLToPath(import.meta.url).endsWith('.ts')
+      ? fileURLToPath(sourceRunner)
+      : fileURLToPath(new URL('./startup.js', import.meta.url))
+    const restartArgs = [pnpmCli, 'dsh', ...forceWebRestartArgs(process.argv.slice(2), address.port)]
+    const remoteUrl = this.identityCache?.value.remoteUrl
+    const github = remoteUrl === undefined || remoteUrl === null ? null : parseGitHubRepo(remoteUrl)
+    const plan = {
+      version: 1,
+      updateId: randomUUID(),
+      parentPid: process.pid,
+      root: place.root,
+      host: address.host,
+      port: address.port,
+      node: process.execPath,
+      pnpmCli,
+      restartArgs,
+      logPath: join(tmpdir(), `dsh-update-${String(process.pid)}.log`),
+      issueUrl: github === null
+        ? DEFAULT_ISSUE_URL
+        : `https://github.com/${encodeURIComponent(github.owner)}/${encodeURIComponent(github.repo)}/issues/new`,
+    }
+    return {
+      command: process.execPath,
+      args: [...process.execArgv, runner, Buffer.from(JSON.stringify(plan)).toString('base64url')],
+      cwd: place.root,
+    }
+  }
+
   /** The validated working tree, or the typed unavailability. */
   private assertAvailable(): { kind: 'git'; root: string } {
     const place = this.status()
@@ -321,6 +388,27 @@ export class SelfUpdateService extends Service {
     this.gitChain = next.catch(() => undefined)
     return next
   }
+}
+
+/**
+ * Preserve the current CLI invocation while pinning its resolved Web port and
+ * suppressing a second browser handoff.
+ * @param args - current Node argv after the executable.
+ * @param port - active Web port to retain.
+ * @returns argv with one final authoritative port and `--no-open`.
+ */
+export function forceWebRestartArgs(args: readonly string[], port: number): string[] {
+  const kept: string[] = []
+  for (let index = 0; index < args.length; index++) {
+    const value = args[index] as string
+    if (value === '--port') {
+      index++
+      continue
+    }
+    if (value.startsWith('--port=') || value === '--no-open') continue
+    kept.push(value)
+  }
+  return [...kept, '--port', String(port), '--no-open']
 }
 
 export default SelfUpdateService

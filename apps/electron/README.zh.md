@@ -35,7 +35,7 @@ pnpm run dev:electron   # tsc -b && electron .
 
 ## Windows 发行版
 
-`pnpm --filter @deepseek-ai/dsh-electron run package:win` 会构建完整的官方客户端/运行时依赖图，然后在 `apps/electron/release/` 创建 NSIS 安装包。`package:dir` 创建同一 Windows 应用的解包版本，`smoke:package` 会在禁用更新器的情况下启动该应用，等待真实 Electron 窗口加载，并验证其干净退出。
+`pnpm --filter @deepseek-ai/dsh-electron run package:win` 会构建完整的官方客户端/运行时依赖图，然后在 `apps/electron/release/` 创建 NSIS 安装包。`package:dir` 创建同一 Windows 应用的解包版本，`smoke:package` 会在禁用更新器并使用隔离的首次运行主目录的情况下启动该应用，等待真实 Electron 窗口加载，并验证其干净退出。
 
 `electron-builder.yml` 会打包已生成的 Electron 主进程树、随附的 agent preset、运行时依赖，以及由 `dsh-web-app` 通过 package export 解析的已构建 `@deepseek-ai/dsh-web-frontend` dist。Windows 可执行文件和安装包使用已提交的应用 id、产品名称和 `.ico` 图标。
 

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-24-electron-first-run-cjs-updater.md
+2026-08-24-electron-first-run-cjs-updater.md: 55c0ece9689e1f2874731c3144d911cc79ef9eba
+2026-08-24-electron-first-run-cjs-updater.zh.md: b6d81b30a94eaa8eef6b4e55cd53266da63b15a8

@@ -74,7 +74,7 @@ function createWindow(url: string): void {
       sandbox: true,
     },
   })
-  void window.loadURL(url)
+  const loading = window.loadURL(url)
   // The web surface opens external links in the system browser.
   window.webContents.setWindowOpenHandler(({ url: target }) => {
     if (target.startsWith('http://') || target.startsWith('https://')) void shell.openExternal(target)
@@ -91,9 +91,16 @@ function createWindow(url: string): void {
   // Smoke mode: prove the full Electron path (host boot + window + page
   // load) and exit, so the desktop app is verifiable without a display.
   if (process.env.DSH_ELECTRON_SMOKE === '1') {
-    window.webContents.once('did-finish-load', () => {
+    void loading.then(() => {
       console.log(`ELECTRON_WINDOW_READY ${url}`)
       void shutdown(0)
+    }).catch((error: unknown) => {
+      console.error('dsh-electron: smoke window load failed:', error)
+      void shutdown(1)
+    })
+  } else {
+    void loading.catch((error: unknown) => {
+      console.error('dsh-electron: window load failed:', error)
     })
   }
   state.window = window

@@ -99,7 +99,7 @@ async function bench(script: Script): Promise<{
       internals.stdout = { write: (chunk: string) => { out += chunk; return true } }
       internals.stderr = { write: (chunk: string) => { err += chunk; return true } }
       const exited = new Promise<number>((resolve) => {
-        ctx.provide('appExit', (code: number) => { order.push('exit'); resolve(code) })
+        ctx.provide('appLifecycle', { exit: (code: number) => { order.push('exit'); resolve(code) } })
       })
       apply(ctx, { task: 'do the thing' })
       return { code: await exited, out, err, order }
@@ -184,7 +184,7 @@ describe('headless runner', () => {
     internals.stdout = { write: () => true }
     internals.stderr = { write: (chunk: string) => { err += chunk; return true } }
     const exited = new Promise<number>((resolve) => {
-      ctx.provide('appExit', resolve)
+      ctx.provide('appLifecycle', { exit: resolve })
     })
     ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) } as never)
     ctx.provide('sessions', { flush: () => Promise.resolve(true) } as never)
@@ -201,7 +201,7 @@ describe('headless runner', () => {
     internals.stdout = { write: () => true }
     internals.stderr = { write: (chunk: string) => { err += chunk; return true } }
     const exited = new Promise<number>((resolve) => {
-      ctx.provide('appExit', resolve)
+      ctx.provide('appLifecycle', { exit: resolve })
     })
     ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) } as never)
     ctx.provide('sessions', { flush: () => Promise.resolve(true) } as never)
@@ -222,7 +222,7 @@ describe('headless runner', () => {
     let exited = false
     internals.stdout = { write: () => true }
     internals.stderr = { write: () => true }
-    ctx.provide('appExit', () => { exited = true })
+    ctx.provide('appLifecycle', { exit: () => { exited = true } })
     const services = ctx.plugin((child: Context) => {
       child.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) } as never)
       child.provide('sessions', {} as never)
@@ -242,7 +242,7 @@ describe('headless runner', () => {
 
   it('fails loud without the launcher-provided exit request', () => {
     const ctx = new Context()
-    expect(() => { apply(ctx, { task: 't' }) }).toThrow('must provide ctx.appExit')
+    expect(() => { apply(ctx, { task: 't' }) }).toThrow('must provide ctx.appLifecycle')
   })
 
   it('validates config: the task is required', () => {

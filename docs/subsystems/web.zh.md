@@ -157,6 +157,20 @@ Selection semantics (resolved at execution time, never order-dependent):
 
 ```ts cordis-catalog
 /**
+ * Pin the search provider selection at runtime. Unlike the constructor
+ * config, this is not validated against the registry: providers register
+ * after the seam boots, and selection resolution happens per search.
+ * @param id - the provider id to select, or `undefined` for auto-selection.
+ */
+setSearchProvider(id: string | undefined): void
+
+/**
+ * Pin the fetch provider selection at runtime; see {@link setSearchProvider}.
+ * @param id - the provider id to select, or `undefined` for auto-selection.
+ */
+setFetchProvider(id: string | undefined): void
+
+/**
  * Register a search provider. Throws {@link WebError} `WEB_DUPLICATE_PROVIDER`
  * if its id is already registered for search. Returns a disposer; disposed
  * with the calling fiber.

@@ -36,7 +36,7 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
 
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { provideCmdline, type AppRestartHandoff } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
@@ -185,7 +185,7 @@ export interface RunProfileOptions {
 
 /**
  * Re-throw a watcher-setup failure unless a shutdown already owns the tree:
- * a signal aborted this invocation, or an app requested exit (`ctx.appExit`
+ * a signal aborted this invocation, or an app requested exit (`ctx.appLifecycle.exit`
  * from a fast one-shot) and the root's disposal rejected the in-flight setup
  * await. Either way the failure describes a tree that is exiting as asked,
  * not a broken watch.
@@ -209,30 +209,51 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   const composed = composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
-  // Process replacement (ctx.appRestart): dispose the tree first — the web
-  // server's teardown releases the listen port — then start this exact
-  // invocation again as a detached child and exit. The child binds the freed
-  // port; the browser's reconnect loop brings the page back onto the new
-  // process. One request wins; a repeat call during disposal is a no-op.
+  // Process replacement (ctx.appLifecycle.restart): a normal restart disposes before it
+  // respawns the exact invocation. A handoff starts its detached helper first;
+  // only the child's spawn acknowledgement permits shutdown, so a failed
+  // updater launch leaves the current host serving instead of stranding it.
   let restartRequested = false
-  const restart = (): void => {
+  const restart = (handoff?: AppRestartHandoff): void => {
     if (restartRequested) return
     restartRequested = true
-    void shutdown.shutdown(0).then(
-      () => {
-        spawn(process.execPath, process.argv.slice(1), {
-          cwd: process.cwd(),
-          env: process.env,
-          detached: true,
-          stdio: 'inherit',
-        }).on('error', (error) => {
-          console.error(`dsh: restart respawn failed: ${error instanceof Error ? error.message : String(error)}`)
-          process.exit(1)
-        })
-        process.exit(0)
-      },
-      () => { process.exit(1) },
-    )
+    const finish = (): void => {
+      void shutdown.shutdown(0).then(
+        () => {
+          if (handoff === undefined) {
+            spawn(process.execPath, process.argv.slice(1), {
+              cwd: process.cwd(),
+              env: process.env,
+              detached: true,
+              stdio: 'inherit',
+            }).on('error', (error) => {
+              console.error(`dsh: restart respawn failed: ${error instanceof Error ? error.message : String(error)}`)
+              process.exit(1)
+            })
+          }
+          process.exit(0)
+        },
+        () => { process.exit(1) },
+      )
+    }
+    if (handoff === undefined) {
+      finish()
+      return
+    }
+    const helper = spawn(handoff.command, [...handoff.args], {
+      cwd: handoff.cwd,
+      env: process.env,
+      detached: true,
+      stdio: 'ignore',
+    })
+    helper.once('spawn', () => {
+      helper.unref()
+      finish()
+    })
+    helper.once('error', (error) => {
+      restartRequested = false
+      console.error(`dsh: update handoff failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
@@ -286,7 +307,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
-  // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
+  // setup is still in flight — a signal, or a fast one-shot's appLifecycle.exit. Loader
   // presence and fiber state own liveness; the initial check skips a tree
   // that already exited, and the catch below re-checks for an exit that
   // landed mid-setup. Watching is unconditional: a one-shot surface exits

@@ -14,7 +14,7 @@ import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 export const name = 'web-startup'
 
 /** Services required before the flags can be resolved. */
-export const inject = ['cmdlineArgs']
+export const inject = ['appLifecycle', 'cmdlineArgs']
 
 /** Service provided by this ordinary plugin and injected by flag-configured rows. */
 export const WEB_STARTUP_SERVICE = 'webStartup'
