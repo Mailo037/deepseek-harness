@@ -236,6 +236,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
     }
     if (model.imageMaxBytes !== undefined
       && (!Number.isSafeInteger(model.imageMaxBytes) || model.imageMaxBytes <= 0)) {
+      throw new Error(`llm-deepseek: catalog model "${model.id}" imageMaxBytes must be a positive safe integer`)
     }
     if (seen.has(model.id)) throw new Error(`llm-deepseek: duplicate catalog model "${model.id}"`)
     seen.add(model.id)

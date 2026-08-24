@@ -1485,7 +1485,8 @@ describe('decorations', () => {
     // icon on every keystroke landing ahead of the range.
     expect(backdrop.querySelector('[data-decoration="text-ref"]')).toBe(mark)
     expect(icon.isConnected).toBe(true)
-    expect(mark.textContent).toBe('@src/components/')
+    // The pill renders the trigger in its advance face and the path beside it.
+    expect(mark.querySelector('[data-pill-advance]')?.textContent).toBe('@src/components/')
     // A token edited out of match shape still loses its decoration.
     act(() => { fireEvent.change(textarea, { target: { value: 'X see X@src/components/ here' } }) })
     expect(backdrop.querySelector('[data-decoration="text-ref"]')).toBeNull()

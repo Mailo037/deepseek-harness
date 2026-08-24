@@ -405,8 +405,9 @@ describe('catalog routes with per-model configuration', () => {
     const ctx = await harness({ providers: { deepseek: { baseURL: server.url } } })
 
     const listed = await ctx.llm.listModels('deepseek')
+    // The injected DeepSeek vision model serves beside the installed catalog.
     expect(listed.map(model => model.id).sort())
-      .toEqual(getBuiltinModels('deepseek').map(model => model.id).sort())
+      .toEqual([...getBuiltinModels('deepseek').map(model => model.id), 'deepseek-v4-flash-vision-exp'].sort())
   })
 
   it('overrides one catalog model field and defaults the rest from the catalog', async () => {
@@ -693,7 +694,8 @@ describe('modelOverrides', () => {
   }
 
   it('reshapes one catalog model while the rest of the catalog keeps serving', () => {
-    const catalogSize = getBuiltinModels('deepseek').length
+    // The injected DeepSeek vision model joins the installed catalog here.
+    const catalogSize = getBuiltinModels('deepseek').length + 1
     const target = deepseekModel()
     const resolved = resolveProfiles({
       deepseek: {
