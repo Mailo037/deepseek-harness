@@ -63,11 +63,13 @@ describe('dsh-electron host boot', () => {
       })
 
       // The served root document is the real web shell, with the host's
-      // boot-manifest injection (the page cannot boot without it).
+      // boot-manifest injection (the page cannot boot without it). The
+      // renderer may spell the global as `window.__DSH_BOOT__` or the
+      // equivalent `globalThis["__DSH_BOOT__"]` row form.
       const response = await fetch(url)
       expect(response.status).toBe(200)
       const html = await response.text()
-      expect(html).toContain('window.__DSH_BOOT__')
+      expect(html).toMatch(/window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\]/)
 
       // Request a clean shutdown and wait for the process to exit.
       const exited = new Promise<number | null>((resolve) => {

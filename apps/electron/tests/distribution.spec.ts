@@ -31,7 +31,10 @@ describe('Electron distribution configuration', () => {
     const sourceHash = fingerprintFile(paths.rootPackageJson)
 
     expect(paths.output).toMatch(/[\\/]apps[\\/]electron[\\/]release$/)
-    expect(paths.rootPackageJson).toMatch(/[\\/]deepseek-harness[\\/]package\.json$/)
+    // The root manifest is the checkout-level package.json: an ancestor of
+    // this app, never inside it — whatever the checkout directory is named.
+    const appDir = fileURLToPath(new URL('../', import.meta.url))
+    expect(appDir.startsWith(paths.rootPackageJson.slice(0, -'package.json'.length))).toBe(true)
     expect(paths.output).not.toBe(paths.rootPackageJson)
     expect(() => assertFileUnchanged(paths.rootPackageJson, sourceHash)).not.toThrow()
     expect(readFileSync(fileURLToPath(new URL('../scripts/package.mjs', import.meta.url)), 'utf8')).toContain("'--projectDir', paths.appRoot")
