@@ -300,6 +300,76 @@
   overflow-wrap: break-word;
 }
 
+.hoverTitleButton {
+  display: block;
+  align-self: flex-start;
+  width: auto;
+  max-width: calc(100% + 8px);
+  border: none;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: transparent;
+  color: #FFFFFF;
+  cursor: text;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+
+.hoverTitleButton:hover,
+.hoverTitleButton:focus-visible {
+  color: #FFFFFF;
+  background: #3B3D3F;
+  text-decoration: none;
+}
+
+.hoverRenameForm {
+  margin: 0;
+}
+
+.hoverTitleInput {
+  display: block;
+  align-self: flex-start;
+  width: auto;
+  max-width: calc(100% + 8px);
+  field-sizing: content;
+  height: 24px;
+  min-width: 0;
+  box-sizing: border-box;
+  border: none;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: transparent;
+  color: #FFFFFF;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: inherit;
+  line-height: 20px;
+  outline: none;
+}
+
+.hoverTitleInput:focus-visible {
+  background: #3B3D3F;
+}
+
+.hoverRenamePending,
+.hoverRenameError {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.hoverRenamePending {
+  color: #CFD3D6;
+}
+
+.hoverRenameError {
+  color: #FF9A9A;
+}
+
 .hoverPath {
   font-size: 12px;
   line-height: 16px;

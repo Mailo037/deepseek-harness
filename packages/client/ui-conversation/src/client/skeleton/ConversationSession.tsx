@@ -7,6 +7,7 @@ import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
 } from '../contract/slots.ts'
 import type { ViewTab } from '../contract/views.ts'
+import { ContextMeter } from './ContextMeter.tsx'
 import css from './ConversationRoot.module.css'
 
 /** Full props composed from the strict session body contract. */
@@ -72,7 +73,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  * @returns the hidden blank-session header or visible title and tabs.
  */
 export function ConversationSessionHeader({
-  sessionId, useSession, useSessions, useStore, actions,
+  sessionId, useSession, useSessions, useProjection, useStore, actions,
   renderSlot, views, open, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
@@ -103,6 +104,12 @@ export function ConversationSessionHeader({
   const utilitiesRef = useRef<HTMLDivElement | null>(null)
   const dropRequirement = useRef(0)
   const [actionsDropped, setActionsDropped] = useState(false)
+  // Underline slide: one absolutely-positioned bar measured against the active
+  // tab; CSS transitions it between tabs. The bar mounts only after its first
+  // measure, so the initial view appears already positioned instead of
+  // animating in from a corner.
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+  const [tabIndicator, setTabIndicator] = useState<{ left: number; top: number; width: number } | null>(null)
   useLayoutEffect(() => {
     if (phone) return // dropped unconditionally; nothing to measure
     const cluster = clusterRef.current
@@ -127,6 +134,32 @@ export function ConversationSessionHeader({
   }, [actionsDropped, phone])
 
   const dropped = phone || actionsDropped
+
+  // Position the sliding underline at the active tab. Re-measured on selection
+  // change and on any strip reflow (drop toggle, label/width change); the
+  // observer also fires once on mount, so both the first and later positions
+  // track the tab the browser actually laid out.
+  useLayoutEffect(() => {
+    const container = tabsRef.current
+    if (container === null) {
+      setTabIndicator(null)
+      return
+    }
+    const measure = (): void => {
+      const selected = container.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      if (selected === null) return
+      setTabIndicator({
+        left: selected.offsetLeft,
+        top: selected.offsetTop + selected.offsetHeight - 3,
+        width: selected.offsetWidth,
+      })
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(container)
+    return () => { observer.disconnect() }
+  }, [active?.id, dropped, tabs.length])
 
   return (
     <header
@@ -195,11 +228,16 @@ export function ConversationSessionHeader({
               )}
             </div>
             <div className={css.headerUtilities} ref={utilitiesRef}>
+              {/* On phone viewports the composer drops its trailing context
+                  meter, so the header reports the occupancy ring beside the
+                  more-options button (the ring opens its panel downward — the
+                  header sits at the top of the viewport). */}
+              {phone && <ContextMeter useProjection={useProjection} t={t} panelBelow />}
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
           </div>
           {(dropped || tabs.length > 1) && (
-            <div className={css.tabs} role={tabs.length > 1 ? 'tablist' : undefined}>
+            <div className={css.tabs} role={tabs.length > 1 ? 'tablist' : undefined} ref={tabsRef}>
               {tabs.map(viewTab => (
                 <button
                   key={viewTab.id}
@@ -212,6 +250,13 @@ export function ConversationSessionHeader({
                   {viewTab.label}
                 </button>
               ))}
+              {tabIndicator !== null && (
+                <span
+                  className={css.tabIndicator}
+                  style={{ left: tabIndicator.left, top: tabIndicator.top, width: tabIndicator.width }}
+                  aria-hidden="true"
+                />
+              )}
               {/* Dropped actions trail the view tabs, pinned to the strip's
                   right edge (margin-left auto). */}
               {dropped && (

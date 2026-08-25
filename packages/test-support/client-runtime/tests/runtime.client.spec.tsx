@@ -222,6 +222,7 @@ describe('sessions', () => {
       .toMatchObject({ displayTitle: 'renamed', running: true })
     runtime.sessions.setSubagentCatalogOpen('s2' as SessionId, true)
     await runtime.sessions.refreshSubagents('s2' as SessionId)
+    await runtime.sessions.refreshAll()
     // The confirmed-switch write-back lands on the row it names and ignores
     // one the fixture never added, exactly as production's list upsert does.
     runtime.sessions.noteAgentPreset('s1' as SessionId, 'minimal')
@@ -243,6 +244,7 @@ describe('sessions', () => {
       { method: 'openSubagent', args: [address] },
       { method: 'setSubagentCatalogOpen', args: ['s2', true] },
       { method: 'refreshSubagents', args: ['s2'] },
+      { method: 'refreshAll', args: [] },
       { method: 'open', args: ['s1'] },
       { method: 'clear', args: [] },
       { method: 'fork', args: [{ sessionId: 's1', atSeq: 7, increaseTitle: true }] },
@@ -366,9 +368,11 @@ describe('workspaces', () => {
 
     runtime.workspaces.startSession('w1' as WorkspaceId)
     await expect(runtime.workspaces.connectWorkspace('w2' as WorkspaceId)).resolves.toBe('session-of-w2')
+    await runtime.workspaces.refresh()
     expect(runtime.workspaces.calls).toEqual([
       { method: 'startSession', args: ['w1'] },
       { method: 'connectWorkspace', args: ['w2'] },
+      { method: 'refresh', args: [] },
     ])
     const stub = vi.fn(() => Promise.resolve('other' as never))
     runtime.workspaces.stub('connectWorkspace', stub)

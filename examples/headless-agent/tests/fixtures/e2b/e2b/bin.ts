@@ -25,6 +25,7 @@ const owner: Agent = {
   ctx: ownerFiber.ctx,
   send() {},
   followup() {},
+  prepend() {},
   steer() {},
   inject() {},
   cancel() {},

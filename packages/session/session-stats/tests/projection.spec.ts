@@ -51,6 +51,7 @@ function appendEmptyAssistantMessage(session: Session, turn: number, step: numbe
 function totals(overrides: Partial<SessionStatsProjection> = {}): SessionStatsProjection {
   return {
     turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+    filesEdited: 0, linesAdded: 0, linesRemoved: 0,
     ...overrides,
   }
 }
@@ -287,6 +288,47 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(2_000, 'step/start', { turn: 1, step: 1 }),
       at(1_000, 'assistant/message', { turn: 1, step: 1, message }),
       at(2_100, 'step/end', { turn: 1, step: 1 }),
+    ])).toEqual(totals({ turns: 1, steps: 1 }))
+  })
+
+  it('counts distinct edited files and added/removed lines from result-time diffs', () => {
+    const resultWithMeta = (callId: string, meta: unknown): unknown =>
+      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } }, meta })
+    const fileDiff = (path: string, oldText: string | null, newText: string): unknown =>
+      ({ path, oldText, newText })
+    expect(fold([
+      at(1_000, 'step/start', { turn: 1, step: 1 }),
+      at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'a', name: 'edit', arguments: '{}' }),
+      // a.ts: 2 removed, 3 added; a repeated edit to the same path does not recount the file.
+      at(1_500, 'tool/result', resultWithMeta('a', { diffs: [
+        fileDiff('a.ts', 'x\ny\n', 'x\ny\nz\nw\n'),
+        fileDiff('a.ts', 'p', 'p\nq'),
+      ] })),
+      at(2_000, 'tool/call', { turn: 1, step: 1, callId: 'b', name: 'edit', arguments: '{}' }),
+      // b.ts create: oldText null → only additions; new file counts.
+      at(2_500, 'tool/result', resultWithMeta('b', { diffs: [
+        fileDiff('b.ts', null, 'hello\nworld\n'),
+      ] })),
+      // A result with no diffs or a malformed payload contributes nothing.
+      at(3_000, 'tool/call', { turn: 1, step: 1, callId: 'c', name: 'read', arguments: '{}' }),
+      at(3_500, 'tool/result', resultWithMeta('c', { diffs: 'nope' })),
+      at(4_000, 'step/end', { turn: 1, step: 1 }),
+    ])).toEqual(totals({
+      turns: 1, steps: 1, toolMs: 1_400, filesEdited: 2, linesAdded: 8, linesRemoved: 3,
+    }))
+  })
+
+  it('counts only edits whose result pairs a recorded call, and ignores result-time diffs without a call', () => {
+    const resultWithMeta = (callId: string, meta: unknown): unknown =>
+      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } }, meta })
+    // Crash recovery: a result with a diff but no recorded call pairs nothing,
+    // so its edit counts do not accrue (consistent with toolMs).
+    expect(fold([
+      at(1_000, 'step/start', { turn: 1, step: 1 }),
+      at(1_500, 'tool/result', resultWithMeta('ghost', { diffs: [
+        { path: 'g.ts', oldText: null, newText: 'x' },
+      ] })),
+      at(2_000, 'step/end', { turn: 1, step: 1 }),
     ])).toEqual(totals({ turns: 1, steps: 1 }))
   })
 })

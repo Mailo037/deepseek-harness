@@ -15,6 +15,36 @@ import { writeClipboard } from './clipboard.ts'
 import { usePointerGrace } from './pointer-grace.ts'
 import css from './HoverCard.module.css'
 
+const HOVER_CARD_GAP = 8
+const HOVER_CARD_VIEWPORT_MARGIN = 8
+
+/** Place a hover card beside its anchor without letting it cross the viewport edge. */
+function positionCard(
+  anchor: Pick<DOMRect, 'left' | 'right' | 'top'>,
+  card: { offsetWidth: number; offsetHeight: number },
+): { left: number; top: number } {
+  const width = card.offsetWidth
+  const height = card.offsetHeight
+  const right = anchor.right + HOVER_CARD_GAP
+  const leftSide = anchor.left - width - HOVER_CARD_GAP
+  let left = right
+  if (width > 0 && right + width > window.innerWidth - HOVER_CARD_VIEWPORT_MARGIN) {
+    left = leftSide >= HOVER_CARD_VIEWPORT_MARGIN
+      ? leftSide
+      : Math.min(
+        Math.max(right, HOVER_CARD_VIEWPORT_MARGIN),
+        Math.max(HOVER_CARD_VIEWPORT_MARGIN, window.innerWidth - width - HOVER_CARD_VIEWPORT_MARGIN),
+      )
+  }
+  const top = height > 0
+    ? Math.min(
+      Math.max(anchor.top, HOVER_CARD_VIEWPORT_MARGIN),
+      Math.max(HOVER_CARD_VIEWPORT_MARGIN, window.innerHeight - height - HOVER_CARD_VIEWPORT_MARGIN),
+    )
+    : anchor.top
+  return { left, top }
+}
+
 /**
  * Render an anchor with a hover-triggered preview card.
  * @param props.anchor - the hover target (rendered in place inside a wrapper span).
@@ -99,6 +129,8 @@ export function HoverCard({
 
   // Fixed-position from the anchor rect before paint; track the anchor while
   // open (capture-phase scroll catches nested panes), as in Menu portal mode.
+  // The first pass has no card dimensions, then the post-mount pass picks the
+  // left side when the right side would cross the viewport edge.
   useLayoutEffect(() => {
     if (!open) { setPos(null); return }
     const place = () => {
@@ -106,9 +138,7 @@ export function HoverCard({
       /* v8 ignore next -- the ref is attached before the layout effect runs and the listeners die with it. */
       if (wrapper === null) return
       const r = wrapper.getBoundingClientRect()
-      const h = cardRef.current?.offsetHeight ?? 0
-      const top = r.top + h > window.innerHeight - 8 ? window.innerHeight - h - 8 : r.top
-      setPos({ left: r.right + 8, top })
+      setPos(positionCard(r, cardRef.current ?? { offsetWidth: 0, offsetHeight: 0 }))
     }
     place()
     window.addEventListener('scroll', place, true)
@@ -119,16 +149,17 @@ export function HoverCard({
     }
   }, [open])
 
-  // The first placement ran before the card mounted (height read 0): once the
-  // card's real height is measurable, correct the bottom-edge clamp. The
-  // correction converges — a clamped top satisfies the guard, so it runs once.
+  // The first placement ran before the card mounted (zero dimensions): once
+  // its real bounds are measurable, correct horizontal and vertical clamping.
+  // The correction converges because the next position is then unchanged.
   useLayoutEffect(() => {
     if (!open || pos === null) return
-    /* v8 ignore next -- the card is mounted whenever pos is set, so the ref is attached here. */
-    const h = cardRef.current?.offsetHeight ?? 0
-    if (pos.top + h > window.innerHeight - 8) {
-      setPos({ left: pos.left, top: window.innerHeight - h - 8 })
-    }
+    const wrapper = rootRef.current
+    const card = cardRef.current
+    /* v8 ignore next -- the card and anchor are mounted whenever pos is set. */
+    if (wrapper === null || card === null) return
+    const next = positionCard(wrapper.getBoundingClientRect(), card)
+    if (next.left !== pos.left || next.top !== pos.top) setPos(next)
   }, [open, pos])
 
   const copy = async (text: string): Promise<void> => {

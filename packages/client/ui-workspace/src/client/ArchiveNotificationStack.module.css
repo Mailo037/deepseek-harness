@@ -1,0 +1,132 @@
+/* Motion’s iOS-style card deck: the newest archive result remains in front,
+   and clicking the stacked deck fans earlier cards upward for direct access. */
+.stack {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 8px;
+  width: calc(100% - 32px);
+  height: 48px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.stack[data-expanded] {
+  height: 160px;
+}
+
+.card {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  column-gap: 8px;
+  box-sizing: border-box;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 94%, transparent);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  pointer-events: auto;
+}
+
+.stack[data-stacked]:not([data-expanded]) .card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 12px;
+  pointer-events: none;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent),
+    transparent
+  );
+}
+
+.failure {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, var(--dsw-alias-border-l2));
+}
+
+.icon {
+  display: inline-flex;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.failure .icon {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.text {
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.action,
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.action {
+  min-height: 24px;
+  padding: 2px 2px;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.dismiss {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.action:hover,
+.action:focus-visible,
+.dismiss:hover,
+.dismiss:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+.dismiss:hover,
+.dismiss:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.action:focus-visible,
+.dismiss:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.action:disabled,
+.dismiss:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stack,
+  .card {
+    transition: none;
+  }
+}

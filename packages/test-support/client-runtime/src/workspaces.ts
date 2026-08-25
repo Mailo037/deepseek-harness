@@ -48,6 +48,16 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
+   * Re-pull the Workspace baseline (recorded). The default is inert —
+   * fixture callers shape the list through {@link TestWorkspaces.update}.
+   * Stub for pull-coupled flows.
+   */
+  async refresh(): Promise<void> {
+    this.calls.push({ method: 'refresh', args: [] })
+    await (this.stubs.get('refresh')?.() as Promise<void> | undefined)
+  }
+
+  /**
    * Connect a workspace to its reusable/new blank session (recorded). The
    * default resolves the workspace id back as the session id; stub for
    * cross-session flows.

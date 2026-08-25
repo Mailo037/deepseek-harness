@@ -282,30 +282,46 @@
   }
 }
 
-/* History-replay placeholder: message-shaped bones stand in for the flow
-   while the session window replays; the loading text stays for screen
-   readers. Reduced motion holds the bones static. */
+/* History-replay placeholder: the same left assistant / right user rhythm as
+   the transcript, with only unavailable text shown as bones. The loading text
+   remains the sole screen-reader announcement. */
 .historySkeleton {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   padding: 8px 0;
 }
 
-.skeletonBubble {
-  height: 52px;
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-skeleton);
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
+.historyAssistant {
+  align-self: flex-start;
+  width: min(76%, 480px);
 }
 
-@keyframes skeleton-pulse {
+.historyUserBubble {
+  min-width: min(42vw, 168px);
+}
+
+.historyLoadingLines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.historyLoadingLine {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: history-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes history-skeleton-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeletonBubble {
+  .historyLoadingLine {
     animation: none;
   }
 }

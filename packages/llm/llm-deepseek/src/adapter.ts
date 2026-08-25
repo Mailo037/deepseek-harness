@@ -79,6 +79,15 @@ export interface DeepSeekConnectionOptions {
    * only this name — a literal key is not a configuration value.
    */
   apiKeyEnv: CredentialRef
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary (and any earlier backup). The plugin's
+   * resolver filters this list by its rotation cooldown, so a request already
+   * skips an exhausted key instead of paying the failed attempt again.
+   */
+  backupApiKeys: readonly CredentialRef[]
+  /** How long a quota-failed key stays retired before it is tried again. */
+  apiKeyCooldownMs: number
   /** Request defaults applied to every call (thinking mode, effort). */
   defaults: RequestDefaults
   /** Default per-request output cap; explicit request values win. */
@@ -114,12 +123,14 @@ export interface DeepSeekAdapterOptions {
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**
-   * Resolve the bearer token for the connection facts of one request. The
-   * snapshot is passed in — never re-read — so the key can only ever come
-   * from the same resolution as the endpoint it is sent to. Throws `LlmError`
-   * `MISSING_CREDENTIAL` when no key is available anywhere.
+   * Resolve the bearer token — and the reference it came from — for the
+   * connection facts of one request. The snapshot is passed in — never
+   * re-read — so the key can only ever come from the same resolution as the
+   * endpoint it is sent to. Throws `LlmError` `MISSING_CREDENTIAL` when no
+   * key is available anywhere. The reference travels with the value so a
+   * quota-classified failure can retire exactly the key that hit the limit.
    */
-  resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>
+  resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<{ ref: CredentialRef; value: string }>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */
@@ -301,6 +312,24 @@ function normalizedImageDiagnostic(
     + 'The provider rejected bytes already normalized by the harness; PNG, JPEG, WebP, and GIF remain supported input formats.'
 }
 
+/** Efforts tried, in order, when the endpoint reports reasoning as mandatory. */
+const MANDATORY_REASONING_ESCALATION: readonly ReasoningEffortId[] = [
+  LOW_REASONING_EFFORT,
+  HIGH_REASONING_EFFORT,
+  MAX_REASONING_EFFORT,
+] as const
+
+/**
+ * Recognize a provider error whose endpoint refuses any request without reasoning.
+ * @param detail - joined provider error code/type/message text.
+ * @returns whether the detail reports reasoning as mandatory or undisablable.
+ */
+function providerMandatesReasoning(detail: string): boolean {
+  return /reasoning[^\n]{0,80}(?:mandatory|required)/iu.test(detail)
+    || /(?:mandatory|required)[^\n]{0,40}reasoning/iu.test(detail)
+    || /reasoning[^\n]{0,80}cannot be disabled/iu.test(detail)
+}
+
 function modelInfo(provider: string, model: DeepSeekCatalogModel): LlmModelInfo {
   return {
     provider,
@@ -459,7 +488,8 @@ export class DeepSeekAdapter extends LlmAdapter {
         )
       }
     }
-    const apiKey = await this.config.resolveApiKey(connection)
+    const resolvedKey = await this.config.resolveApiKey(connection)
+    const apiKey = resolvedKey.value
     const userId = this.config.resolveUserId()
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -470,6 +500,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       options,
       watchdog.signal,
       connection,
+      resolvedKey.ref,
       apiKey,
       userId,
       attachments,
@@ -514,6 +545,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     options: GenerateOptions,
     signal: AbortSignal,
     connection: DeepSeekConnectionOptions,
+    apiKeyRef: CredentialRef,
     apiKey: string,
     userId: AnonymousUserId,
     attachments: AttachmentStore | undefined,
@@ -545,6 +577,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       byteLength: ref => Math.min(ref.bytes, policy.maxBytes),
     })
     const requestOptions = requestMessages === options.messages ? options : { ...options, messages: [...requestMessages] }
+    let effortOverride: ReasoningEffortId | undefined
     const requestImages = attachments === undefined || model === undefined
       ? new Map<AttachmentId, RequestImageAttachment>()
       : await prepareRequestImages(requestOptions, attachments, model, signal)
@@ -553,10 +586,13 @@ export class DeepSeekAdapter extends LlmAdapter {
     while (true) {
       const usedFiles: UsedRequestFile[] = []
       let body: WireRequest
+      const attemptOptions = effortOverride === undefined
+        ? requestOptions
+        : { ...requestOptions, reasoningEffort: effortOverride }
       if (attachments === undefined) {
-        body = serializeRequest(requestOptions, connection.defaults)
+        body = serializeRequest(attemptOptions, connection.defaults)
       } else if (representation === 'base64') {
-        body = await serializeRequestWithImages(requestOptions, {
+        body = await serializeRequestWithImages(attemptOptions, {
           representation: { kind: 'base64' },
           requestImages,
           maxRequestImageBytes: connection.maxInlineRequestImageBytes,
@@ -566,7 +602,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         }, connection.defaults)
       } else {
         try {
-          body = await serializeRequestWithImages(requestOptions, {
+          body = await serializeRequestWithImages(attemptOptions, {
             representation: {
               kind: 'file',
               resolveFileId: async (version, _block, location) => {
@@ -617,7 +653,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         throw new LlmError(
           `DeepSeek API request to ${connection.baseURL} failed`,
           'TRANSPORT',
-          { cause: error },
+          { cause: error, apiKeyRef },
         )
       }
 
@@ -648,6 +684,23 @@ export class DeepSeekAdapter extends LlmAdapter {
         if (response.status === 400 && usedFiles.length > 0 && providerRejectedNormalizedImage(detail)) {
           message = normalizedImageDiagnostic(usedFiles, message, detail)
         }
+        // A mandatory-reasoning endpoint rejects the reasoning-off shape.
+        // Escalate one ladder step per rejection (low → high → max, at most
+        // three retries); a deployment locked to `thinking: disabled` fails
+        // loudly in serialization instead of silently overriding the lock,
+        // and session-title calls keep their reserved non-thinking budget.
+        if (providerMandatesReasoning(detail) && options.purpose !== 'session-title') {
+          const wireEffort = body.reasoning_effort
+          const nextIndex = wireEffort === undefined
+            ? 0
+            : wireEffort === 'low'
+              ? 1
+              : wireEffort === 'high' ? 2 : MANDATORY_REASONING_ESCALATION.length
+          if (nextIndex < MANDATORY_REASONING_ESCALATION.length) {
+            effortOverride = MANDATORY_REASONING_ESCALATION[nextIndex]
+            continue
+          }
+        }
         const delay = providerRetryAfterMs(response.headers.get('retry-after'))
         const id = requestId(response.headers)
         throw new LlmError(message, httpErrorCode(response.status, providerError), {
@@ -655,10 +708,11 @@ export class DeepSeekAdapter extends LlmAdapter {
           status: response.status,
           ...delay === undefined ? {} : { providerRetryAfterMs: delay },
           ...id === undefined ? {} : { requestId: id },
+          apiKeyRef,
         })
       }
       if (!response.body) {
-        throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
+        throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE', { apiKeyRef })
       }
 
       yield* translate(parseSse(response.body, onActivity))

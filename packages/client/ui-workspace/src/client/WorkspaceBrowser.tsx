@@ -2,18 +2,18 @@
  * The workspace/session browsing region filling the sidebar shell's
  * `sidebar.workspaces` hole: section header (title + view options + add
  * workspace), search, the grouped tree or flat list, and the workspace
- * dialogs. Wide state renders the full browser; rail state renders the two
- * region icons (search / add workspace) as 36px controls on the shell's shared
- * rail entry path, each requesting expansion through the owner share. Adding
- * is the header button's one action, so it raises the directory flow with no
+ * dialogs. Wide state renders the full browser; rail state renders add-workspace
+ * and search controls plus the durable pinned-session chat icons on the shell's
+ * shared rail entry path. The two controls request expansion through the owner
+ * share. Adding is the header button's one action, so it raises the directory flow with no
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, IconTrashOutline16, Menu, Modal, Select, Tooltip,
+  Button, IconChevronDownOutline14, IconCloseFill14, IconPersonalizationOutline16,
+  IconChatOutline16, IconFolderOpen16, IconProjectAddOutline16, IconSearchOutline16, IconTrashOutline16, Menu, Modal, Select, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionId, SessionListState, SessionSearchResultItem, SessionSummary, WorkspaceId, WorkspaceView,
@@ -21,11 +21,18 @@ import type {
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from './tree.ts'
 import { deriveArchived, deriveFlat, deriveGroups, derivePinned, deriveSearchResults, UNGROUPED_KEY } from './tree.ts'
-import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
+import {
+  ProjectRowItem, SearchResultItem, SessionHoverCard, SessionNodeItem,
+  selectSessionMenuEntry, sessionMenuEntries, viewportPointRect,
+} from './rows/Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from './stores.ts'
 import type { TouchDragRow } from './touch-drag.ts'
 import { useTouchDragList } from './touch-drag.ts'
+import { PULL_TRIGGER_PX, usePullToRefresh } from './pull-to-refresh.ts'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
+import {
+  ArchiveNotificationStack, type ArchiveNotification, type ArchiveNotificationDraft,
+} from './ArchiveNotificationStack.tsx'
 import css from './WorkspaceBrowser.module.css'
 
 /**
@@ -39,6 +46,125 @@ const SEARCH_DEBOUNCE_MS = 250
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
+/** At most three recent archive outcomes remain in the compact sidebar deck. */
+const ARCHIVE_NOTIFICATION_LIMIT = 3
+
+/** Pinned-session navigation that remains available while the sidebar is a rail. */
+function PinnedSessionRailItem({
+  session, currentSessionId, now, open, renameSession, onRenameRequest, forkSession,
+  onMoveSessionRequest, onSessionArchive, onSetSessionPinned, t,
+}: {
+  session: SessionNode
+  currentSessionId: SessionId | undefined
+  now: number
+  open: (sessionId: SessionId) => void
+  renameSession: (sessionId: SessionId, title: string) => Promise<void>
+  onRenameRequest: (sessionId: SessionId, currentTitle: string) => void
+  forkSession: (sessionId: SessionId) => void
+  onMoveSessionRequest: (sessionId: SessionId) => void
+  onSessionArchive: (sessionId: SessionId) => void
+  onSetSessionPinned: (sessionId: SessionId, pinned: boolean) => void
+  t: WorkspaceBrowserProps['t']
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<DOMRect | null>(null)
+  const closeMenu = () => {
+    setMenuOpen(false)
+    setContextMenuAnchor(null)
+  }
+  return (
+    <SessionHoverCard
+      node={session}
+      now={now}
+      t={t}
+      disabled={menuOpen}
+      onRename={renameSession}
+      anchor={(
+        <Menu
+          open={menuOpen}
+          onClose={closeMenu}
+          items={sessionMenuEntries({ pinned: true, onMove: onMoveSessionRequest, onSetPinned: onSetSessionPinned, t })}
+          onSelect={(id) => {
+            closeMenu()
+            selectSessionMenuEntry(id, session, true, {
+              onRename: onRenameRequest,
+              onFork: forkSession,
+              onMove: onMoveSessionRequest,
+              onArchive: onSessionArchive,
+              onSetPinned: onSetSessionPinned,
+            })
+          }}
+          portal
+          closeOnPointerLeave
+          {...(contextMenuAnchor === null ? {} : { getAnchorRect: () => contextMenuAnchor })}
+          anchor={(
+            <button
+              type="button"
+              className={clsx(css.railPinnedSession, currentSessionId === session.id && css.railPinnedSessionCurrent)}
+              aria-label={t('rail.pinnedSession.aria', { name: session.title })}
+              aria-current={currentSessionId === session.id ? 'page' : undefined}
+              onClick={() => { open(session.id) }}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                const buttonRect = event.currentTarget.getBoundingClientRect()
+                const keyboardAnchor = event.clientX === 0 && event.clientY === 0
+                setContextMenuAnchor(viewportPointRect(
+                  keyboardAnchor ? buttonRect.left + 8 : event.clientX,
+                  keyboardAnchor ? buttonRect.bottom : event.clientY,
+                ))
+                setMenuOpen(true)
+              }}
+            >
+              <IconChatOutline16 size={18} />
+            </button>
+          )}
+        />
+      )}
+    />
+  )
+}
+
+/** Pinned-session navigation that remains available while the sidebar is a rail. */
+function PinnedSessionRail({
+  sessions, currentSessionId, open, renameSession, onRenameRequest, forkSession,
+  onMoveSessionRequest, onSessionArchive, onSetSessionPinned, t,
+}: {
+  sessions: readonly SessionNode[]
+  currentSessionId: SessionId | undefined
+  open: (sessionId: SessionId) => void
+  renameSession: (sessionId: SessionId, title: string) => Promise<void>
+  onRenameRequest: (sessionId: SessionId, currentTitle: string) => void
+  forkSession: (sessionId: SessionId) => void
+  onMoveSessionRequest: (sessionId: SessionId) => void
+  onSessionArchive: (sessionId: SessionId) => void
+  onSetSessionPinned: (sessionId: SessionId, pinned: boolean) => void
+  t: WorkspaceBrowserProps['t']
+}) {
+  if (sessions.length === 0) return null
+  const now = Date.now()
+  return (
+    <nav className={css.railPinnedSessions} aria-label={t('section.pinned')}>
+      {sessions.map(session => (
+        <PinnedSessionRailItem
+          key={session.id}
+          session={session}
+          currentSessionId={currentSessionId}
+          now={now}
+          open={open}
+          renameSession={renameSession}
+          onRenameRequest={onRenameRequest}
+          forkSession={forkSession}
+          onMoveSessionRequest={onMoveSessionRequest}
+          onSessionArchive={onSessionArchive}
+          onSetSessionPinned={onSetSessionPinned}
+          t={t}
+        />
+      ))}
+    </nav>
+  )
+}
+
 /** Keep controlled input and RPC payload inside the session.search wire contract. */
 function sanitizeSearchQuery(value: string): string {
   const withoutNul = value.replaceAll('\0', '')
@@ -151,15 +277,12 @@ function nextSessionOrderAccount(params: {
   return { order, updatedAt, changed: orderChanged || timestampsChanged }
 }
 
-/** Grouping and ordering menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, isolateActiveWorkspace, view, onGroupPick, onOrderPick, onToggleIsolate, onViewPick, t }: {
+function ViewOptionsMenu({ groupBy, orderBy, view, onGroupPick, onOrderPick, onViewPick, t }: {
   groupBy: 'workspace' | 'flat'
   orderBy: SessionOrderBy
-  isolateActiveWorkspace?: boolean | undefined
   view: 'all' | 'attention' | 'archived'
   onGroupPick: (mode: 'workspace' | 'flat') => void
   onOrderPick: (mode: SessionOrderBy) => void
-  onToggleIsolate?: (() => void) | undefined
   onViewPick: (view: 'all' | 'attention' | 'archived') => void
   t: WorkspaceBrowserProps['t']
 }) {
@@ -176,20 +299,15 @@ function ViewOptionsMenu({ groupBy, orderBy, isolateActiveWorkspace, view, onGro
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual') },
         { id: 'updated', label: t('orderBy.updated') },
-        ...onToggleIsolate !== undefined ? [
-          { type: 'separator' as const, id: 'isolate-separator' },
-          { id: 'isolate', label: t('filter.activeWorkspaceOnly') },
-        ] : [],
         { type: 'separator' as const, id: 'session-view-separator' },
         { id: 'all', label: t('filter.all') },
         { id: 'attention', label: t('filter.attention') },
         { id: 'archived', label: t('filter.archived') },
       ]}
-      selectedIds={[groupBy, orderBy, ...(isolateActiveWorkspace ? ['isolate'] : []), ...(view === 'all' ? [] : [view])]}
+      selectedIds={[groupBy, orderBy, ...(view === 'all' ? [] : [view])]}
       onSelect={(id) => {
         if (id === 'workspace' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
-        else if (id === 'isolate') onToggleIsolate?.()
         else if (id === 'all' || id === 'attention' || id === 'archived') onViewPick(id)
         setOpen(false)
       }}
@@ -225,10 +343,10 @@ function needsAttention(node: SessionNode): boolean {
 
 /** Global attention projection: a filtered session-list view, never a DOM scan. */
 function AttentionList({
-  useSessions, open, onSessionRename, forkSession, onMoveSessionRequest, onSessionArchive, archivedSessionIds, t,
+  useSessions, open, renameSession, onSessionRename, forkSession, onMoveSessionRequest, onSessionArchive, archivedSessionIds, t,
 }: Pick<
   SessionTreeProps,
-  'useSessions' | 'open' | 'onSessionRename' | 'forkSession' | 'onMoveSessionRequest' | 'onSessionArchive' | 't'
+  'useSessions' | 'open' | 'renameSession' | 'onSessionRename' | 'forkSession' | 'onMoveSessionRequest' | 'onSessionArchive' | 't'
 > & { archivedSessionIds: readonly SessionId[] }) {
   const list = useSessions(state => state)
   const rows = useMemo(
@@ -238,12 +356,12 @@ function AttentionList({
   const now = Date.now()
   return (
     <div className={clsx(css.treeBody, css.wide)}>
-      <div className={css.list} role="tree" aria-label={t('section.attention')}>
+      <div className={css.list} role="tree" aria-label={t('section.attention')} data-pull-scroll-root="">
         {rows.length === 0 && <div className={css.empty}>{t('empty.none')}</div>}
         {rows.map(node => (
           <SessionNodeItem key={node.id} node={node} currentId={list.current} now={now}
             onOpen={open} onRename={onSessionRename} onFork={forkSession}
-            onMove={onMoveSessionRequest} onArchive={onSessionArchive} flat t={t}
+            onMove={onMoveSessionRequest} onArchive={onSessionArchive} onInlineRename={renameSession} flat t={t}
           />
         ))}
       </div>
@@ -253,10 +371,11 @@ function AttentionList({
 }
 
 /** Archive projection with a restore and delete action for every retained session summary. */
-function ArchivedList({ list, archivedSessionIds, open, onRestore, onDelete, onDeleteAll, t }: {
+function ArchivedList({ list, archivedSessionIds, open, renameSession, onRestore, onDelete, onDeleteAll, t }: {
   list: SessionListState
   archivedSessionIds: readonly SessionId[]
   open: SessionTreeProps['open']
+  renameSession: WorkspaceBrowserProps['renameSession']
   onRestore: (id: SessionId) => void
   onDelete: (id: SessionId) => void
   onDeleteAll: () => void
@@ -266,7 +385,7 @@ function ArchivedList({ list, archivedSessionIds, open, onRestore, onDelete, onD
   const now = Date.now()
   return (
     <div className={clsx(css.treeBody, css.wide)}>
-      <div className={css.list} role="tree" aria-label={t('section.archived')}>
+      <div className={css.list} role="tree" aria-label={t('section.archived')} data-pull-scroll-root="">
         {rows.length === 0 && <div className={css.empty}>{t('empty.none')}</div>}
         {rows.length > 0 && (
           <div className={css.archivedHeader}>
@@ -285,7 +404,7 @@ function ArchivedList({ list, archivedSessionIds, open, onRestore, onDelete, onD
         {rows.map(node => (
           <SessionNodeItem key={node.id} node={node} currentId={list.current} now={now}
             onOpen={open} onRename={() => {}} onFork={() => {}} onArchive={() => {}}
-            archived onRestore={onRestore} onDelete={onDelete} flat t={t}
+            archived onRestore={onRestore} onDelete={onDelete} onInlineRename={renameSession} flat t={t}
           />
         ))}
       </div>
@@ -317,7 +436,7 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
-  'useSessions' | 'startSession' | 'open' | 'forkSession'
+  'useSessions' | 'startSession' | 'open' | 'renameSession' | 'forkSession'
   | 'insertWorkspaceBefore' | 'insertSessionBefore' | 't'
 > & {
   /** Host account home for POSIX hover-path abbreviation. */
@@ -357,28 +476,84 @@ type SessionTreeProps = Pick<
   orderBy: SessionOrderBy
 }
 
-/** Pending-baseline placeholder: pulsing session-row bones until the lists land. */
+/** Pending-baseline preview: the eventual Workspace/Session hierarchy without unavailable labels. */
 function ListSkeleton() {
-  const titleWidths = [58, 74, 46, 66, 52, 62]
-  const metaWidths = [34, 28, 40, 30, 38, 26]
+  const rows = [
+    { kind: 'workspace', width: 58 },
+    { kind: 'session', width: 76 },
+    { kind: 'session', width: 52 },
+    { kind: 'workspace', width: 64 },
+    { kind: 'session', width: 68 },
+  ] as const
   return (
     <div className={css.listSkeleton} aria-hidden="true" data-list-skeleton="">
-      {titleWidths.map((width, index) => (
-        <div key={index} className={css.listSkeletonRow}>
-          <span className={css.listSkeletonDot} />
-          <span className={css.listSkeletonLines}>
-            <span className={css.listSkeletonLine} style={{ width: `${width}%` }} />
-            <span className={css.listSkeletonMeta} style={{ width: `${metaWidths[index]}%` }} />
+      {rows.map((row, index) => (
+        <div
+          key={index}
+          className={row.kind === 'workspace' ? css.listSkeletonWorkspace : css.listSkeletonSession}
+          data-list-skeleton-row={row.kind}
+        >
+          <span className={css.listSkeletonIcon}>
+            {row.kind === 'workspace' ? <IconFolderOpen16 /> : <IconChatOutline16 />}
           </span>
+          <span className={css.listSkeletonLabel} style={{ width: `${row.width}%` }} />
         </div>
       ))}
     </div>
   )
 }
 
+/** Duration of the workspace folder disclosure's open and close transition. */
+const WORKSPACE_DISCLOSURE_MS = 220
+
+/**
+ * Retains a group's last visible rows through its closing motion. The folded
+ * run is inert and hidden from assistive technology before its height starts
+ * shrinking, so closing a Workspace cannot leave a clipped row focusable.
+ * @param props.expanded - whether the Workspace group is logically open.
+ * @param props.children - the current group's visible rows and overflow control.
+ * @returns an animated group body, or nothing once a fold has settled.
+ */
+function WorkspaceGroupDisclosure({ expanded, children }: { expanded: boolean; children: ReactNode }) {
+  const [closing, setClosing] = useState(false)
+  const priorExpanded = useRef(expanded)
+  const lastOpenChildren = useRef(children)
+
+  if (expanded) {
+    lastOpenChildren.current = children
+  }
+
+  useLayoutEffect(() => {
+    if (priorExpanded.current === expanded) return
+    priorExpanded.current = expanded
+    if (expanded) {
+      setClosing(false)
+      return
+    }
+    setClosing(true)
+    const timer = window.setTimeout(() => { setClosing(false) }, WORKSPACE_DISCLOSURE_MS)
+    return () => { window.clearTimeout(timer) }
+  }, [expanded])
+
+  const visible = expanded || closing
+  if (!visible) return null
+  const open = expanded && !closing
+
+  return (
+    <div
+      className={clsx(css.groupDisclosure, open && css.groupDisclosureOpen)}
+      data-workspace-disclosure=""
+      aria-hidden={open ? undefined : 'true'}
+      ref={(element) => { if (element !== null) element.inert = !open }}
+    >
+      <div className={css.groupDisclosureBody}>{open ? children : lastOpenChildren.current}</div>
+    </div>
+  )
+}
+
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
-  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, pinnedSessionIds,
+  useSessions, startSession, open, renameSession, forkSession, workspaces, archivedSessionIds, pinnedSessionIds,
   onRenameRequest, onDeleteRequest, onSettingsRequest, onSessionRename, onMoveSessionRequest,
   onSessionArchive, onSetSessionPinned,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
@@ -527,6 +702,7 @@ function SessionTree({
         className={clsx(css.list, workspaceDropAtListStart && css.listTopDropActive)}
         role="tree"
         aria-label={t('section.sessions')}
+        data-pull-scroll-root=""
         onPointerDown={touchDrag.onPointerDown}
         onClickCapture={touchDrag.onClickCapture}
       >
@@ -547,6 +723,7 @@ function SessionTree({
                 onFork={forkSession}
                 onMove={onMoveSessionRequest}
                 onArchive={onSessionArchive}
+                onInlineRename={renameSession}
                 pinned
                 onSetPinned={onSetSessionPinned}
                 t={t}
@@ -663,10 +840,12 @@ function SessionTree({
                     },
                   }}
                 />}
-              {(expandedSessionGroups.includes(group.key)
-                ? group.sessions
-                : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT)
-              ).map((node) => {
+              <WorkspaceGroupDisclosure expanded={group.expanded}>
+                {group.sessionCount === 0 && <div className={css.groupEmpty}>{t('empty.workspace')}</div>}
+                {(expandedSessionGroups.includes(group.key)
+                  ? group.sessions
+                  : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT)
+                ).map((node) => {
               // Session drag never leaves its group. Ungrouped writes only the
               // browser-local account; real Workspaces may also write Host order.
                 const sameGroupDrag = drag !== null && drag.accountKey === group.key
@@ -710,25 +889,27 @@ function SessionTree({
                     onFork={forkSession}
                     onMove={onMoveSessionRequest}
                     onArchive={onSessionArchive}
+                    onInlineRename={renameSession}
                     pinned={false}
                     onSetPinned={onSetSessionPinned}
                     drag={dragProps}
                     t={t}
                   />
                 )
-              })}
-              {group.sessions.length > COLLAPSED_SESSION_LIMIT && (
-                <button
-                  type="button"
-                  className={css.sessionOverflowButton}
-                  aria-expanded={expandedSessionGroups.includes(group.key)}
-                  onClick={() => { setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
-                >
-                  {expandedSessionGroups.includes(group.key)
-                    ? t('sessions.collapse')
-                    : t('sessions.expand', { n: group.sessions.length - COLLAPSED_SESSION_LIMIT })}
-                </button>
-              )}
+                })}
+                {group.sessions.length > COLLAPSED_SESSION_LIMIT && (
+                  <button
+                    type="button"
+                    className={css.sessionOverflowButton}
+                    aria-expanded={expandedSessionGroups.includes(group.key)}
+                    onClick={() => { setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
+                  >
+                    {expandedSessionGroups.includes(group.key)
+                      ? t('sessions.collapse')
+                      : t('sessions.expand', { n: group.sessions.length - COLLAPSED_SESSION_LIMIT })}
+                  </button>
+                )}
+              </WorkspaceGroupDisclosure>
             </div>
           )
         })}
@@ -740,13 +921,14 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onMoveSessionRequest, onSessionArchive, archivedSessionIds,
+  useSessions, open, renameSession, forkSession, onSessionRename, onMoveSessionRequest, onSessionArchive, archivedSessionIds,
   pinnedSessionIds, onSetSessionPinned, orderBy, sessionOrderByAccount,
   sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
   | 'open'
+  | 'renameSession'
   | 'forkSession'
   | 'onSessionRename'
   | 'onMoveSessionRequest'
@@ -770,7 +952,18 @@ function FlatList({
     () => derivePinned(list, pinnedSessionIds, archivedSessionIds),
     [list, pinnedSessionIds, archivedSessionIds],
   )
-  const sessionIds = useMemo(() => baseRows.map(row => row.id), [baseRows])
+  const currentBlankId = useMemo(() => {
+    const cur = list.current
+    return cur !== undefined && list.byId[cur]?.blank === true && !archivedSessionIds.includes(cur)
+      ? cur
+      : undefined
+  }, [list.current, list.byId, archivedSessionIds])
+  const sessionIds = useMemo(() => {
+    const base = baseRows.map(row => row.id)
+    return currentBlankId !== undefined && !base.includes(currentBlankId)
+      ? [currentBlankId, ...base]
+      : base
+  }, [baseRows, currentBlankId])
   const previousOrderBy = useRef(orderBy)
   useEffect(() => {
     if (list.phase !== 'ready') return
@@ -822,7 +1015,7 @@ function FlatList({
   const now = Date.now()
   return (
     <div className={clsx(css.treeBody, css.wide)}>
-      <div className={clsx(css.list, css.flatList)} role="tree" aria-label={t('section.sessions')}
+      <div className={clsx(css.list, css.flatList)} role="tree" aria-label={t('section.sessions')} data-pull-scroll-root=""
         onPointerDown={touchDrag.onPointerDown}
         onClickCapture={touchDrag.onClickCapture}
       >
@@ -843,6 +1036,7 @@ function FlatList({
                 onFork={forkSession}
                 onMove={onMoveSessionRequest}
                 onArchive={onSessionArchive}
+                onInlineRename={renameSession}
                 pinned
                 onSetPinned={onSetSessionPinned}
                 flat
@@ -880,6 +1074,7 @@ function FlatList({
               onFork={forkSession}
               onMove={onMoveSessionRequest}
               onArchive={onSessionArchive}
+              onInlineRename={renameSession}
               pinned={false}
               onSetPinned={onSetSessionPinned}
               flat
@@ -949,7 +1144,7 @@ function SearchResults({
 
   return (
     <div className={clsx(css.treeBody, css.wide)}>
-      <div className={css.list}>
+      <div className={css.list} data-pull-scroll-root="">
         <div className={css.searchTree} role="tree" aria-label={t('search.results.aria')}>
           {results.items.map(result => (
             <SearchResultItem
@@ -1009,6 +1204,7 @@ export function WorkspaceBrowser({
   setSessionPinned,
   insertSessionBefore,
   createWorkspace,
+  refreshAll,
   moveSession,
   updateWorkspaceSettings,
   searchSessions,
@@ -1028,11 +1224,12 @@ export function WorkspaceBrowser({
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
-  const isolateActiveWorkspace = useStore(s => s.isolateActiveWorkspace)
+  // isolateActiveWorkspace removed: always show all workspaces.
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
   const sessions = useSessions(s => s)
+  const railPinnedSessions = derivePinned(sessions, pinnedSessionIds, archivedSessionIds)
   // Archive is allowed to clear the active selection. Keep a session-list
   // projection captured before that clear at the browser owner so mounting
   // the Archived view afterwards still has the authoritative summary to
@@ -1048,16 +1245,17 @@ export function WorkspaceBrowser({
     byId: { ...Object.fromEntries(archivedSessionCache.current), ...sessions.byId },
   }), [sessions, archivedSessionIds])
   const currentSessionId = sessions.current
-  const activeWorkspace = useMemo(() => {
-    if (currentSessionId === undefined) return workspaces[0]
-    return workspaces.find(w => w.sessionIds.includes(currentSessionId)) ?? workspaces[0]
-  }, [currentSessionId, workspaces])
-  const displayWorkspaces = useMemo(() => {
-    if (isolateActiveWorkspace && activeWorkspace !== undefined) {
-      return [activeWorkspace]
-    }
-    return workspaces
-  }, [isolateActiveWorkspace, activeWorkspace, workspaces])
+  const displayWorkspaces = workspaces
+
+  // Pull-to-refresh on touch devices: the gesture re-pulls both baselines
+  // (Workspaces and Sessions) when the region is dragged down past the
+  // trigger while its list sits at the top.
+  const pullAreaRef = useRef<HTMLDivElement>(null)
+  const pull = usePullToRefresh(pullAreaRef, refreshAll)
+  const pullArmed = pull.distance >= PULL_TRIGGER_PX
+  const pullLabel = pull.phase === 'refreshing'
+    ? t('refresh.refreshing')
+    : (pullArmed ? t('refresh.release') : t('refresh.pull'))
 
   const currentBlankSessionId = useSessions((state) => {
     const current = state.current
@@ -1245,35 +1443,73 @@ export function WorkspaceBrowser({
     setSessionRenameError(null)
   }
 
-  const [archiveUndo, setArchiveUndo] = useState<SessionId | null>(null)
-  const [archiveFailure, setArchiveFailure] = useState<{ sessionId: SessionId; message: string; restoring: boolean } | null>(null)
-
-  // Archive is dialog-free because it retains both the log and account. The
-  // owner keeps the result visible: a successful commit offers immediate Undo
-  // and a failure names the rejected operation with a retry affordance.
-  const onSessionArchive = (sessionId: SessionNode['id']) => {
-    setArchiveFailure(null)
+  const [archiveNotifications, setArchiveNotifications] = useState<ArchiveNotification[]>([])
+  const [pendingArchiveNotificationIds, setPendingArchiveNotificationIds] = useState<ReadonlySet<number>>(new Set())
+  const archiveNotificationSequence = useRef(0)
+  const appendArchiveNotification = (notice: ArchiveNotificationDraft) => {
+    const id = archiveNotificationSequence.current + 1
+    archiveNotificationSequence.current = id
+    setArchiveNotifications(current => [...current.slice(-(ARCHIVE_NOTIFICATION_LIMIT - 1)), { ...notice, id }])
+  }
+  const replaceArchiveNotification = (id: number, notice: ArchiveNotificationDraft) => {
+    setArchiveNotifications(current => current.map(currentNotice => currentNotice.id === id ? { ...notice, id } : currentNotice))
+  }
+  const dismissArchiveNotification = (id: number) => {
+    setArchiveNotifications(current => current.filter(notice => notice.id !== id))
+    setPendingArchiveNotificationIds(current => {
+      if (!current.has(id)) return current
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+  }
+  const setArchiveNotificationPending = (id: number, pending: boolean) => {
+    setPendingArchiveNotificationIds(current => {
+      if (current.has(id) === pending) return current
+      const next = new Set(current)
+      if (pending) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+  const archiveError = (reason: unknown): string => reason instanceof Error ? reason.message : String(reason)
+  const retryArchive = (sessionId: SessionId, notificationId?: number) => {
+    if (notificationId !== undefined) setArchiveNotificationPending(notificationId, true)
     archiveSession(sessionId).then(() => {
-      setArchiveUndo(sessionId)
+      if (notificationId === undefined) appendArchiveNotification({ kind: 'archived', sessionId })
+      else replaceArchiveNotification(notificationId, { kind: 'archived', sessionId })
     }).catch((reason: unknown) => {
-      setArchiveFailure({
-        sessionId,
-        message: reason instanceof Error ? reason.message : String(reason),
-        restoring: false,
-      })
+      const message = archiveError(reason)
+      if (notificationId === undefined) appendArchiveNotification({ kind: 'archive-failure', sessionId, message })
+      else replaceArchiveNotification(notificationId, { kind: 'archive-failure', sessionId, message })
+    }).finally(() => {
+      if (notificationId !== undefined) setArchiveNotificationPending(notificationId, false)
+    })
+  }
+  // Archive retains the log and Workspace account, so the deck exposes the
+  // inverse action immediately and keeps any rejected request retryable.
+  const onSessionArchive = (sessionId: SessionNode['id']) => { retryArchive(sessionId) }
+  const onSetSessionPinned = (sessionId: SessionNode['id'], pinned: boolean) => {
+    setSessionPinned(sessionId, pinned).catch((reason: unknown) => {
+      console.warn('session pin update rejected:', reason)
     })
   }
   const onSessionRestore = (sessionId: SessionId) => {
-    setArchiveFailure(null)
     unarchiveSession(sessionId).then(() => {
-      setArchiveUndo(current => current === sessionId ? null : current)
+      setArchiveNotifications(current => current.filter(notice => notice.sessionId !== sessionId))
     }).catch((reason: unknown) => {
-      setArchiveFailure({
-        sessionId,
-        message: reason instanceof Error ? reason.message : String(reason),
-        restoring: true,
-      })
+      appendArchiveNotification({ kind: 'restore-failure', sessionId, message: archiveError(reason) })
     })
+  }
+  const undoArchive = (notification: ArchiveNotification) => {
+    setArchiveNotificationPending(notification.id, true)
+    unarchiveSession(notification.sessionId).then(() => {
+      dismissArchiveNotification(notification.id)
+    }).catch((reason: unknown) => {
+      replaceArchiveNotification(notification.id, {
+        kind: 'restore-failure', sessionId: notification.sessionId, message: archiveError(reason),
+      })
+    }).finally(() => { setArchiveNotificationPending(notification.id, false) })
   }
 
   // Move session dialog
@@ -1486,10 +1722,8 @@ export function WorkspaceBrowser({
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
-              isolateActiveWorkspace={isolateActiveWorkspace}
               onGroupPick={(mode) => { actions.setGroupBy(mode) }}
               onOrderPick={(mode) => { actions.setOrderBy(mode) }}
-              onToggleIsolate={() => { actions.toggleIsolateActiveWorkspace() }}
               view={sidebarView}
               onViewPick={setSidebarView}
               t={t}
@@ -1553,7 +1787,36 @@ export function WorkspaceBrowser({
 
       {/* Always-mounted seat keeps the region's flex slot while the list
           itself is wide-only. */}
-      <div className={css.listArea}>
+      <div className={css.listArea} ref={pullAreaRef}>
+        {wide && (
+          <div
+            className={css.pullIndicator}
+            data-pull-phase={pull.phase}
+            style={{ height: `${pull.distance}px` }}
+          >
+            <span
+              className={clsx(css.pullIcon, pullArmed && pull.phase === 'pulling' && css.pullIconArmed)}
+              aria-hidden="true"
+            >
+              {pull.phase === 'refreshing'
+                ? <span className={css.pullSpinner} />
+                : <IconChevronDownOutline14 />}
+            </span>
+            <span className={css.pullLabel} aria-live="polite">{pullLabel}</span>
+          </div>
+        )}
+        {!wide && <PinnedSessionRail
+          sessions={railPinnedSessions}
+          currentSessionId={currentSessionId}
+          open={open}
+          renameSession={renameSession}
+          onRenameRequest={onSessionRename}
+          forkSession={forkSession}
+          onMoveSessionRequest={onMoveSessionRequest}
+          onSessionArchive={onSessionArchive}
+          onSetSessionPinned={onSetSessionPinned}
+          t={t}
+        />}
         {wide && (normalizedQuery !== ''
           ? (
             <SearchResults
@@ -1568,12 +1831,12 @@ export function WorkspaceBrowser({
             />
           )
           : sidebarView === 'attention'
-            ? <AttentionList useSessions={useSessions} open={open} onSessionRename={onSessionRename}
+            ? <AttentionList useSessions={useSessions} open={open} renameSession={renameSession} onSessionRename={onSessionRename}
               forkSession={forkSession} onMoveSessionRequest={onMoveSessionRequest}
               onSessionArchive={onSessionArchive} archivedSessionIds={archivedSessionIds} t={t} />
             : sidebarView === 'archived'
               ? <ArchivedList list={archivedSessionList} archivedSessionIds={archivedSessionIds}
-                open={open} onRestore={onSessionRestore} onDelete={(id) => {
+                open={open} renameSession={renameSession} onRestore={onSessionRestore} onDelete={(id) => {
                   const summary = archivedSessionList.byId[id]
                   setDeleteSessionTarget({
                     id,
@@ -1590,15 +1853,11 @@ export function WorkspaceBrowser({
               : groupBy === 'flat'
                 ? (
                   <FlatList
-                    useSessions={useSessions} open={open} forkSession={forkSession}
+                    useSessions={useSessions} open={open} renameSession={renameSession} forkSession={forkSession}
                     onSessionRename={onSessionRename} onMoveSessionRequest={onMoveSessionRequest} onSessionArchive={onSessionArchive}
                     archivedSessionIds={archivedSessionIds}
                     pinnedSessionIds={pinnedSessionIds}
-                    onSetSessionPinned={(sessionId, pinned) => {
-                      setSessionPinned(sessionId, pinned).catch((reason: unknown) => {
-                        console.warn('session pin update rejected:', reason)
-                      })
-                    }}
+                    onSetSessionPinned={onSetSessionPinned}
                     orderBy={orderBy}
                     sessionOrderByAccount={sessionOrderByAccount}
                     sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
@@ -1610,6 +1869,7 @@ export function WorkspaceBrowser({
                 : (
                   <SessionTree
                     useSessions={useSessions}
+                    renameSession={renameSession}
                     onSessionRename={onSessionRename}
                     onMoveSessionRequest={onMoveSessionRequest}
                     onSessionArchive={onSessionArchive}
@@ -1640,33 +1900,20 @@ export function WorkspaceBrowser({
                       setDeleteTarget({ workspaceId, title })
                       setDeleteError(null)
                     }}
-                    onSetSessionPinned={(sessionId, pinned) => {
-                      setSessionPinned(sessionId, pinned).catch((reason: unknown) => {
-                        console.warn('session pin update rejected:', reason)
-                      })
-                    }}
+                    onSetSessionPinned={onSetSessionPinned}
                   />
                 ))}
       </div>
 
-      {archiveUndo !== null && (
-        <div className={css.archiveNotice} role="status">
-          <span>{t('archive.undoMessage')}</span>
-          <button type="button" onClick={() => { onSessionRestore(archiveUndo) }}>{t('archive.undo')}</button>
-        </div>
-      )}
-      {archiveFailure !== null && (
-        <div className={css.archiveNotice} role="alert">
-          <span>{archiveFailure.restoring
-            ? t('archive.restoreFailure', { message: archiveFailure.message })
-            : t('archive.failure', { message: archiveFailure.message })}
-          </span>
-          <button type="button" onClick={() => {
-            if (archiveFailure.restoring) onSessionRestore(archiveFailure.sessionId)
-            else onSessionArchive(archiveFailure.sessionId)
-          }}>{t('archive.retry')}</button>
-        </div>
-      )}
+      {wide && <ArchiveNotificationStack
+        notifications={archiveNotifications}
+        pendingIds={pendingArchiveNotificationIds}
+        onDismiss={dismissArchiveNotification}
+        onUndo={undoArchive}
+        onRetryArchive={notification => { retryArchive(notification.sessionId, notification.id) }}
+        onRetryRestore={undoArchive}
+        t={t}
+      />}
 
       <Modal
         open={renameTarget !== null}

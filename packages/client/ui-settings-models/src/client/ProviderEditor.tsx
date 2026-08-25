@@ -147,6 +147,18 @@ function refFor(
   return typeof named === 'string' && named.length > 0 ? named : deriveKeyRef(provider)
 }
 
+/** One backup key field the card manages: the credential ref and the typed draft. */
+interface BackupKeySlot {
+  /** Credential reference this field writes through. */
+  ref: string
+  /** Typed value; empty keeps the stored key, exactly like the primary field. */
+  draft: string
+  /** Whether a credential is already stored under {@link ref}. */
+  configured: boolean
+  /** Whether {@link ref} accepts writes from this deployment. */
+  writable: boolean
+}
+
 /**
  * Render one provider's editing card.
  * @param props - the addressed profile plus wire faces and copy.
@@ -172,6 +184,19 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
+  // Backup slots start from the refs the resolved profile already names, so a
+  // settings-declared rotation list survives an edit without being re-derived
+  // or renamed. A removed slot's ref is tracked so Apply can unset its stored
+  // credential even though the slot itself is gone from the rendered list.
+  const [backupSlots, setBackupSlots] = useState<BackupKeySlot[]>(() => {
+    const stored = schema.getPath(namespace.value, [...settingsPath, 'backupApiKeys'])
+    return Array.isArray(stored)
+      ? stored
+        .filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+        .map(ref => ({ ref, draft: '', configured: false, writable: true }))
+      : []
+  })
+  const [removedBackupRefs, setRemovedBackupRefs] = useState<string[]>([])
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
   // Only the pi-ai layout has a per-route protocol for the read to find, and
@@ -181,6 +206,12 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     [layout, namespace, schema],
   )
 
+  // The described ref set is the primary plus every live backup slot; a new
+  // slot is unconfigured by construction, so only the set matters, not each
+  // keystroke.
+  const describeRefs = [keyRef, ...backupSlots.map(slot => slot.ref)]
+  const describeKey = describeRefs.join('\u0000')
+
   useEffect(() => {
     let stale = false
     setKeyState(undefined)
@@ -188,15 +219,23 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     // neither a business rejection nor a transport failure may reach the
     // browser as an unhandled rejection, so the card simply renders without
     // the "already configured" hint.
-    void api.credentials.describe({ refs: [keyRef] }).then(
+    void api.credentials.describe({ refs: describeRefs }).then(
       (response) => {
         if (stale || !response.result.ok) return
-        setKeyState(response.result.value.credentials[keyRef])
+        const credentials = response.result.value.credentials
+        setKeyState(credentials[keyRef])
+        setBackupSlots(current => current.map((slot) => {
+          const state = credentials[slot.ref]
+          return state === undefined
+            ? slot
+            : { ...slot, configured: state.configured, writable: state.writable }
+        }))
       },
       () => undefined,
     )
     return () => { stale = true }
-  }, [api.credentials, keyRef])
+    // The ref set is stable per render; describeKey is its serialized identity.
+  }, [api.credentials, describeKey, keyRef])
 
   const stringAt = (source: unknown, key: string): string | undefined => {
     const value = schema.getPath(source, [key])
@@ -217,6 +256,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   // so a bad row is named by its position rather than by a blanket message.
   const modelFailure = validateDeepSeekModels(schema.getPath(draft, ['models']))
   const keyFailure = apiKeyFailure(keyDraft)
+  const slotsFailure = backupSlots.find(slot => apiKeyFailure(slot.draft) !== undefined)
   // What a probe or a write must carry: the typed key with paste whitespace
   // removed. A blank field yields an empty string, which both call sites read
   // as "no key supplied" rather than as a key — that is how a card whose
@@ -250,10 +290,18 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const ns = namespace.ns
     // A pi-ai profile names the conventional reference only when this page is
     // about to store a key. Otherwise the provider keeps its native auth path.
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    let next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
       ? schema.setPath(draft, ['apiKeyEnv'], keyRef)
       : draft
+    // The rotation list is the refs of the backup slots that keep a key: one
+    // that was already configured, or one the user just typed. A slot cleared
+    // by its remove action is gone from the list (and its credential is unset
+    // below), so the profile and the stored keys cannot drift apart.
+    const keptBackups = backupSlots.filter(slot => slot.configured || slot.draft.trim().length > 0)
+    next = keptBackups.length > 0
+      ? schema.setPath(next, ['backupApiKeys'], keptBackups.map(slot => slot.ref))
+      : schema.deletePath(next, ['backupApiKeys'])
     if (props.credentialOnly !== true) {
       // The same checker gates the submit button, so a card cannot reach this
       // with a bad row; it stays because the schema check below would refuse
@@ -294,6 +342,20 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       const stored = await api.credentials.set({ ref: keyRef, value: keyValue })
       if (!stored.result.ok) return stored.result.error.message
     }
+    // Each typed backup is stored under its own ref, in list order, so a
+    // quota-classified failure can retire exactly the key that hit the limit.
+    for (const slot of backupSlots) {
+      const value = slot.draft.trim()
+      if (value.length === 0) continue
+      const stored = await api.credentials.set({ ref: slot.ref, value })
+      if (!stored.result.ok) return stored.result.error.message
+    }
+    // A removed slot's stored key is cleaned up with the same idempotent unset
+    // the provider delete path uses; an absent ref is a no-op.
+    for (const ref of removedBackupRefs) {
+      const removed = await api.credentials.unset({ ref })
+      if (!removed.result.ok) return removed.result.error.message
+    }
     setKeyDraft('')
     return undefined
   }
@@ -325,6 +387,29 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   }
 
   const keyLocked = keyState?.writable === false
+
+  /** Append one backup slot under the first derived ref the card does not use yet. */
+  const addSlot = (): void => {
+    const used = new Set([keyRef, ...backupSlots.map(slot => slot.ref)])
+    let candidate = 2
+    while (used.has(`${keyRef}_${candidate}`)) candidate += 1
+    setBackupSlots(current => [
+      ...current,
+      { ref: `${keyRef}_${candidate}`, draft: '', configured: false, writable: true },
+    ])
+  }
+
+  /** Drop one backup slot; its stored key, if any, is unset by the next Apply. */
+  const removeSlot = (index: number): void => {
+    const slot = backupSlots[index]
+    if (slot === undefined) return
+    setRemovedBackupRefs(refs => [...refs, slot.ref])
+    setBackupSlots(current => current.filter((_, i) => i !== index))
+  }
+
+  const setSlotDraft = (index: number, value: string): void => {
+    setBackupSlots(current => current.map((slot, i) => i === index ? { ...slot, draft: value } : slot))
+  }
 
   /**
    * The catalog beneath the user layer: what the composition entry pinned, or
@@ -388,6 +473,60 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
         </div>
+        {/* Backup keys rotate in when a quota-classified failure retires the
+            primary; each field manages its own credential ref. The credential-
+            only posture (the create card) keeps just the primary field. */}
+        {props.credentialOnly === true ? null : (
+          <>
+            {backupSlots.map((slot, index) => {
+              const slotFailure = apiKeyFailure(slot.draft)
+              const slotPlaceholder = !slot.writable
+                ? t('keyEnvLocked')
+                : slot.configured ? t('keyStored') : t('keyPlaceholder')
+              return (
+                <div key={slot.ref} className={styles['field']}>
+                  <span className={styles['fieldLabel']}>
+                    {`${t('keyBackupLabel')} ${index + 1}`}
+                  </span>
+                  <div className={styles['backupKeyRow']}>
+                    <input
+                      className={styles['input']}
+                      type="password"
+                      autoComplete="off"
+                      value={slot.draft}
+                      placeholder={slotPlaceholder}
+                      aria-label={`${t('keyBackupLabel')} ${index + 1}`}
+                      aria-invalid={slotFailure !== undefined}
+                      disabled={disabled || !slot.writable}
+                      onChange={(event) => { setSlotDraft(index, event.target.value) }}
+                    />
+                    <button
+                      type="button"
+                      className={styles['removeKeyButton']}
+                      aria-label={`${t('removeKey')} ${index + 1}`}
+                      disabled={disabled}
+                      onClick={() => { removeSlot(index) }}
+                    >
+                      {t('removeKey')}
+                    </button>
+                  </div>
+                  {slotFailure === undefined ? null : <p className={styles['error']}>{t(slotFailure)}</p>}
+                </div>
+              )
+            })}
+            <div className={styles['field']}>
+              <button
+                type="button"
+                className={styles['linkButton']}
+                disabled={disabled}
+                onClick={addSlot}
+              >
+                {t('addKey')}
+              </button>
+            </div>
+            <p className={styles['advancedHint']}>{t('keyRotationHint')}</p>
+          </>
+        )}
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>
@@ -520,7 +659,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       </>
     )
   }
-
   return (
     <div className={props.credentialOnly === true ? styles['addBlock'] : styles['editor']}>
       {props.hideTitle === true
@@ -550,6 +688,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         submitDisabled={disabled || layout === 'unknown'
           || (props.credentialOnly !== true && modelFailure !== undefined)
           || shownKeyFailure !== undefined
+          || slotsFailure !== undefined
           || (props.credentialRequired === true && keyValue.length === 0)}
         submitLabel={props.submitLabel ?? 'apply'}
         submitBusyLabel={props.submitBusyLabel ?? 'applying'}

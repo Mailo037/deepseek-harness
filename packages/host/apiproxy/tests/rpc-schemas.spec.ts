@@ -266,6 +266,9 @@ describe('sessions domain schemas', () => {
     expect(sessionPromptRequestSchema.parse({
       sessionId: 's1', mode: 'queue', content: [],
     }).clientTimeZone).toBeUndefined()
+    expect(sessionPromptRequestSchema.parse({
+      sessionId: 's1', mode: 'prepend', content: [],
+    }).mode).toBe('prepend')
     expect(() => sessionPromptRequestSchema.parse({ sessionId: 's1', mode: 'inject', content: [] })).toThrow()
     expect(sessionPromptValueSchema.parse({ accepted: true }).accepted).toBe(true)
     // The command slot appears only when the prompt dispatched a slash command.

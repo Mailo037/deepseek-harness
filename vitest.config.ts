@@ -245,6 +245,10 @@ export default defineConfig({
         'packages/client/ui-model-selection/src/client/directory.ts',
         'packages/client/ui-model-selection/src/client/index.ts',
         'packages/client/ui-model-selection/src/client/service.ts',
+        // Voice input: the invariant companion registers no runtime
+        // invariant; the browser half is covered by the component and
+        // HMR-safety specs.
+        'packages/client/ui-voice-input/src/invariant.ts',
         'packages/client/ui-input-trigger/src/client/controller.ts',
         'packages/client/ui-input-trigger/src/client/service.ts',
         'packages/client/ui-input-trigger/src/core/menu.ts',

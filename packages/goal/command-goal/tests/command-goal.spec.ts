@@ -31,6 +31,7 @@ function stubAgent(ctx: Context, id: string): { agent: Agent; session: Session }
     get status() { return status },
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => {},
     inject(input) { inbox.append('next-step', input) },
     cancel() { status = 'idle' },

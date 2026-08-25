@@ -83,7 +83,7 @@ describe('catalog-route model discovery', () => {
     // carries what a listing endpoint would not disclose. The injected
     // DeepSeek vision model serves beside the installed catalog.
     expect(models.map(model => model.id).sort())
-      .toEqual([...getBuiltinModels('deepseek').map(model => model.id), 'deepseek-v4-flash-vision-exp'].sort())
+      .toEqual([...new Set([...getBuiltinModels('deepseek').map(model => model.id), 'deepseek-v4-flash-vision-exp'])].sort())
     expect(models.every(model => (model.contextWindow ?? 0) > 0 && (model.maxTokens ?? 0) > 0)).toBe(true)
     expect(server.paths).toEqual([])
   })

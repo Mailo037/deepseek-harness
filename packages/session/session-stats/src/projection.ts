@@ -45,6 +45,12 @@ interface SessionStatsTotals {
   decodeMs: number
   /** Summed provider output tokens over the same steps. */
   decodeTokens: number
+  /** Distinct files whose result-time diff added or removed at least one line. */
+  filesEdited: number
+  /** Summed added lines across applied result-time diffs. */
+  linesAdded: number
+  /** Summed removed lines across applied result-time diffs. */
+  linesRemoved: number
 }
 
 /**
@@ -60,6 +66,8 @@ interface SessionStatsState extends SessionStatsTotals {
   openStep: { turn: number; step: number; startTime: number; firstTokenTime: number | null } | null
   /** Dispatch times of tool calls whose result has not landed, by callId. */
   pendingCalls: Record<string, number>
+  /** Paths already counted toward `filesEdited`, so an edit never double-counts a file. */
+  editedPaths: Record<string, true>
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -77,6 +85,9 @@ const sessionStatsSchema = z.object({
   ttftSteps: z.number().int().nonnegative(),
   decodeMs: z.number().nonnegative(),
   decodeTokens: z.number().nonnegative(),
+  filesEdited: z.number().int().nonnegative(),
+  linesAdded: z.number().int().nonnegative(),
+  linesRemoved: z.number().int().nonnegative(),
 }).strict()
 
 /**
@@ -94,6 +105,7 @@ const sessionStatsStateSchema = sessionStatsSchema.extend({
     firstTokenTime: z.number().nonnegative().nullable(),
   }).nullable(),
   pendingCalls: z.record(z.string(), z.number().nonnegative()),
+  editedPaths: z.record(z.string(), z.literal(true)),
 })
 
 /**
@@ -108,10 +120,63 @@ function usageOutputTokens(usage: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
 
+/**
+ * The content lines of one diff side, under the same terminator rule the
+ * client diff counts use: empty text has zero lines, and a single trailing
+ * newline is a terminator, not an extra empty line.
+ * @param text - the removed or added side's text.
+ * @returns the content line count.
+ */
+function sideLineCount(text: string): number {
+  if (text === '') return 0
+  const body = text.endsWith('\n') ? text.slice(0, -1) : text
+  return body === '' ? 0 : body.split('\n').length
+}
+
+/**
+ * Combine the added and removed line totals of a result-time metadata diff
+ * array onto running counters, deduplicating edited paths in first-seen order.
+ * `meta` is opaque tool-private JSON carried by the durable `tool/result`
+ * event; each entry is validated against the `dsh-tool-fs` `diffs` shape
+ * (`{ path, oldText|null, newText }`) before its counts can contribute.
+ * @param meta - the `tool/result.data.meta` payload (unknown JsonValue).
+ * @param editedPaths - paths already counted as edited.
+ * @param counters - the run of per-file added/removed counters to fold into.
+ * @returns whether anything was folded (a new distinct path or nonzero line change).
+ */
+function foldMetaDiffs(
+  meta: unknown,
+  editedPaths: Record<string, true>,
+  counters: { added: number; removed: number },
+): boolean {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return false
+  const diffs = (meta as { diffs?: unknown }).diffs
+  if (!Array.isArray(diffs)) return false
+  let changed = false
+  for (const raw of diffs) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+    const diff = raw as Record<string, unknown>
+    const path = diff.path
+    const oldText = diff.oldText
+    const newText = diff.newText
+    if (typeof path !== 'string'
+      || (oldText !== null && typeof oldText !== 'string')
+      || typeof newText !== 'string') continue
+    const added = sideLineCount(newText)
+    const removed = oldText === null ? 0 : sideLineCount(oldText)
+    if (added === 0 && removed === 0) continue
+    counters.added += added
+    counters.removed += removed
+    if (editedPaths[path] === undefined) editedPaths[path] = true
+    changed = true
+  }
+  return changed
+}
+
 /** The `sessionStats` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const sessionStatsProjectionDefinition = {
   key: 'sessionStats',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: sessionStatsStateSchema,
   init: () => ({
     turns: 0,
@@ -122,9 +187,13 @@ export const sessionStatsProjectionDefinition = {
     ttftSteps: 0,
     decodeMs: 0,
     decodeTokens: 0,
+    filesEdited: 0,
+    linesAdded: 0,
+    linesRemoved: 0,
     lastTurn: null,
     openStep: null,
     pendingCalls: {},
+    editedPaths: {},
   }),
   apply: (state, event) => {
     // Every uninteresting event returns the same reference (Object.is gates the change feed).
@@ -174,7 +243,22 @@ export const sessionStatsProjectionDefinition = {
         const pendingCalls = Object.fromEntries(
           Object.entries(state.pendingCalls).filter(([id]) => id !== callId),
         )
-        return { ...state, toolMs: state.toolMs + Math.max(0, event.time - dispatched), pendingCalls }
+        const next: SessionStatsState = {
+          ...state,
+          toolMs: state.toolMs + Math.max(0, event.time - dispatched),
+          pendingCalls,
+        }
+        // A file-mutation tool rides result-time diffs on `meta` (the durable
+        // applied change); count them whole-log so paging cannot hide them.
+        const counters = { added: 0, removed: 0 }
+        const editedPaths = { ...next.editedPaths }
+        if (foldMetaDiffs(event.data.meta, editedPaths, counters)) {
+          next.linesAdded += counters.added
+          next.linesRemoved += counters.removed
+          next.filesEdited = Object.keys(editedPaths).length
+          next.editedPaths = editedPaths
+        }
+        return next
       }
       case 'step/end':
         return {
@@ -204,6 +288,9 @@ export const sessionStatsProjectionDefinition = {
       ttftSteps: state.ttftSteps,
       decodeMs: state.decodeMs,
       decodeTokens: state.decodeTokens,
+      filesEdited: state.filesEdited,
+      linesAdded: state.linesAdded,
+      linesRemoved: state.linesRemoved,
     }),
   },
 } satisfies ProjectionDefinition<'sessionStats', SessionStatsState>

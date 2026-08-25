@@ -122,11 +122,34 @@ export class BasicCompactionEngine extends CompactionEngine {
   private readonly warnedPressureConfigTargets = new Set<string>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
+  /**
+   * Per-session effective context window learned from a provider-confirmed
+   * overflow, keyed by the routed route that produced it. The provider rejected
+   * a request, so its measured size is the closest durable evidence of the
+   * model's real capacity; a chat adopts it so later pressure gating reacts to
+   * that reality instead of the advisory (often larger) capacity an adapter
+   * advertises. The route key scopes the window to the model that overflowed,
+   * so a later route change does not inherit a stale, smaller window.
+   */
+  private readonly effectiveContextWindows = new WeakMap<Session, { route: string; window: number }>()
 
   constructor(ctx: Context, config: BasicCompactionConfig = {}) {
     super(ctx)
     this.config = resolveConfig(config)
     if (this.config.auto) this._registerAutomaticCompaction()
+  }
+
+  /**
+   * Record a provider-confirmed request size as this chat's effective context
+   * window for the given route, so later pressure gating uses the real limit
+   * rather than advisory capacity. A zero measurement carries no evidence and
+   * is ignored.
+   * @param session - chat whose effective window is being learned.
+   * @param route - exact route that overflowed, keying the learned window.
+   * @param window - measured size of the request the provider rejected.
+   */
+  private adoptEffectiveContextWindow(session: Session, route: string, window: number): void {
+    if (window > 0) this.effectiveContextWindows.set(session, { route, window })
   }
 
   /**
@@ -184,6 +207,18 @@ export class BasicCompactionEngine extends CompactionEngine {
       this.overflowAgents.set(agent.session, agent)
       const target = routedTarget(agent.session)
       if (target === undefined) return next()
+      // The provider rejected the request for exceeding the model context, so
+      // its measured size is the real limit evidence. Adopt it as this chat's
+      // effective window before recovery: even when an indivisible surface
+      // blocks a retry, later pressure gating reacts to the true capacity.
+      const overflowMeasurement = this.ctx.tokenMeter.measure(agent.session)
+      if (overflowMeasurement.totalTokens > 0) {
+        this.adoptEffectiveContextWindow(
+          agent.session,
+          `${target.provider}/${target.model}`,
+          overflowMeasurement.totalTokens,
+        )
+      }
       const policy = resolveTargetPolicy(this.config, target)
       const retries = this.overflowRetries.get(agent) ?? 0
       if (retries >= policy.maxOverflowRetries) return next()
@@ -249,7 +284,9 @@ export class BasicCompactionEngine extends CompactionEngine {
    * Compact for replayed step-boundary pressure or one provider-confirmed context
    * overflow. Both triggers price the latest durable routed request envelope;
    * overflow bypasses the normal threshold and retained-tail policy so it can
-   * force one useful balanced reduction.
+   * force one useful balanced reduction. Proactive pressure resolves the
+   * effective window from the chat's learned overflow size when one exists,
+   * falling back to the adapter-advertised capacity.
    * @param agent - agent whose latest durable routed request is measured.
    * @param trigger - normal step-boundary pressure or context-overflow recovery.
    * @param signal - live turn cancellation signal forwarded to summarization.
@@ -290,17 +327,25 @@ export class BasicCompactionEngine extends CompactionEngine {
       return this.compactRegion(range.start, range.end, agent, signal)
     }
 
-    const context = (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context
     assertNoActiveCompaction(agent.session, 'automatic pressure compaction')
     const targetKey = `${target.provider}/${target.model}`
-    if (context === undefined) {
+    // A provider-confirmed overflow first teaches this chat its real capacity
+    // for that exact route; otherwise resolve the adapter-advertised capacity.
+    // Pressure gating honors the learned window so it reacts to the true limit
+    // instead of the advisory (often larger) one, while a route change falls
+    // back to the adapter rather than inheriting a stale, smaller window.
+    const learned = this.effectiveContextWindows.get(agent.session)
+    const effectiveContextWindow = learned !== undefined && learned.route === targetKey
+      ? learned.window
+      : (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context?.contextWindow
+    if (effectiveContextWindow === undefined) {
       throw new TargetPressureConfigError(
         targetKey,
         `compaction-basic: no context capacity for ${targetKey}; `
         + 'configure contextWindow on that adapter model',
       )
     }
-    const spec = resolveCompactSpec(policy, context.contextWindow)
+    const spec = resolveCompactSpec(policy, effectiveContextWindow)
     if (measurement.totalTokens < spec.thresholdTokens) return null
 
     // Once pressure qualifies, land the model-free pass before choosing a

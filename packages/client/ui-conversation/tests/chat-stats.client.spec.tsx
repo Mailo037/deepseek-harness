@@ -331,6 +331,25 @@ describe('StatsLine', () => {
       .toBe('10 turns · 89 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
   })
 
+  it('renders whole-session file-edit totals and hides a zero edit group', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    // With edits: the durable projection's files/added/removed ride the footer.
+    const withEdits = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({
+        turns: 2, steps: 4, filesEdited: 3, linesAdded: 12, linesRemoved: 7,
+      }),
+    })} />)
+    expect(withEdits.container.textContent)
+      .toBe('2 turns · 4 steps| 3 files · +12 · -7| Cache hit 90%| Input 100 tok · Output 5 tok')
+    // Zero edits: the group drops out whole; nothing misleading renders.
+    const noEdits = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 1, steps: 1, filesEdited: 0 }),
+    })} />)
+    expect(noEdits.container.textContent).toBe('1 turns · 1 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
+  })
+
   it('treats a defined zero-count projection as empty, not as fallback', () => {
     // A composed unit always serves the key; all-zero genuinely means no
     // closed step in the whole log, so nothing renders on a brand-new session.

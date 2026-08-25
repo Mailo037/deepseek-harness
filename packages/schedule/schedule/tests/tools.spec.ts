@@ -37,6 +37,7 @@ function stubAgent(ctx: Context, id: string): Agent {
     cancel(_cause: AgentCancelCause) {},
     whenIdle: () => Promise.resolve(),
     followup(_message: UserMessage) {},
+    prepend(_message: UserMessage) {},
     steer(_message: UserMessage) {},
     inject(_message: UserMessage) {},
   }

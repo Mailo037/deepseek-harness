@@ -48,6 +48,13 @@ export interface LlmFailure {
   readonly providerRetryAfterMs?: number
   /** Opaque provider-issued request identifier for diagnostics. */
   readonly requestId?: ProviderRequestId
+  /**
+   * The credential reference this request authenticated through, when the
+   * adapter resolved one. A reference names where a secret lives, never the
+   * secret itself; key-rotation policy reads it to retire an exhausted key
+   * without confusing it with a sibling that succeeded.
+   */
+  readonly apiKeyRef?: string
 }
 
 /** Plain text visible to the end user. */
@@ -266,7 +273,7 @@ export interface LlmReasoningEffortInfo {
 
 /** Selectable reasoning efforts for one exact provider/model route. */
 export interface LlmModelReasoningInfo {
-  /** Supported efforts in adapter-preferred display order. */
+  /** Supported efforts in adapter-defined escalation order. */
   efforts: readonly LlmReasoningEffortInfo[]
   /**
    * Adapter-configured default materialized into requests when callers omit
@@ -378,5 +385,5 @@ export interface GenerateOptions {
    * map the purpose to model-hidden transport metadata or purpose-specific
    * generation policy. Ordinary conversation requests leave it unset.
    */
-  purpose?: 'compaction' | 'session-title'
+  purpose?: 'compaction' | 'session-title' | 'session-title-reasoning'
 }

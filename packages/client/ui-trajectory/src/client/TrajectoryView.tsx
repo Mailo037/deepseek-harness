@@ -117,10 +117,22 @@ function addUsage(
   }
 }
 
-export function TrajectoryView({
+type TrajectoryViewProps = ConvViewProps & InjectFace<TrajectoryViewInjected> & PropsLocale<'trajectory'>
+
+interface TrajectoryContentProps extends TrajectoryViewProps {
+  /** Whether the initial session window or the Trajectory history drain is pending. */
+  historyLoading: boolean
+  /** Whether one older history page request is pending. */
+  olderHistoryLoading: boolean
+  /** Whether the loaded window still has an older prefix. */
+  hasOlderHistory: boolean
+}
+
+function TrajectoryContent({
   useSession, useDuration, loadOlder, setActualDuration,
   inspect, onInspectDone, t,
-}: ConvViewProps & InjectFace<TrajectoryViewInjected> & PropsLocale<'trajectory'>) {
+  historyLoading, olderHistoryLoading, hasOlderHistory,
+}: TrajectoryContentProps) {
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
   const [collapsedAssistants, setCollapsedAssistants] =
     useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
@@ -141,37 +153,6 @@ export function TrajectoryView({
   } | null>(null)
   const inspection = useSession(snapshot =>
     snapshot.views.get('trajectory') ?? EMPTY_TRAJECTORY_SNAPSHOT)
-  const historyLoading = useSession(snapshot => snapshot.openState === 'loading')
-  const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder)
-  const hasOlderHistory = useSession(snapshot => snapshot.hasMore)
-  // Unlike the chat's incremental window, an opened trajectory drains every
-  // remaining history page so the ledger renders the complete run. The loop
-  // ends when a page load reports no further progress; the table's sticky
-  // loading bar covers the drain because it rides the same historyLoading prop.
-  // The drain yields around every page (and waits one frame before starting)
-  // so the tab switch paints immediately with its loading note and each
-  // progressive prepend never holds the main thread across pages.
-  const [loadingAllHistory, setLoadingAllHistory] = useState(false)
-  useEffect(() => {
-    if (historyLoading || !hasOlderHistory) return
-    const drain = { cancelled: false }
-    const nextFrame = () => new Promise<void>((resolve) => {
-      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { resolve() })
-      else setTimeout(resolve, 0)
-    })
-    void (async () => {
-      setLoadingAllHistory(true)
-      await nextFrame()
-      try {
-        while (!drain.cancelled && await loadOlder()) {
-          await nextFrame()
-        }
-      } finally {
-        if (!drain.cancelled) setLoadingAllHistory(false)
-      }
-    })()
-    return () => { drain.cancelled = true }
-  }, [historyLoading, hasOlderHistory, loadOlder])
   const nodes = inspection.eventNodes
   const eventLocations = inspection.eventLocations
   const historyBaseSeq = nodes[0]?.seq ?? 0
@@ -472,7 +453,7 @@ export function TrajectoryView({
   }, [loadOlder])
 
   return (
-    <div className={css.root} data-conversation-composer-overlay="">
+    <>
       <TrajectoryToolbar
         actualDuration={actualDuration}
         onActualDurationChange={(nextActualDuration) => {
@@ -515,7 +496,7 @@ export function TrajectoryView({
           onRecordSelect={handleRecordSelect}
           recordSelection={timelineRecordSelection}
           recordFocus={timelineRecordFocus}
-          historyLoading={historyLoading || loadingAllHistory}
+          historyLoading={historyLoading}
           olderHistoryLoading={olderHistoryLoading}
           historyStartSeq={historyBaseSeq}
           hasOlderRecords={hasOlderHistory}
@@ -529,6 +510,77 @@ export function TrajectoryView({
           onInspectApplied={onInspectDone}
         />
       </div>
+    </>
+  )
+}
+
+/** Centered first-paint status while the tab yields before materializing its data view. */
+function TrajectoryLoading({ t }: Pick<TrajectoryViewProps, 't'>) {
+  return (
+    <div className={css.loading} role="status" aria-live="polite" data-trajectory-loading="">
+      <span className={css.loadingSpinner} aria-hidden="true" />
+      {t('view.loading')}
+    </div>
+  )
+}
+
+/**
+ * Render the Trajectory tab after its lightweight loading state has reached the screen.
+ * @param props - The session view dependencies supplied by the conversation slot.
+ * @returns The loading state followed by the materialized Trajectory view.
+ */
+export function TrajectoryView(props: TrajectoryViewProps) {
+  const { useSession, loadOlder, t } = props
+  const historyLoading = useSession(snapshot => snapshot.openState === 'loading')
+  const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder)
+  const hasOlderHistory = useSession(snapshot => snapshot.hasMore)
+  const [contentReady, setContentReady] = useState(false)
+  const [loadingAllHistory, setLoadingAllHistory] = useState(false)
+
+  // Layout projection can be expensive for a long session. Yield once so the
+  // selected tab and its status commit before that work starts.
+  useEffect(() => {
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(() => { setContentReady(true) })
+      return () => { cancelAnimationFrame(frame) }
+    }
+    const timer = setTimeout(() => { setContentReady(true) }, 0)
+    return () => { clearTimeout(timer) }
+  }, [])
+
+  useEffect(() => {
+    if (historyLoading || !hasOlderHistory) return
+    const drain = { cancelled: false }
+    const nextFrame = () => new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { resolve() })
+      else setTimeout(resolve, 0)
+    })
+    void (async () => {
+      setLoadingAllHistory(true)
+      await nextFrame()
+      try {
+        while (!drain.cancelled && await loadOlder()) {
+          await nextFrame()
+        }
+      } finally {
+        if (!drain.cancelled) setLoadingAllHistory(false)
+      }
+    })()
+    return () => { drain.cancelled = true }
+  }, [historyLoading, hasOlderHistory, loadOlder])
+
+  return (
+    <div className={css.root} data-conversation-composer-overlay="">
+      {contentReady
+        ? (
+          <TrajectoryContent
+            {...props}
+            historyLoading={historyLoading || loadingAllHistory}
+            olderHistoryLoading={olderHistoryLoading}
+            hasOlderHistory={hasOlderHistory}
+          />
+        )
+        : <TrajectoryLoading t={t} />}
     </div>
   )
 }

@@ -450,7 +450,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolSessionQuery)
     },
     note:
-      'The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies.',
+      'The six read-only tools hide provider cursors, authorize every result from the immutable calling agent session, redact recognized credential text, and bound complete model-visible output. The package is opt-in; the generic timeout or spill policies can impose stricter deadlines or rendering policies.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent',

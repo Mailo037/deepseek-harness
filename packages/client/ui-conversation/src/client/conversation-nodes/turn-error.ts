@@ -19,6 +19,8 @@ interface TurnErrorState {
     readonly time: number
     readonly message: string
     readonly code?: string
+    readonly status?: number
+    readonly requestId?: string
   }
 }
 
@@ -35,7 +37,9 @@ function failureFrom(match: ConversationMatch): TurnErrorState['failure'] | unde
     seq: match.event.seq,
     time: match.event.time,
     message: displayFailureMessage(failure),
-    code: failure.code,
+    ...failure.code === undefined ? {} : { code: failure.code },
+    ...failure.status === undefined ? {} : { status: failure.status },
+    ...failure.requestId === undefined ? {} : { requestId: String(failure.requestId) },
   }
 }
 
@@ -82,6 +86,8 @@ export const turnErrorDefinition: ConversationNodeDefinition<TurnErrorState> = {
       step: lastStep(context),
       message: failure.message,
       ...failure.code === undefined ? {} : { code: failure.code },
+      ...failure.status === undefined ? {} : { status: failure.status },
+      ...failure.requestId === undefined ? {} : { requestId: failure.requestId },
     }
     return chatNode(context, 'turn-error', node.seq, node)
   },

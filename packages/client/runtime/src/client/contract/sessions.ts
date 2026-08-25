@@ -64,6 +64,14 @@ export interface ISessions {
   refreshSubagents(parentSessionId: SessionId): Promise<void>
 
   /**
+   * Full user-facing reload for a suspected stale or broken load: baseline
+   * pull plus the same per-generation rebuilds a fresh connection runs
+   * (consumed subagent catalogs, resync of every opened window).
+   * @returns completion of the baseline pull.
+   */
+  refreshAll(): Promise<void>
+
+  /**
    * Record the composition one session now runs. The agent-preset seat calls
    * this after a successful blank-session switch, so the header label moves
    * with the composition instead of waiting for the next full list refresh.

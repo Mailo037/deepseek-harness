@@ -166,6 +166,21 @@ export function InputBar({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   // The plus button's attachment context menu (upload entry; more later).
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  // Phone viewports move the trailing context meter up into the session
+  // header (ConversationSessionHeader renders it beside the more-options
+  // button), so the composer hides its copy of the ring here. Same
+  // max-width: 639px band as the header's phone gate and the
+  // AgentPresetMenuHead phone gate.
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(max-width: 639px)')
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
   const safari = useMemo(() => isSafariBrowser(navigator), [])
   const safariNativeShrinkRef = useRef(false)
   // IME guard: composition Enter picks a candidate, it must not send. The ref outlives renders;
@@ -1253,7 +1268,8 @@ export function InputBar({
           <div className={css.trailing}>
             {rightItems}
             {renderSlot('conversation.input.model', { locked: modelSeatLocked })}
-            <ContextMeter useProjection={useProjection} t={t} />
+            {!phone && <ContextMeter useProjection={useProjection} t={t} />}
+            {renderSlot('conversation.input.voice', { locked })}
             {interruptible && (
               <Tooltip label={t('input.stop')} side="top" delayMs={500}>
                 <button

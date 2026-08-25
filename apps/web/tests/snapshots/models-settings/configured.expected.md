@@ -22,6 +22,8 @@
   - status: 已保存 minimax-cn。
   - list:
     - listitem:
+      - button "调整 minimax-cn 的顺序":
+        - img
       - text: minimax-cn
       - img "API 密钥已配置"
       - button "编辑 minimax-cn": 编辑

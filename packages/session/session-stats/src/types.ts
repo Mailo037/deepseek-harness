@@ -36,6 +36,12 @@ export interface SessionStatsProjection {
   decodeMs: number
   /** Summed provider output tokens over the same decode-timed steps. */
   decodeTokens: number
+  /** Distinct files whose applied result-time diff added or removed at least one line. */
+  filesEdited: number
+  /** Summed added lines across applied result-time diffs. */
+  linesAdded: number
+  /** Summed removed lines across applied result-time diffs. */
+  linesRemoved: number
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

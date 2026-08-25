@@ -40,6 +40,7 @@ export * from './types.ts'
 export * from './content.ts'
 export * from './message.ts'
 export * from './retry-policy.ts'
+export * from './key-rotation.ts'
 export { BlockAssembler } from './assembler.ts'
 export { callConfigEquals, deepFreeze, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts'
 export type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts'
@@ -75,6 +76,8 @@ export interface LlmErrorOptions extends ErrorOptions {
   providerRetryAfterMs?: number
   /** Non-empty opaque provider request id. */
   requestId?: ProviderRequestId
+  /** Non-empty credential reference this request authenticated through. */
+  apiKeyRef?: string
 }
 
 /**
@@ -105,6 +108,10 @@ export class LlmError extends HarnessError {
       && (typeof options.requestId !== 'string' || options.requestId.length === 0)) {
       throw new Error('LlmError requestId must be a non-empty string')
     }
+    if (options?.apiKeyRef !== undefined
+      && (typeof options.apiKeyRef !== 'string' || options.apiKeyRef.length === 0)) {
+      throw new Error('LlmError apiKeyRef must be a non-empty string')
+    }
     super(message, code, options)
     this.name = 'LlmError'
     this.failure = Object.freeze({
@@ -113,6 +120,7 @@ export class LlmError extends HarnessError {
       ...options?.status === undefined ? {} : { status: options.status },
       ...options?.providerRetryAfterMs === undefined ? {} : { providerRetryAfterMs: options.providerRetryAfterMs },
       ...options?.requestId === undefined ? {} : { requestId: options.requestId },
+      ...options?.apiKeyRef === undefined ? {} : { apiKeyRef: options.apiKeyRef },
     })
   }
 }

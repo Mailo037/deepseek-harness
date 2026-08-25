@@ -15,9 +15,10 @@ export const name = 'client-ui-settings-models-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: a nav-entry-only section plugin rendering a fixed
- * empty content column — it emits no cordis events and owns no cross-plugin
- * mutable relation.
+ * No runtime invariant: the settings scope validates and publishes the
+ * provider-order section the Models page writes and the host api-proxy reads
+ * by namespace name; the write→reload agreement is covered directly by this
+ * package's section and host behavior specs.
  */
 const install: InvariantInstaller = () => {}
 

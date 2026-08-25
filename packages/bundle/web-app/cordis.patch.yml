@@ -293,6 +293,11 @@
     - id: ui-model-selection
       name: '@deepseek-ai/dsh-client-ui-model-selection'
 
+    # Voice input: the composer dictation mic between the model select and
+    # the send button over the browser SpeechRecognition API.
+    - id: ui-voice-input
+      name: '@deepseek-ai/dsh-client-ui-voice-input'
+
     - id: ui-permission
       name: '@deepseek-ai/dsh-client-ui-permission-presets'
 

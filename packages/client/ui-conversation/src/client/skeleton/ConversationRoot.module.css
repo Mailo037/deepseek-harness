@@ -175,7 +175,6 @@
 
 /* figma .Tab 34:11442: 13/16 text (figma wt510, rendered 500), gap 8 to the 2px bar. */
 .tab {
-  position: relative;
   padding: 0 0 11px;
   border: none;
   background: transparent;
@@ -186,17 +185,6 @@
   cursor: pointer;
 }
 
-.tab::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 1px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: transparent;
-}
-
 /* Selected tab is blue, not ink: brand-primary resolves to neutral black in
    this token sheet, so the selected state rides the business blue — the
    nearest semantic token that stays blue in both themes. */
@@ -204,8 +192,22 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
-.tabActive::after {
+/* One sliding underline shared by every tab: an absolutely-positioned bar
+   measured against the active tab (left/top/width set inline) and moved here
+   by the transition below. Out of flow, so it never affects the flex strip. */
+.tabIndicator {
+  position: absolute;
+  height: 2px;
+  border-radius: 2px;
   background: var(--dsw-alias-state-business-primary);
+  transition: left 200ms ease, top 200ms ease, width 200ms ease;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabIndicator {
+    transition: none;
+  }
 }
 
 .viewArea {

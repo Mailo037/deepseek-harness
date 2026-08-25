@@ -1,12 +1,13 @@
 /* Workspace browsing region (fills the sidebar shell's hole): section
    header, search capsule, and the scrolling session list. Wide/rail
    variants ride the shell's fold state through the `wide` owner prop —
-   rail state renders only the two 36x36 icon controls. */
+   rail state keeps the two controls plus compact pinned-session navigation. */
 
 .root {
   --dsh-session-list-edge-inset: var(--dsh-sidebar-inline-padding);
   --dsh-session-list-scrollbar-width: 8px;
   --dsh-session-list-scrollbar-offset: 2px;
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -279,6 +280,45 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Pinned Sessions remain actionable without reopening the sidebar. The list
+   scrolls independently when its durable pin order exceeds the rail height. */
+.railPinnedSessions {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  width: 36px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 12px;
+}
+
+.railPinnedSession {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.railPinnedSession:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.railPinnedSessionCurrent {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-state-business-primary);
+}
+
 /* List seat: always mounted so the shell foot never moves. */
 .listArea {
   flex: 1;
@@ -297,6 +337,61 @@
   margin-left: 0;
   margin-right: 0;
   padding-left: 0;
+}
+
+/* Pull-to-refresh indicator: an expanding strip above the list. The inline
+   height follows the finger while pulling (no transition); idle/refreshing
+   heights animate through the default transition below. */
+.pullIndicator {
+  flex: none;
+  height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  transition: height 200ms var(--ds-ease-in-out);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pullIndicator[data-pull-phase='pulling'] {
+  transition: none;
+}
+
+.pullIcon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 200ms var(--ds-ease-in-out);
+}
+
+/* Past the trigger: the chevron points up, inviting release. */
+.pullIconArmed {
+  transform: rotate(180deg);
+}
+
+/* Spinner shown while the reload is in flight. */
+.pullSpinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--dsw-alias-label-tertiary);
+  border-top-color: var(--dsw-alias-label-secondary);
+  animation: pull-spin 800ms linear infinite;
+}
+
+@keyframes pull-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pullLabel {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* Relative for the bottom fade overlay. */
@@ -337,6 +432,9 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Pull-to-refresh owns the top edge: overscroll must not chain into the
+     browser's native page refresh on touch devices. */
+  overscroll-behavior-y: contain;
   margin-left: -4px;
   margin-right: var(--dsh-session-list-scrollbar-offset);
   padding-left: 4px;
@@ -430,29 +528,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.archiveNotice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 6px 8px;
-  padding: 8px;
-  border-radius: 6px;
-  background: var(--dsw-color-fill-secondary);
-  color: var(--dsw-color-text-secondary);
-  font-size: 12px;
-}
-
-.archiveNotice button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--dsw-color-brand);
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-}
-
 .searchWarning {
   color: var(--dsw-alias-label-secondary);
 }
@@ -464,6 +539,32 @@
 
 .groupSection + .groupSection {
   margin-top: 4px;
+}
+
+/* Workspace folders disclose their run of Sessions as one clipped track. The
+   header owns the state; this wrapper preserves the last rows while closing
+   and removes them once the CSS transition finishes. */
+.groupDisclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease-out;
+}
+
+.groupDisclosureOpen {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.groupDisclosureBody {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.groupDisclosureBody > * + * {
+  margin-top: 2px;
 }
 
 .listTopDropIndicator,
@@ -527,8 +628,18 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.groupSection > .sessionOverflowButton {
+.groupDisclosureBody > .sessionOverflowButton {
   margin-top: 0;
+}
+
+/* Small hint under a folded-open Workspace header with no visible sessions yet;
+   indented to match the session-row title column. */
+.groupEmpty {
+  padding: 0 8px 8px 28px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  user-select: none;
 }
 
 .sessionOverflowButton:hover {
@@ -542,48 +653,57 @@
   font-size: 13px;
 }
 
-/* Pending-baseline placeholder: session-row bones pulse until both lists
-   land; reduced motion holds them static. */
+/* Pending-baseline preview: folders and indented conversations retain the
+   sidebar's real hierarchy while the unavailable labels pulse. */
 .listSkeleton {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   padding: 8px 12px;
 }
 
-.listSkeletonRow {
+.listSkeletonWorkspace,
+.listSkeletonSession {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 8px;
-}
-
-.listSkeletonDot {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--dsw-alias-bg-skeleton);
-  animation: list-skeleton-pulse 1.4s ease-in-out infinite;
-}
-
-.listSkeletonLines {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+  height: 32px;
   gap: 6px;
+  padding: 0 8px;
+  box-sizing: border-box;
 }
 
-.listSkeletonLine,
-.listSkeletonMeta {
+.listSkeletonWorkspace {
+  height: 34px;
+}
+
+.listSkeletonSession {
+  padding-left: 28px;
+}
+
+.listSkeletonIcon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.listSkeletonSession .listSkeletonIcon {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.listSkeletonLabel {
+  display: block;
   height: 10px;
   border-radius: 5px;
   background: var(--dsw-alias-bg-skeleton);
   animation: list-skeleton-pulse 1.4s ease-in-out infinite;
 }
 
-.listSkeletonMeta {
-  animation-delay: 140ms;
+.listSkeletonWorkspace .listSkeletonLabel {
+  height: 11px;
 }
 
 @keyframes list-skeleton-pulse {
@@ -592,9 +712,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .listSkeletonDot,
-  .listSkeletonLine,
-  .listSkeletonMeta {
+  .listSkeletonLabel {
     animation: none;
   }
 }
@@ -646,11 +764,25 @@
     animation: none;
   }
 
+  .groupDisclosure {
+    transition: none;
+  }
+
   .search,
   .sectionLabel,
   .searchSlot,
   .searchInput,
   .headerActions {
     transition: none;
+  }
+
+  .pullIndicator,
+  .pullIndicator[data-pull-phase='pulling'],
+  .pullIcon {
+    transition: none;
+  }
+
+  .pullSpinner {
+    animation: none;
   }
 }

@@ -18,6 +18,7 @@ import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { toolInput } from './input.ts'
 import { presentation } from './presentation.ts'
 import { serviceBoundary } from './service-boundary.ts'
+import { formatSessionSummary, type SessionSummaryOptions } from './summary.ts'
 import { workspaceAccess } from './workspace-access.ts'
 
 type SessionSearchArgs = Parameters<typeof toolInput.buildSessionFilters>[0]
@@ -197,6 +198,22 @@ async function executeSessionTrace(
   return presentation.formatSessionTrace(trace, ancestors, ancestorBoundary, descendants, titles)
 }
 
+async function executeSessionSummary(
+  ctx: Context,
+  args: SessionTargetArgs,
+  exec: ToolRunContext,
+  options: SessionSummaryOptions,
+): Promise<string> {
+  const caller = workspaceAccess.callerOf(exec)
+  const sessionId = workspaceAccess.targetId(args, caller)
+  await workspaceAccess.authorizeTarget(ctx, caller, sessionId, exec.signal)
+  const snapshot = await serviceBoundary.call(ctx, exec.signal, 'session summary', () =>
+    ctx.sessionQuery.readSession(sessionId))
+  workspaceAccess.assertObservedTargetAuthorized(caller, sessionId, snapshot.session)
+  const title = await workspaceAccess.readTitle(ctx, caller, sessionId, exec.signal)
+  return formatSessionSummary(snapshot, title, options)
+}
+
 async function executeEventTrace(
   ctx: Context,
   args: EventTargetArgs,
@@ -276,6 +293,7 @@ export const operations = {
   executeSessionSearch,
   executeEventSearch,
   executeSessionTrace,
+  executeSessionSummary,
   executeEventTrace,
   executeEventRead,
 }

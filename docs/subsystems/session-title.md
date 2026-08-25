@@ -81,6 +81,8 @@ interface SessionTitleLlmRequestEventData {
   readonly messages: Message[]
   /** Exact auxiliary output-token cap. */
   readonly maxTokens: number
+  /** Explicit reasoning effort for a retry after a reasoning-disabled rejection. */
+  readonly reasoningEffort?: ReasoningEffortId
 }
 ```
 

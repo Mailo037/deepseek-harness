@@ -98,6 +98,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
+    refreshAll: vi.fn(async () => {}),
     moveSession: vi.fn(async () => {}),
     updateWorkspaceSettings: vi.fn(async () => {}),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
@@ -160,7 +161,7 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
-  it('pending baselines show list skeleton bones instead of the empty text', () => {
+  it('pending baselines preview the Workspace/Session hierarchy instead of profile-like rows', () => {
     const b = mount({
       useSessions: hook(sessionState([], { phase: 'pending' })),
       useWorkspaces: hook({
@@ -170,10 +171,12 @@ describe('WorkspaceBrowser', () => {
         baselinesReady: false,
       }),
     })
-    // Grouped mode: bones until both baselines land.
+    // Grouped mode: folders plus indented chats until both baselines land.
     expect(b.view.container.querySelector('[data-list-skeleton]')).toBeTruthy()
+    expect(b.view.container.querySelectorAll('[data-list-skeleton-row="workspace"]')).toHaveLength(2)
+    expect(b.view.container.querySelectorAll('[data-list-skeleton-row="session"]')).toHaveLength(3)
 
-    // Flat mode drains the same bones while pending.
+    // Flat mode keeps the same loading preview while pending.
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
     expect(b.view.container.querySelector('[data-list-skeleton]')).toBeTruthy()
@@ -282,18 +285,27 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('expands a group on click and opens a session row', () => {
-    const open = vi.fn()
-    mount({
-      useSessions: hook(sessionState([summary('alpha-s', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
-      open,
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByText('alpha-s'))
-    expect(open).toHaveBeenCalledWith(sid('alpha-s'))
-    // Collapse hides the row again.
-    fireEvent.click(screen.getByText('alpha'))
-    expect(screen.queryByText('alpha-s')).toBeNull()
+    vi.useFakeTimers()
+    try {
+      const open = vi.fn()
+      mount({
+        useSessions: hook(sessionState([summary('alpha-s', 1)])),
+        useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
+        open,
+      })
+      fireEvent.click(screen.getByText('alpha'))
+      fireEvent.click(screen.getByText('alpha-s'))
+      expect(open).toHaveBeenCalledWith(sid('alpha-s'))
+      // The old row stays long enough to fold away, but is immediately inert.
+      fireEvent.click(screen.getByText('alpha'))
+      const disclosure = document.querySelector('[data-workspace-disclosure]') as HTMLElement
+      expect(disclosure.getAttribute('aria-hidden')).toBe('true')
+      expect(screen.getByText('alpha-s')).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(220) })
+      expect(screen.queryByText('alpha-s')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows five sessions by default and clears transient show-all when the Workspace collapses', () => {
@@ -402,6 +414,30 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
     expect(screen.getByText('kept-s')).toBeTruthy()
     expect(screen.queryByText('gone-s')).toBeNull()
+  })
+
+  it('stacks archive outcomes and restores the newest notice independently', async () => {
+    const archiveSession = vi.fn(async () => {})
+    const unarchiveSession = vi.fn(async () => {})
+    const b = mount({
+      useSessions: hook(sessionState([summary('first-s', 2), summary('second-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['first-s', 'second-s'])])),
+      archiveSession,
+      unarchiveSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“first-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
+    await screen.findByRole('status')
+    rerender(b, {
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['first-s', 'second-s'])], [sid('first-s')])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '会话“second-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
+    await waitFor(() => { expect(screen.getAllByRole('status')).toHaveLength(2) })
+
+    fireEvent.click(screen.getAllByRole('button', { name: '撤销' })[0]!)
+    await waitFor(() => { expect(unarchiveSession).toHaveBeenCalledWith(sid('second-s')) })
   })
 
   it('keeps an archive failure visible and retries it', async () => {
@@ -539,6 +575,28 @@ describe('WorkspaceBrowser', () => {
     expect(startSession).not.toHaveBeenCalled()
   })
 
+  it('shows a hint under a workspace that expands to no sessions', () => {
+    vi.useFakeTimers()
+    try {
+      mount({
+        useSessions: hook(sessionState([])),
+        useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
+      })
+      // Collapsed by default: the hint waits for the expand gesture.
+      expect(screen.queryByText('此工作区暂无会话')).toBeNull()
+      fireEvent.click(screen.getByText('alpha'))
+      expect(screen.getByText('此工作区暂无会话')).toBeTruthy()
+      // Collapsing the group hides it again.
+      fireEvent.click(screen.getByText('alpha'))
+      const disclosure = document.querySelector('[data-workspace-disclosure]') as HTMLElement
+      expect(disclosure.getAttribute('aria-hidden')).toBe('true')
+      act(() => { vi.advanceTimersByTime(220) })
+      expect(screen.queryByText('此工作区暂无会话')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders pinned sessions above the Workspace and Ungrouped peer categories', async () => {
     const setSessionPinned = vi.fn(async () => {})
     mount({
@@ -568,18 +626,26 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('keeps an already-expanded group when the selection moves within it', () => {
-    const first = sessionState([summary('a', 2), summary('b', 1)], { current: sid('a') })
-    const b = mount({
-      useSessions: hook(first),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['a', 'b'])])),
-    })
-    expect(screen.getByText('a')).toBeTruthy()
-    // Selection hop inside the same group: the effect re-runs and leaves the
-    // expansion list unchanged (no duplicate key, group still open).
-    rerender(b, { useSessions: hook({ ...first, current: sid('b') }) })
-    expect(screen.getByText('b')).toBeTruthy()
-    fireEvent.click(screen.getByText('alpha'))
-    expect(screen.queryByText('b')).toBeNull()
+    vi.useFakeTimers()
+    try {
+      const first = sessionState([summary('a', 2), summary('b', 1)], { current: sid('a') })
+      const b = mount({
+        useSessions: hook(first),
+        useWorkspaces: hook(workspaceState([workspace('alpha', ['a', 'b'])])),
+      })
+      expect(screen.getByText('a')).toBeTruthy()
+      // Selection hop inside the same group: the effect re-runs and leaves the
+      // expansion list unchanged (no duplicate key, group still open).
+      rerender(b, { useSessions: hook({ ...first, current: sid('b') }) })
+      expect(screen.getByText('b')).toBeTruthy()
+      fireEvent.click(screen.getByText('alpha'))
+      const disclosure = document.querySelector('[data-workspace-disclosure]') as HTMLElement
+      expect(disclosure.getAttribute('aria-hidden')).toBe('true')
+      act(() => { vi.advanceTimersByTime(220) })
+      expect(screen.queryByText('b')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('hides blank sessions until a message is sent, excluded from search', () => {
@@ -658,7 +724,17 @@ describe('WorkspaceBrowser', () => {
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old', 'mid'])
     })
-    const blank = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
+
+    // Once the first prompt is sent, the blank becomes a visible row.
+    rerender(b, {
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('blank', 150),
+        summary('mid', 200),
+      ], { current: sid('blank') })),
+    })
+
+    const blank = screen.getByText('blank').closest('[role="treeitem"]') as HTMLElement
     const mid = screen.getByText('mid').closest('[role="treeitem"]') as HTMLElement
     mid.getBoundingClientRect = () => ({
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
@@ -671,7 +747,7 @@ describe('WorkspaceBrowser', () => {
     rerender(b, {
       useSessions: hook(sessionState([
         summary('old', 100),
-        summary('blank', 150),
+        summary('blank', 151),
         summary('mid', 200),
       ], { current: sid('blank') })),
     })
@@ -934,6 +1010,128 @@ describe('WorkspaceBrowser', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('keeps visible pinned sessions as ordered icons in the rail', () => {
+    const open = vi.fn()
+    mount({
+      wide: false,
+      open,
+      useSessions: hook(sessionState([
+        summary('first', 1),
+        summary('second', 2),
+        summary('archived', 3),
+        summary('blank', 4, { blank: true }),
+      ], { current: sid('second') })),
+      useWorkspaces: hook(workspaceState(
+        [],
+        [sid('archived')],
+        [sid('second'), sid('archived'), sid('blank'), sid('first')],
+      )),
+    })
+
+    const pins = screen.getAllByRole('button', { name: /打开已固定会话/ })
+    expect(pins.map(pin => pin.getAttribute('aria-label'))).toEqual([
+      '打开已固定会话：second',
+      '打开已固定会话：first',
+    ])
+    expect(pins[0]?.getAttribute('aria-current')).toBe('page')
+    fireEvent.click(pins[1]!)
+    expect(open).toHaveBeenCalledWith(sid('first'))
+  })
+
+  it('shows the standard Session hover card for a pinned rail icon', () => {
+    vi.useFakeTimers()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(60_000)
+    try {
+      mount({
+        wide: false,
+        useSessions: hook(sessionState([summary('Pinned chat', 0)])),
+        useWorkspaces: hook(workspaceState([], [], [sid('Pinned chat')])),
+      })
+      const pin = screen.getByRole('button', { name: '打开已固定会话：Pinned chat' })
+      fireEvent.pointerEnter(pin.parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByText('Pinned chat')).toBeTruthy()
+      expect(screen.getByText('1分钟前')).toBeTruthy()
+      expect(screen.getByText('空闲')).toBeTruthy()
+    } finally {
+      clock.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('renames a pinned rail Session from its hover-card title', async () => {
+    vi.useFakeTimers()
+    const renameSession = vi.fn(async () => {})
+    try {
+      mount({
+        wide: false,
+        renameSession,
+        useSessions: hook(sessionState([summary('Pinned chat', 0)])),
+        useWorkspaces: hook(workspaceState([], [], [sid('Pinned chat')])),
+      })
+      const pin = screen.getByRole('button', { name: '打开已固定会话：Pinned chat' })
+      fireEvent.pointerEnter(pin.parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      fireEvent.click(screen.getByRole('button', { name: '重命名会话' }))
+      const input = screen.getByRole('textbox', { name: '会话名称' })
+      fireEvent.change(input, { target: { value: 'Renamed chat' } })
+      fireEvent.submit(input.closest('form')!)
+      await act(async () => { await Promise.resolve() })
+      expect(renameSession).toHaveBeenCalledWith(sid('Pinned chat'), 'Renamed chat')
+      expect(screen.getByText('Renamed chat')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the pinned hover-card title editable after a rename rejection', async () => {
+    vi.useFakeTimers()
+    const renameSession = vi.fn(async () => { throw new Error('title rejected') })
+    try {
+      mount({
+        wide: false,
+        renameSession,
+        useSessions: hook(sessionState([summary('Pinned chat', 0)])),
+        useWorkspaces: hook(workspaceState([], [], [sid('Pinned chat')])),
+      })
+      const pin = screen.getByRole('button', { name: '打开已固定会话：Pinned chat' })
+      fireEvent.pointerEnter(pin.parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      fireEvent.click(screen.getByRole('button', { name: '重命名会话' }))
+      const input = screen.getByRole('textbox', { name: '会话名称' })
+      fireEvent.change(input, { target: { value: 'Rejected title' } })
+      fireEvent.submit(input.closest('form')!)
+      await act(async () => { await Promise.resolve() })
+      expect(screen.getByRole('alert').textContent).toBe('title rejected')
+      expect((input as HTMLInputElement).disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens the standard Session menu when a pinned rail icon is right-clicked', () => {
+    const setSessionPinned = vi.fn(async () => {})
+    const open = vi.fn()
+    mount({
+      wide: false,
+      open,
+      setSessionPinned,
+      useSessions: hook(sessionState([summary('Pinned chat', 0)])),
+      useWorkspaces: hook(workspaceState([], [], [sid('Pinned chat')])),
+    })
+    const pin = screen.getByRole('button', { name: '打开已固定会话：Pinned chat' })
+    fireEvent.contextMenu(pin, { clientX: 120, clientY: 80 })
+
+    expect(screen.getByRole('menuitem', { name: '取消固定会话' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '重命名' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '分叉会话' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '移动会话…' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '归档会话' })).toBeTruthy()
+    expect(open).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消固定会话' }))
+    expect(setSessionPinned).toHaveBeenCalledWith(sid('Pinned chat'), false)
   })
 
   it('keeps the rail-opened search expanded when the initiating click reaches document', () => {
@@ -1492,5 +1690,89 @@ describe('WorkspaceBrowser', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'needle' } })
     const row = screen.getByText('Needle A').closest('[role="treeitem"]') as HTMLElement
     expect(row.hasAttribute('draggable')).toBe(false)
+  })
+
+  describe('pull-to-refresh', () => {
+    /** jsdom has no TouchEvent: build a plain bubbling event with touch lists. */
+    function touchEvent(type: 'touchstart' | 'touchmove' | 'touchend', y: number): Event {
+      const touches = type === 'touchend' ? [] : [{ clientX: 10, clientY: y, identifier: 0 }]
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'touches', { value: touches })
+      Object.defineProperty(event, 'changedTouches', { value: touches })
+      return event
+    }
+
+    it('shows the pull label and releases into a full reload past the trigger', async () => {
+      const refreshDeferred = Promise.withResolvers<void>()
+      const refreshAll = vi.fn(async () => { await refreshDeferred.promise })
+      mount({ refreshAll })
+      // The list inherits data-pull-scroll-root through the browser tree.
+      const list = document.querySelector('[data-pull-scroll-root]') as HTMLElement
+
+      act(() => {
+        list.dispatchEvent(touchEvent('touchstart', 0))
+        list.dispatchEvent(touchEvent('touchmove', 40))
+      })
+      expect(screen.getByText('下拉刷新')).toBeTruthy()
+
+      act(() => { list.dispatchEvent(touchEvent('touchmove', 200)) })
+      expect(screen.getByText('释放刷新')).toBeTruthy()
+
+      act(() => { list.dispatchEvent(touchEvent('touchend', 200)) })
+      await waitFor(() => { expect(refreshAll).toHaveBeenCalled() })
+      expect(screen.getByText('正在刷新…')).toBeTruthy()
+      expect(screen.getByText('正在刷新…').closest('[data-pull-phase]')?.getAttribute('data-pull-phase')).toBe('refreshing')
+
+      // Release the deferred so the indicator goes back to idle.
+      await act(async () => { refreshDeferred.resolve() })
+      await waitFor(() => {
+        expect(screen.queryByText('正在刷新…')).toBeNull()
+      })
+    })
+
+    it('cancels back to idle when released below the trigger', () => {
+      const refreshAll = vi.fn(async () => {})
+      mount({ refreshAll })
+      const list = document.querySelector('[data-pull-scroll-root]') as HTMLElement
+
+      act(() => {
+        list.dispatchEvent(touchEvent('touchstart', 0))
+        list.dispatchEvent(touchEvent('touchmove', 30))
+      })
+      const pulling = screen.getByText('下拉刷新').closest('[data-pull-phase]') as HTMLElement
+      expect(pulling.getAttribute('data-pull-phase')).toBe('pulling')
+
+      act(() => { list.dispatchEvent(touchEvent('touchend', 30)) })
+      expect(refreshAll).not.toHaveBeenCalled()
+      // Back to idle: the indicator collapses to zero height.
+      const idle = screen.getByText('下拉刷新').closest('[data-pull-phase]') as HTMLElement
+      expect(idle.getAttribute('data-pull-phase')).toBe('idle')
+      expect(idle.style.height).toBe('0px')
+    })
+
+    it('does not arm on horizontal movement', () => {
+      const refreshAll = vi.fn(async () => {})
+      mount({ refreshAll })
+      const list = document.querySelector('[data-pull-scroll-root]') as HTMLElement
+
+      act(() => {
+        const event = new Event('touchstart', { bubbles: true, cancelable: true })
+        Object.defineProperty(event, 'touches', { value: [{ clientX: 0, clientY: 0, identifier: 0 }] })
+        Object.defineProperty(event, 'changedTouches', { value: [] })
+        list.dispatchEvent(event)
+        const move = new Event('touchmove', { bubbles: true, cancelable: true })
+        Object.defineProperty(move, 'touches', { value: [{ clientX: 60, clientY: 10, identifier: 0 }] })
+        Object.defineProperty(move, 'changedTouches', { value: [] })
+        list.dispatchEvent(move)
+        const end = new Event('touchend', { bubbles: true, cancelable: true })
+        Object.defineProperty(end, 'touches', { value: [] })
+        Object.defineProperty(end, 'changedTouches', { value: [{ clientX: 60, clientY: 10, identifier: 0 }] })
+        list.dispatchEvent(end)
+      })
+      expect(refreshAll).not.toHaveBeenCalled()
+      const indicator = screen.getByText('下拉刷新').closest('[data-pull-phase]') as HTMLElement
+      expect(indicator.getAttribute('data-pull-phase')).toBe('idle')
+      expect(indicator.style.height).toBe('0px')
+    })
   })
 })

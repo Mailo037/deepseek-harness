@@ -234,12 +234,19 @@ function errorCode(result: ToolExecutionResult): string | undefined {
 }
 
 describe('registration and schemas', () => {
-  it('registers the five cursor-free tools, prompt, timeouts, and pure generic presenters, then disposes them', async () => {
-    const mounted = await mount({ maxSearchResults: 7, searchTimeoutMs: 1234 })
+  it('registers the six cursor-free tools, prompt, timeouts, and pure generic presenters, then disposes them', async () => {
+    const mounted = await mount({
+      maxSearchResults: 7,
+      searchTimeoutMs: 1234,
+      maxResultBytes: 128,
+      summaryMaxItems: 3,
+      summaryMaxEvidenceCharacters: 40,
+    })
     const names = mounted.ctx.tools.schemas().map(schema => schema.name)
     expect(names).toEqual([
       'session_search',
       'session_event_search',
+      'session_summary',
       'session_trace',
       'session_event_trace',
       'session_event_read',
@@ -251,6 +258,7 @@ describe('registration and schemas', () => {
     expect(mounted.ctx.tools.get('session_search')?.timeoutMs).toBe(1234)
     expect(mounted.ctx.tools.get('session_trace')?.timeoutMs).toBeUndefined()
     const parallelArgs: Record<string, unknown> = {
+      session_summary: {},
       session_trace: {},
       session_event_trace: { seq: 0 },
       session_event_read: { seq: 0 },
@@ -268,6 +276,8 @@ describe('registration and schemas', () => {
       .toEqual({ card: 'generic', kind: 'read', title: 'Trace current session' })
     expect(mounted.ctx.tools.get('session_trace')?.presentCall?.({ session_id: 'other' }))
       .toEqual({ card: 'generic', kind: 'read', title: 'Trace session other', rawInput: 'other' })
+    expect(mounted.ctx.tools.get('session_summary')?.presentCall?.({ session_id: 'other' }))
+      .toEqual({ card: 'generic', kind: 'read', title: 'Summarize session other', rawInput: 'other' })
     expect(mounted.ctx.tools.get('session_event_trace')?.presentCall?.({ session_id: 'other', seq: 3 }))
       .toEqual({
         card: 'generic',
@@ -292,6 +302,7 @@ describe('registration and schemas', () => {
     const classifications = [
       ['session_search', { query: 'q' }, 'exclusive'],
       ['session_event_search', { query: 'q' }, 'exclusive'],
+      ['session_summary', {}, 'parallel'],
       ['session_trace', {}, 'parallel'],
       ['session_event_trace', { seq: 0 }, 'parallel'],
       ['session_event_read', { seq: 0 }, 'parallel'],
@@ -318,12 +329,30 @@ describe('registration and schemas', () => {
       expect(() => { ToolSessionQuery.apply(mounted.ctx, { searchTimeoutMs }) })
         .toThrow(`no greater than ${MAX_TIMER_DELAY_MS}`)
     }
+    for (const maxResultBytes of [63, 1.5, Number.NaN]) {
+      expect(() => { ToolSessionQuery.apply(mounted.ctx, { maxResultBytes }) })
+        .toThrow('maxResultBytes')
+    }
+    for (const summaryMaxItems of [0, 1.5, Number.NaN]) {
+      expect(() => { ToolSessionQuery.apply(mounted.ctx, { summaryMaxItems }) })
+        .toThrow('summaryMaxItems')
+    }
+    for (const summaryMaxEvidenceCharacters of [0, 1.5, Number.NaN]) {
+      expect(() => { ToolSessionQuery.apply(mounted.ctx, { summaryMaxEvidenceCharacters }) })
+        .toThrow('summaryMaxEvidenceCharacters')
+    }
     expect(() => { ToolSessionQuery.apply(new Context(), {}) }).toThrow()
   })
 
   it('expresses the complete Node timer range in the Loader config schema', () => {
     expect(new ToolSessionQuery.Config({ searchTimeoutMs: MAX_TIMER_DELAY_MS }))
-      .toEqual({ maxSearchResults: 100, searchTimeoutMs: MAX_TIMER_DELAY_MS })
+      .toEqual({
+        maxSearchResults: 100,
+        searchTimeoutMs: MAX_TIMER_DELAY_MS,
+        maxResultBytes: 64 * 1024,
+        summaryMaxItems: 12,
+        summaryMaxEvidenceCharacters: 400,
+      })
     expect(() => new ToolSessionQuery.Config({ searchTimeoutMs: 1.5 })).toThrow()
     expect(() => new ToolSessionQuery.Config({ searchTimeoutMs: MAX_TIMER_DELAY_MS + 1 })).toThrow()
   })
@@ -573,6 +602,69 @@ describe('input validation and translation', () => {
 })
 
 describe('workspace authority and lineage redaction', () => {
+  it('summarizes only authorized event evidence and redacts credential-shaped text', async () => {
+    const mounted = await mount({ summaryMaxItems: 2, summaryMaxEvidenceCharacters: 48 })
+    const target = createSession(mounted.ctx, 'summary-target', '/work')
+    FakeQuery.titles.set(target.id, 'Safe title')
+    openStep(target, 'Ship the session evidence tools')
+    target.append(
+      'assistant/message',
+      {
+        turn: 1,
+        step: 1,
+        message: createMessage({
+          role: 'assistant',
+          content: [{ type: 'text', text: 'We decided to use API_KEY=secret-value-that-must-not-leak.' }],
+          source: { kind: 'model', ...{ provider: 'test', model: 'test' } },
+        }),
+      },
+      { surfaceOp: 'append' },
+    )
+    target.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: CallId('summary-write'),
+      name: 'apply_patch',
+      arguments: JSON.stringify({ path: 'packages/example/src/index.ts' }),
+    })
+    target.append('todo/write', {
+      todos: [
+        { content: 'add coverage', status: 'pending' },
+        { content: 'closed item', status: 'completed' },
+      ],
+    })
+
+    const result = await mounted.call('session_summary', { session_id: target.id })
+    const output = text(result)
+
+    expect(result.isError).toBe(false)
+    expect(output).toContain('Session summary-target — Safe title')
+    expect(output).toContain('seq 1: Ship the session evidence tools')
+    expect(output).toContain('seq 3: We decided to use API_KEY=[redacted]')
+    expect(output).not.toContain('secret-value-that-must-not-leak')
+    expect(output).toContain('seq 4: packages/example/src/index.ts')
+    expect(output).toContain('seq 5: pending: add coverage')
+    expect(output).not.toContain('closed item')
+  })
+
+  it('bounds every model-visible result without splitting UTF-8 text', async () => {
+    const mounted = await mount({ maxResultBytes: 64 })
+    const session = createSession(mounted.ctx, 'bounded-read', '/work')
+    session.append(
+      'user/message',
+      createUserMessage({
+        content: [{ type: 'text', text: '😀'.repeat(64) }], source: { kind: 'user' },
+      }),
+      { surfaceOp: 'append' },
+    )
+
+    const output = text(await mounted.call('session_event_read', { session_id: session.id, seq: 0 }))
+
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(64)
+    expect(output.endsWith('[truncated]')).toBe(true)
+    expect(output).not.toContain('\uFFFD')
+  })
+
   it('fails closed without an agent and for direct cross-workspace targets', async () => {
     const mounted = await mount()
     createSession(mounted.ctx, 'outside', '/outside')
@@ -1947,7 +2039,9 @@ describe('trace and exact read rendering', () => {
 
     const output = text(await mounted.call('session_trace', { session_id: target.id }))
     expect(output).toContain('Descendants:\n- deep-1 —')
-    expect(output).toContain(`${'  '.repeat(depth - 1)}- deep-${depth} —`)
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(64 * 1024)
+    expect(output.endsWith('[truncated]')).toBe(true)
+    expect(output).not.toContain(`deep-${depth} —`)
   })
 
   it('renders every event relationship sequence and a UTC target timestamp', async () => {
@@ -1983,7 +2077,7 @@ describe('trace and exact read rendering', () => {
     expect(text(result)).toContain(new Date(session.events[0]?.time ?? 0).toISOString())
   })
 
-  it('renders unabridged fenced target JSON and readable semantic or log-only neighbor summaries', async () => {
+  it('renders bounded fenced target JSON and readable semantic or log-only neighbor summaries', async () => {
     const mounted = await mount()
     const session = createSession(mounted.ctx, 'read', '/work')
     session.append(

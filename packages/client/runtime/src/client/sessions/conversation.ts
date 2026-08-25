@@ -171,6 +171,8 @@ export interface TurnErrorNode {
   step: number
   message: string
   code?: string
+  status?: number
+  requestId?: string
 }
 
 /** Durable notice for a turn ended by the per-request output-token cap. */

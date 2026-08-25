@@ -2813,10 +2813,16 @@ export interface Config {
   maxSearchResults?: number
   /** Cooperative full-text search deadline in milliseconds. Defaults to 30000. */
   searchTimeoutMs?: number
+  /** Maximum UTF-8 bytes in one complete redacted tool result. Defaults to 65536. */
+  maxResultBytes?: number
+  /** Maximum evidence entries in one repeated Session-summary section. Defaults to 12. */
+  summaryMaxItems?: number
+  /** Maximum characters from one Session-summary evidence record. Defaults to 400. */
+  summaryMaxEvidenceCharacters?: number
 }
 ```
 
-来源：[`packages/session-query/tool-session-query/src/index.ts:29`](../packages/session-query/tool-session-query/src/index.ts)
+来源：[`packages/session-query/tool-session-query/src/index.ts:35`](../packages/session-query/tool-session-query/src/index.ts)
 
 <a id="deepseek-aidsh-tool-skill"></a>
 

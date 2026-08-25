@@ -110,6 +110,46 @@ describe('Agent', () => {
     expect(adapter.requests).toHaveLength(1)
   })
 
+  it('prepend() on an idle agent starts a turn like followup()', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+
+    agent.prepend(createUserMessage({ content: [{ type: 'text', text: 'urgent' }], source: { kind: 'plugin', plugin: 'test' } }))
+    await agent.whenIdle()
+
+    expect(agent.session.events.some(event => event.type === 'user/message')).toBe(true)
+    expect(adapter.requests).toHaveLength(1)
+  })
+
+  it('prepend() delivers its turn ahead of already-parked queued turns', async () => {
+    // Turn 1 hangs in its model call; the queued turns park when cancellation
+    // aborts it, and the prepended retry must run before them (the turn-error
+    // retry flow).
+    const adapter = new MockAdapter(['hang', textResponse('retry'), textResponse('second'), textResponse('third')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'first')
+    await new Promise(resolve => setTimeout(resolve, 30))
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } }))
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'third' }], source: { kind: 'user' } }))
+    agent.cancel({ kind: 'user' }, { keepInbox: true })
+    await agent.whenIdle()
+    expect(agent.inbox.nextTurn.map(message => (message.content[0] as { text: string }).text))
+      .toEqual(['second', 'third'])
+
+    agent.prepend(createUserMessage({ content: [{ type: 'text', text: 'retry' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    const messages = agent.session.events
+      .filter(event => event.type === 'user/message')
+      .map(event => (event.data.content[0] as { type: 'text'; text: string }).text)
+    expect(messages).toEqual(['first', 'retry', 'second', 'third'])
+    const turns = agent.session.events.filter(event => event.type === 'turn/start')
+    expect(turns).toHaveLength(4)
+  })
+
   it('emits one running and idle transition for one completed turn', async () => {
     const ctx = await harness(new MockAdapter([textResponse('ok')]))
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })

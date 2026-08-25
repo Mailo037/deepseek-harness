@@ -195,7 +195,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'search' | 'fork' | 'refreshAll'
     args: unknown[]
   }[] = []
 
@@ -447,6 +447,15 @@ export class TestSessions implements ISessions {
   /** Record a catalog refresh; fixture callers drive snapshots explicitly. */
   refreshSubagents(parentSessionId: SessionId): Promise<void> {
     this.calls.push({ method: 'refreshSubagents', args: [parentSessionId] })
+    return Promise.resolve()
+  }
+
+  /**
+   * Record the full-reload call; fixture callers drive snapshots explicitly.
+   * @returns resolved promise (the reload has no fixture-side effect).
+   */
+  refreshAll(): Promise<void> {
+    this.calls.push({ method: 'refreshAll', args: [] })
     return Promise.resolve()
   }
 

@@ -69,13 +69,25 @@ describe('web e2e: the composer model switch is the default for later sessions',
           displayName: 'Origin Gateway',
           api: 'openai-completions',
           baseURL: 'https://gateway.origin.example/v1',
-          models: [{ id: START_MODEL, name: 'Origin Large' }],
+          models: [{
+            id: START_MODEL,
+            name: 'Origin Large',
+            contextWindow: 128_000,
+            maxTokens: 8_192,
+            input: ['text'],
+          }],
         },
         [ROUTE]: {
           displayName: 'Acme Gateway',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
-          models: [{ id: MODEL, name: 'Acme Large' }],
+          models: [{
+            id: MODEL,
+            name: 'Acme Large',
+            contextWindow: 256_000,
+            maxTokens: 16_384,
+            input: ['text', 'image'],
+          }],
         },
       },
     })
@@ -108,7 +120,14 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
-    await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
+    const choice = page.getByRole('menuitemradio', { name: 'Acme Large' })
+    await choice.hover()
+    const details = page.locator('[data-model-info-card]')
+    expect(await details.textContent()).toContain('acme-large')
+    expect(await details.textContent()).toContain('256K')
+    expect(await details.textContent()).toContain('16K')
+    expect(await details.textContent()).toContain('文本 · 图片')
+    await choice.click()
 
     // The switch is what sets the default: the shared Agent-route settings section
     // now names it, beside the provider profiles the Models page writes.

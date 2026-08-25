@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-incremental-history-window.md
-2026-08-21-incremental-history-window.md: 2b4d10cde749f649afe67c269921aafd30ddb493
-2026-08-21-incremental-history-window.zh.md: 89adbd2f8763ace4a6d421eeaf143f6d1891c45b
+2026-08-21-incremental-history-window.md: 432230cf7403ad19721d061514610f4e8c6a15e3
+2026-08-21-incremental-history-window.zh.md: 574766f443ea12f59ec7a750fd5ae4431ed8e01d

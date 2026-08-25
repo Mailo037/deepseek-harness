@@ -10,6 +10,7 @@ import type {
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -49,7 +50,9 @@ function adapterOf(
 ): PiAiAdapter {
   return new PiAiAdapter({
     profiles: () => resolveProfiles(providers),
-    resolveApiKey: () => Promise.resolve(apiKey),
+    resolveApiKey: () => Promise.resolve(apiKey === undefined
+      ? undefined
+      : { ref: credentialRef('TEST_KEY'), value: apiKey }),
     auth: memoryAuth(),
   })
 }
@@ -87,7 +90,7 @@ describe('PiAiAdapter provider routing', () => {
     await ctx.plugin(LlmRuntime)
     ctx.llm.registerAdapter(['deepseek'], new PiAiAdapter({
       profiles: () => resolveProfiles(providers),
-      resolveApiKey: () => Promise.resolve('test-key'),
+      resolveApiKey: () => Promise.resolve({ ref: credentialRef('TEST_KEY'), value: 'test-key' }),
       auth: memoryAuth(),
     }))
 
@@ -388,6 +391,7 @@ describe('PiAiAdapter provider routing', () => {
       failure: {
         message: `pi-ai detected context overflow for model "${model.id}"`,
         code: CONTEXT_WINDOW_EXCEEDED_CODE,
+        apiKeyRef: 'PI_TEST_KEY',
       },
     })
   })

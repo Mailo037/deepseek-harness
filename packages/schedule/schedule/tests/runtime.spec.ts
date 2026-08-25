@@ -94,6 +94,7 @@ async function harness(): Promise<RuntimeHarness> {
       if (controls.throwFollowup) throw new Error('queue unavailable')
       followed.push(message)
     },
+    prepend(_message: UserMessage) {},
     steer(_message: UserMessage) {},
     inject(_message: UserMessage) {},
   }

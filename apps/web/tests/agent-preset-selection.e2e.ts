@@ -223,8 +223,23 @@ describe('web e2e: agent-preset selection', () => {
 
   it('applies the staged pick to the blank session, and the host honors it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-stage'))
-    await page.getByRole('button', { name: 'Standard mode' }).click()
+    const trigger = page.getByRole('button', { name: 'Standard mode' })
+    const labelTrack = await trigger.locator('[data-elevator-label]').elementHandle()
+    if (labelTrack === null) throw new Error('preset trigger has no elevator label')
+    await trigger.click()
     await page.getByRole('menuitem', { name: /Minimal mode/ }).click()
+
+    // The visible preset label travels through the shared elevator track
+    // before the host's staged-selection response settles.
+    await expect.poll(
+      () => labelTrack.evaluate(element => element.querySelectorAll(':scope > [data-elevator-value]').length),
+      { timeout: 1_000 },
+    ).toBe(2)
+    expect(await labelTrack.evaluate(
+      element => window.getComputedStyle([...element.querySelectorAll(':scope > [data-elevator-value]')].at(-1)!).animationName,
+    )).not.toBe('none')
+    expect(await labelTrack.evaluate(element => window.getComputedStyle(element).transitionProperty)).toContain('width')
+    expect(await labelTrack.evaluate(element => element.style.width)).not.toBe('')
 
     // The chip stages; the blank session the workspace connect produced is
     // what the stage lands on. The host's own answer is what comes back.

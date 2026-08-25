@@ -29,10 +29,12 @@ async function bench() {
   const fork = vi.fn(async () => 'forked' as never)
   const deleteSession = vi.fn(async () => {})
   const deleteArchivedSessions = vi.fn(async () => [])
+  const workspacesRefresh = vi.fn(async () => {})
   ctx.provide('workspaces', {
-    create, startSession, rename, insertSessionBefore, deleteSession, deleteArchivedSessions,
+    create, startSession, rename, insertSessionBefore, deleteSession, deleteArchivedSessions, refresh: workspacesRefresh,
   } as never)
-  ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork } as never)
+  const sessionsRefreshAll = vi.fn(async () => {})
+  ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork, refreshAll: sessionsRefreshAll } as never)
   ctx.provide('connection', {
     hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
   } as never)
@@ -45,6 +47,7 @@ async function bench() {
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, rename,
     insertSessionBefore, deleteSession, deleteArchivedSessions, open, clear, search, renameSession, binding, fork,
+    workspacesRefresh, sessionsRefreshAll,
   }
 }
 
@@ -117,6 +120,9 @@ describe('ui-workspace apply', () => {
     expect(b.deleteArchivedSessions).toHaveBeenCalled()
     await browser.createWorkspace({ path: '/tmp/browser-project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/browser-project' })
+    await browser.refreshAll()
+    expect(b.workspacesRefresh).toHaveBeenCalled()
+    expect(b.sessionsRefreshAll).toHaveBeenCalled()
 
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })

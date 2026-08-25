@@ -7,7 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage, BlockAssembler, deepFreeze } from '@deepseek-ai/dsh-llm'
-import type { FinishReason, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
+import type { FinishReason, GenerateOptions, Message, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
   normalizeSessionTitle,
@@ -35,6 +35,8 @@ export interface SessionTitleLlmRequestEventData {
   readonly messages: Message[]
   /** Exact auxiliary output-token cap. */
   readonly maxTokens: number
+  /** Explicit reasoning effort for a retry after a reasoning-disabled rejection. */
+  readonly reasoningEffort?: ReasoningEffortId
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -46,6 +48,9 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 /** Capability-owned timeout reason code for auxiliary title requests. */
 export const SESSION_TITLE_TIMEOUT_CODE = 'SESSION_TITLE_TIMEOUT'
+
+const MAX_SESSION_TITLE_ATTEMPTS = 3
+const REASONING_MANDATORY_MESSAGE = 'Reasoning is mandatory for this endpoint and cannot be disabled.'
 
 /** Required deployment policy for one model-backed title plugin. */
 export interface SessionTitleLlmConfig {
@@ -217,6 +222,24 @@ function finishError(finish: FinishReason): Error | undefined {
   }
 }
 
+/** Whether a provider rejected the title call because it disabled required reasoning. */
+function reasoningIsMandatory(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(REASONING_MANDATORY_MESSAGE)
+}
+
+/** List the adapter-ordered enabled reasoning efforts available to one exact title route. */
+async function titleRetryReasoningEfforts(
+  ctx: Context,
+  route: SessionTitleModelProvenance,
+  signal: AbortSignal,
+): Promise<readonly ReasoningEffortId[]> {
+  const model = await ctx.llm.resolveModelInfo(route.provider, route.model, signal)
+  return model.reasoning?.efforts
+    .filter(effort => effort.id !== 'off')
+    .map(effort => effort.id)
+    ?? []
+}
+
 /**
  * Generate one title through the shared auxiliary LLM call.
  * @param ctx - context exposing the registered LLM service.
@@ -249,46 +272,67 @@ export async function generateSessionTitleWithLlm(
   })]
   const system = systemPrompt(config)
   using callDeadline = deadline(request.signal, config.timeoutMs, SESSION_TITLE_TIMEOUT_CODE)
-  const options: GenerateOptions = deepFreeze({
-    provider: route.provider,
-    model: route.model,
-    messages,
-    system,
-    maxTokens: config.maxOutputTokens,
-    sessionId: request.session.id,
-    purpose: 'session-title',
-    signal: callDeadline.signal,
-  })
-  request.session.append('session/title-llm-request', {
-    titleProvider,
-    messageSeqs: selectedMessages.map(message => message.seq),
-    route,
-    system,
-    messages,
-    maxTokens: config.maxOutputTokens,
-  })
-  callDeadline.signal.throwIfAborted()
-  const assembler = new BlockAssembler()
-  for await (const chunk of ctx.llm.stream(options)) {
-    callDeadline.signal.throwIfAborted()
-    assembler.push(chunk)
+  let attempt = 1
+  let reasoningEffort: ReasoningEffortId | undefined
+  let retryEfforts: readonly ReasoningEffortId[] | undefined
+  let nextRetryEffort = 0
+  while (attempt <= MAX_SESSION_TITLE_ATTEMPTS) {
+    const options: GenerateOptions = deepFreeze({
+      provider: route.provider,
+      model: route.model,
+      ...reasoningEffort === undefined ? {} : { reasoningEffort },
+      messages,
+      system,
+      maxTokens: config.maxOutputTokens,
+      sessionId: request.session.id,
+      purpose: reasoningEffort === undefined ? 'session-title' : 'session-title-reasoning',
+      signal: callDeadline.signal,
+    })
+    request.session.append('session/title-llm-request', {
+      titleProvider,
+      messageSeqs: selectedMessages.map(message => message.seq),
+      route,
+      system,
+      messages,
+      maxTokens: config.maxOutputTokens,
+      ...reasoningEffort === undefined ? {} : { reasoningEffort },
+    })
+    try {
+      callDeadline.signal.throwIfAborted()
+      const assembler = new BlockAssembler()
+      for await (const chunk of ctx.llm.stream(options)) {
+        callDeadline.signal.throwIfAborted()
+        assembler.push(chunk)
+      }
+      callDeadline.signal.throwIfAborted()
+      const terminalError = finishError(assembler.finish)
+      if (terminalError !== undefined) throw terminalError
+      const blocks = assembler.blocks()
+      if (blocks.some(block => block.type === 'tool-call')) {
+        throw new Error('session-title-llm: title output must contain text only')
+      }
+      const text = blocks
+        .filter((block): block is Extract<(typeof blocks)[number], { type: 'text' }> => block.type === 'text')
+        .map(block => block.text)
+        .join(' ')
+      const title = normalizeSessionTitle(text, Number.MAX_SAFE_INTEGER)
+      if (title.length === 0) throw new Error('session-title-llm: title model produced no text')
+      return {
+        title,
+        messageSeqs: selectedMessages.map(message => message.seq),
+        model: route,
+      }
+    } catch (error: unknown) {
+      if (!reasoningIsMandatory(error) || attempt === MAX_SESSION_TITLE_ATTEMPTS) throw error
+      if (retryEfforts === undefined) {
+        retryEfforts = await titleRetryReasoningEfforts(ctx, route, callDeadline.signal)
+      }
+      const next = retryEfforts[nextRetryEffort]
+      if (next === undefined) throw error
+      reasoningEffort = next
+      nextRetryEffort += 1
+      attempt += 1
+    }
   }
-  callDeadline.signal.throwIfAborted()
-  const terminalError = finishError(assembler.finish)
-  if (terminalError !== undefined) throw terminalError
-  const blocks = assembler.blocks()
-  if (blocks.some(block => block.type === 'tool-call')) {
-    throw new Error('session-title-llm: title output must contain text only')
-  }
-  const text = blocks
-    .filter((block): block is Extract<(typeof blocks)[number], { type: 'text' }> => block.type === 'text')
-    .map(block => block.text)
-    .join(' ')
-  const title = normalizeSessionTitle(text, Number.MAX_SAFE_INTEGER)
-  if (title.length === 0) throw new Error('session-title-llm: title model produced no text')
-  return {
-    title,
-    messageSeqs: selectedMessages.map(message => message.seq),
-    model: route,
-  }
+  throw new Error('session-title-llm: title retry attempts exhausted')
 }

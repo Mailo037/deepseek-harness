@@ -41,6 +41,7 @@ function liveAgent(ctx: Context, session: Session): Agent {
     get status() { return status },
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
     inject(input: UserMessage) {
       inbox.append('next-step', input)

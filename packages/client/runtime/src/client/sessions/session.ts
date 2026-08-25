@@ -28,8 +28,24 @@ import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
 
-/** Messages requested per older-history page (scroll-up paging). */
+/** Messages requested for the first older-history page (scroll-up paging). */
 export const PAGE_MESSAGES = 50
+
+/** Messages requested for the largest older-history page, capping exponential growth. */
+export const MAX_PAGE_MESSAGES = 800
+
+/**
+ * Page size for the `page`th older-history page (0-indexed): starts at
+ * {@link PAGE_MESSAGES} and doubles each page, capped at
+ * {@link MAX_PAGE_MESSAGES}, so deep scroll-up fetches reuse the same request
+ * for progressively more history instead of always returning the same short chunk.
+ * @param page - zero-based number of older pages fetched so far.
+ * @returns the message count this page should request.
+ */
+export function loadOlderPageSize(page: number): number {
+  const size = PAGE_MESSAGES * Math.pow(2, Math.max(0, page))
+  return size >= MAX_PAGE_MESSAGES ? MAX_PAGE_MESSAGES : Math.floor(size)
+}
 
 /**
  * Tail-page size on open: the last two request/response pairs. The reader
@@ -85,6 +101,8 @@ export class Session implements SessionFace {
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
+  /** Older pages fetched so far; drives exponential page-size growth in {@link loadOlder}. */
+  private loadOlderPages = 0
   private pending = new Map<string, PendingInteraction>()
   private pendingRev = 0
   private pendingCache: { rev: number; value: PendingInteraction[] } | null = null
@@ -189,14 +207,15 @@ export class Session implements SessionFace {
   // ---- Operations ----
 
   /**
-   * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
+   * Send (queue/prepend/steer passed through 1:1); failures land in the snapshot's promptError.
    * @param content - text plus browser-owned temporary image uploads.
-   * @param mode - queue appends after the current turn; steer interrupts it.
+   * @param mode - queue appends after the current turn; prepend makes the prompt
+   *   the next turn ahead of every already-queued one; steer interrupts it.
    * @returns the prompt result (also mirrored into promptError on failure).
    */
   async prompt(
     content: PromptContentPart[],
-    mode: 'queue' | 'steer',
+    mode: 'queue' | 'prepend' | 'steer',
     signal?: AbortSignal,
   ): Promise<RpcResult<{ accepted: true }>> {
     this.promptError = null
@@ -408,11 +427,13 @@ export class Session implements SessionFace {
     this.loadingOlder = true
     this.notifier.markDirty()
     try {
-      const { result } = await this.history({ beforeSeq: this.baseSeq, maxMessages: PAGE_MESSAGES })
+      const page = this.loadOlderPages
+      const { result } = await this.history({ beforeSeq: this.baseSeq, maxMessages: loadOlderPageSize(page) })
       if (!result.ok) return // keep the window as-is; do not overwrite openError (open already succeeded)
       const older = result.value.events
       if (older.length === 0) {
         this.hasMore = result.value.hasMore
+        this.loadOlderPages = 0
         this.conversation.prepend([], this.hasMore)
         return
       }
@@ -421,6 +442,7 @@ export class Session implements SessionFace {
         // Continuity assertion: on violation drop the page fail-soft rather than render an out-of-order stream.
         console.error(`[web-runtime] history page discontinuous: tail seq ${tail?.event.seq} vs baseSeq ${this.baseSeq}`)
         this.hasMore = false
+        this.loadOlderPages = 0
         this.conversation.prepend([], false)
         return
       }
@@ -429,6 +451,9 @@ export class Session implements SessionFace {
       /* v8 ignore next -- the ?? arm needs older[0] undefined, but the empty-page branch above already returned. */
       this.baseSeq = older[0]?.event.seq ?? this.baseSeq
       this.hasMore = result.value.hasMore
+      // Grown only on an advanced page; an exhausted history resets so a later
+      // re-request (hasMore flipped back on) starts again at the base size.
+      this.loadOlderPages = result.value.hasMore ? page + 1 : 0
       this.conversation.prepend(older.map(conversationInput), this.hasMore)
     } catch (error) {
       console.error('[web-runtime] loadOlder failed:', error)

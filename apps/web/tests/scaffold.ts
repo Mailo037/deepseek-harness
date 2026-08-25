@@ -842,7 +842,9 @@ export async function seedSession(
     throw new Error('seed fixture requires a numeric createdAt header')
   }
   const timeAnchor = fixtureCreatedAt === 0 ? meta.createdAt : fixtureCreatedAt
-  const materializedEvents = events.map((event, index) => ({ ...event, time: timeAnchor + index }))
+  // Replay parsing returns logical records; persistence owns their contiguous
+  // per-Session sequence during fixture materialization.
+  const materializedEvents = events.map((event, index) => ({ ...event, seq: index, time: timeAnchor + index }))
   await persistSeedSession(scaffold, meta, materializedEvents)
   return meta.id
 }

@@ -11,12 +11,15 @@ import { CallId, createAssistantMessage, createToolResultMessage, createUserMess
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
+  assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const OVERLAY = fileURLToPath(new URL('./produced-files.overlay.yml', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/produced-files', import.meta.url))
+const UI_EXPECTED = fileURLToPath(new URL('./snapshots/produced-files/ui.expected.md', import.meta.url))
 const SEED_ID = 'produced-files-web-e2e'
 const DONE = 'PRODUCED_FILES_DONE'
 
@@ -120,6 +123,10 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    const skipOnboarding = page.getByRole('button', { name: 'Skip for now', exact: true })
+    await skipOnboarding.waitFor({ state: 'visible', timeout: 15_000 })
+    await skipOnboarding.click()
+    await skipOnboarding.waitFor({ state: 'hidden', timeout: 15_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -127,16 +134,16 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await scaffold?.close()
   })
 
-  it.skipIf(MODE === 'record')('keeps a narrow ten-file summary on one line with +8 and a folder action', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-produced-files'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+  async function openSeededSession(): Promise<void> {
+    const sessionRow = page.locator(`[role="treeitem"][data-drag-id="s:${SEED_ID}"]`)
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
-
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+  }
+
+  it.skipIf(MODE === 'record')('keeps a narrow ten-file summary on one line with +8 and a folder action', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-produced-files'))
+    await openSeededSession()
     await page.setViewportSize({ width: 780, height: 900 })
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
@@ -174,6 +181,28 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     }))
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth)
 
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  }, 90_000)
+
+  it.skipIf(MODE === 'record')('opens the ten-file line-change summary without a duplicate total header', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-line-change-summary'))
+    await openSeededSession()
+    const lineChangeTrigger = page.getByRole('button', {
+      name: '10 files changed, +10 lines and -0 lines', exact: true,
+    })
+    await lineChangeTrigger.waitFor({ timeout: 15_000 })
+    await lineChangeTrigger.click()
+    const lineChangeDialog = page.getByRole('dialog', {
+      name: '10 files changed, +10 lines and -0 lines', exact: true,
+    })
+    await lineChangeDialog.waitFor({ timeout: 10_000 })
+    expect(await lineChangeDialog.getByRole('listitem').count()).toBe(10)
+    expect(await lineChangeDialog.getByText('Total lines', { exact: true }).count()).toBe(0)
+
+    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
+    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 90_000)

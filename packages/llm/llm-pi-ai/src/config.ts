@@ -19,7 +19,7 @@ import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import { DEFAULT_KEY_COOLDOWN_MS, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import {
   CACHE_CONTROL_FORMATS,
@@ -88,6 +88,15 @@ export type {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary. Each is resolved through the same seams as
+   * {@link apiKeyEnv}; a backup with no stored value fails the request that
+   * reaches it rather than being silently skipped.
+   */
+  backupApiKeys?: string[]
+  /** How long a quota-failed key stays retired before it is tried again (default one hour). */
+  apiKeyCooldownMs?: number
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -177,13 +186,17 @@ export interface PiAiProviderProfile {
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'backupApiKeys' | 'apiKeyCooldownMs' | 'retryPolicy' | 'models' | 'displayName'> {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
   displayName: string
   /** Validated credential reference, when one is configured. */
   apiKeyEnv?: CredentialRef
+  /** Validated rotation backups, empty when none are configured. */
+  backupApiKeys: readonly CredentialRef[]
+  /** How long a quota-failed key stays retired before it is tried again. */
+  apiKeyCooldownMs: number
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
@@ -306,6 +319,8 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
+  backupApiKeys: z.array(z.string().role('credential-ref')),
+  apiKeyCooldownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_KEY_COOLDOWN_MS),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
@@ -348,6 +363,40 @@ export const Config: z<Config> = z.object({
  */
 export function assertServiceable(config: Config): void {
   resolveProfiles(config.providers)
+}
+
+/**
+ * Validate, brand, and detach one route's rotation backups. A backup must
+ * name a valid credential reference, differ from the primary, and be unique
+ * among its siblings — anything else would resolve the same key twice or
+ * break the rotation contract silently, so it fails loud at resolution.
+ * @param provider - the owning route, named in diagnostics.
+ * @param backups - raw backup reference names from configuration.
+ * @param primary - the validated primary reference of the same profile, when one is configured.
+ * @returns the ordered branded backup references.
+ */
+function resolveBackupApiKeys(
+  provider: string,
+  backups: readonly string[] | undefined,
+  primary: CredentialRef | undefined,
+): readonly CredentialRef[] {
+  if ((backups?.length ?? 0) > 0 && primary === undefined) {
+    throw new Error(`llm-pi-ai: provider "${provider}" backupApiKeys requires apiKeyEnv to be set`)
+  }
+  const seen = new Set<string>()
+  const resolved: CredentialRef[] = []
+  for (const raw of backups ?? []) {
+    const ref = credentialRef(raw)
+    if (ref === primary) {
+      throw new Error(`llm-pi-ai: provider "${provider}" backupApiKeys must not repeat the primary key reference "${primary}"`)
+    }
+    if (seen.has(ref)) {
+      throw new Error(`llm-pi-ai: provider "${provider}" backupApiKeys must not contain duplicate reference "${ref}"`)
+    }
+    seen.add(ref)
+    resolved.push(ref)
+  }
+  return resolved
 }
 
 /** Reject removed pre-release profile fields and name their replacements. */
@@ -413,6 +462,14 @@ export function resolveProfiles(
     if (!Number.isSafeInteger(requestImageMaxBytes) || requestImageMaxBytes <= 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" requestImageMaxBytes must be a positive safe integer`)
     }
+    const apiKeyCooldownMs = source.apiKeyCooldownMs ?? DEFAULT_KEY_COOLDOWN_MS
+    if (!Number.isFinite(apiKeyCooldownMs)
+      || apiKeyCooldownMs <= 0
+      || apiKeyCooldownMs > MAX_TIMER_DELAY_MS) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" apiKeyCooldownMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
+      )
+    }
     // Detached from the configuration object because pi-ai types `Model.input`
     // mutable. The schema's explicit default covers an absent key, so an empty
     // list here is always one someone typed — and unlike an entry's, nothing
@@ -437,12 +494,14 @@ export function resolveProfiles(
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const { apiKeyEnv, backupApiKeys, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
     resolved.set(provider, {
       ...rest,
       provider,
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
+      backupApiKeys: resolveBackupApiKeys(provider, backupApiKeys, apiKeyEnv === undefined ? undefined : credentialRef(apiKeyEnv)),
+      apiKeyCooldownMs,
       streamIdleTimeoutMs,
       maxRequestImageBytes,
       requestImagePixelBudget,

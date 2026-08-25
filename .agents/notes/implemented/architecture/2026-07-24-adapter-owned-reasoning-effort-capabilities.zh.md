@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`dsh-llm` 使用不透明的品牌类型 `ReasoningEffortId` 表示推理强度。由适配器持有的单次 `resolveModel(provider, model, signal?)` 查询返回 `LlmResolvedModelInfo`，其中包含确切模型身份以及可选的上下文和推理元数据。`LlmRuntime.resolveModelInfo()` 会校验该聚合结果，并返回与适配器内部状态分离的值副本。`reasoning.efforts` 存在时，是包含展示元数据的非空有序 ID 列表，并可指定一个由配置确定的默认值。核心要求显式指定或配置指定的推理强度与列表中的某个 ID 完全一致，且绝不自动调整或为值提供别名。
+`dsh-llm` 使用不透明的品牌类型 `ReasoningEffortId` 表示推理强度。由适配器持有的单次 `resolveModel(provider, model, signal?)` 查询返回 `LlmResolvedModelInfo`，其中包含确切模型身份以及可选的上下文和推理元数据。`LlmRuntime.resolveModelInfo()` 会校验该聚合结果，并返回与适配器内部状态分离的值副本。`reasoning.efforts` 存在时，是包含展示元数据的非空 ID 列表，按适配器定义的升级顺序排列，并可指定一个由配置确定的默认值。核心要求显式指定或配置指定的推理强度与列表中的某个 ID 完全一致，且绝不自动调整或为值提供别名。
 
 `LlmCallConfig` 和 `GenerateOptions` 携带可选的推理强度。agent loop 在活跃轮次信号的控制下准备 `agent/request` 处理完成后的配置，再写入 `request/header`，因此默认值和动态变更只有成为持久化事实后才对模型可见。准备完成的调用在异步确切模型解析、请求头持久记录和分派全程保留同一项确切的适配器注册；直接调用 `LlmRuntime.stream()` 时，也会在等待解析前捕获最终的适配器注册。没有已注册适配器的路由会保留原定配置，使 `llm/stream` 中间件可以接管并短路该请求；若仍未得到处理，最终分发会拒绝该路由。恢复后的 agent loop 仅在初始提供方/模型路由未变时保留日志中记录的推理强度；如果路由发生变化，则丢弃上一模型的不透明 ID。
 

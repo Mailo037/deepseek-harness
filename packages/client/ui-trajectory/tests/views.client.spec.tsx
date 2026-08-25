@@ -49,7 +49,11 @@ const sessionSnapshots = new WeakMap<SlotRegistry, SnapshotStore<ConversationSna
 const tConversation: ConversationSessionHeaderProps['t'] =
   key => (conversationZh as Record<string, string>)[key] ?? key
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 // The chat store persists under its declared key; clear so one case's active
 // view cannot rehydrate into the next.
 beforeEach(() => {
@@ -358,6 +362,27 @@ describe('plugin registration', () => {
 })
 
 describe('tab switching in ConversationRoot', () => {
+  it('commits a loading spinner before materializing the trajectory view', async () => {
+    let frame: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frame = callback
+      return 1
+    })
+    const b = await bench()
+    const view = mount(b.slots)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
+
+    expect(view.container.querySelector('[data-trajectory-loading]')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toContain('正在加载轨迹…')
+    expect(screen.queryByRole('toolbar', { name: '轨迹工具栏' })).toBeNull()
+
+    act(() => { frame?.(0) })
+
+    await screen.findByRole('toolbar', { name: '轨迹工具栏' })
+    expect(view.container.querySelector('[data-trajectory-loading]')).toBeNull()
+  })
+
   it('renders two tabs, defaults to chat, and switches to the trajectory ledger', async () => {
     const b = await bench()
     const view = mount(b.slots)
@@ -365,10 +390,10 @@ describe('tab switching in ConversationRoot', () => {
     expect(screen.getAllByRole('tab').map(t => t.textContent)).toEqual(['Chat', 'Trajectory'])
 
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
+    await screen.findByRole('toolbar', { name: '轨迹工具栏' })
     expect(screen.queryByText(/turns ·/)).toBeNull()
     expect(view.container.querySelectorAll('tr[data-turn-start="true"]')).toHaveLength(2)
     expect(screen.queryByRole('columnheader')).toBeNull()
-    expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Trajectory timeline' })).toBeTruthy()
     expect(view.container.querySelector('[data-conversation-composer-overlay]')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse turns' }))
@@ -397,7 +422,7 @@ describe('tab switching in ConversationRoot', () => {
     mount(b.slots)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
-    fireEvent.keyDown(screen.getByRole('row', { name: /TOOL/ }), { key: 'Enter' })
+    fireEvent.keyDown(await screen.findByRole('row', { name: /TOOL/ }), { key: 'Enter' })
     expect(screen.getByRole('complementary', { name: 'Event details' })).toBeTruthy()
     expect(screen.getByText('Turn 1 · Step 1')).toBeTruthy()
     expect(screen.getByText('Completed')).toBeTruthy()
@@ -434,7 +459,7 @@ describe('tab switching in ConversationRoot', () => {
     const view = mount(b.slots, nodes)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
-    expect(screen.getByText('Between turns')).toBeTruthy()
+    expect(await screen.findByText('Between turns')).toBeTruthy()
     expect(view.container.textContent).not.toContain('Turn null')
 
     fireEvent.click(screen.getByRole('button', { name: 'Request #2 · Compaction' }))
@@ -486,7 +511,7 @@ describe('tab switching in ConversationRoot', () => {
     mount(b.slots, nodes)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
-    const firstRequest = screen.getByRole('button', { name: 'Request #2 · Compaction' })
+    const firstRequest = await screen.findByRole('button', { name: 'Request #2 · Compaction' })
     const secondRequest = screen.getByRole('button', { name: 'Request #4 · Compaction' })
     const firstSection = firstRequest.closest('tr')?.querySelector('span')
     const secondSection = secondRequest.closest('tr')?.querySelector('span')
@@ -510,7 +535,7 @@ describe('tab switching in ConversationRoot', () => {
     const b = await bench()
     mount(b.slots)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
-    const plot = screen.getByLabelText('Timeline overview; drag horizontally to focus events')
+    const plot = await screen.findByLabelText('Timeline overview; drag horizontally to focus events')
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 72, width: 100, height: 72,
       toJSON: () => ({}),
@@ -542,7 +567,7 @@ describe('tab switching in ConversationRoot', () => {
     const b = await bench()
     const view = mount(b.slots)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
-    const plot = screen.getByLabelText('Timeline overview; drag horizontally to focus events')
+    const plot = await screen.findByLabelText('Timeline overview; drag horizontally to focus events')
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 72, width: 100, height: 72,
       toJSON: () => ({}),
@@ -580,7 +605,7 @@ describe('tab switching in ConversationRoot', () => {
     const b = await bench(historySnapshot([]))
     mount(b.slots)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
-    expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
+    expect(await screen.findByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
     expect(screen.getByText('No timing data')).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', {
       name: 'Collapse turns',
@@ -1119,7 +1144,7 @@ describe('timeline projection', () => {
     })
   })
 
-  it('empty inputs produce no model and the standalone view reports its empty form', () => {
+  it('empty inputs produce no model and the standalone view reports its empty form', async () => {
     expect(deriveTrajectoryTimeline([])).toBeNull()
     render(createElement(
       TrajectoryView,
@@ -1129,13 +1154,13 @@ describe('timeline projection', () => {
         ...standaloneDuration(),
       },
     ))
-    expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
+    expect(await screen.findByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
     expect(screen.queryByRole('row')).toBeNull()
   })
 })
 
 describe('TrajectoryView state', () => {
-  it('persists the duration preference through the runtime snapshot-store seam', () => {
+  it('persists the duration preference through the runtime snapshot-store seam', async () => {
     const firstDuration = createTrajectoryDurationStore()
     const commonProps = {
       ...standaloneProps(NODES),
@@ -1148,7 +1173,7 @@ describe('TrajectoryView state', () => {
         setActualDuration={(value) => { firstDuration.set(value) }}
       />,
     )
-    const duration = screen.getByRole('button', { name: 'Use actual duration' })
+    const duration = await screen.findByRole('button', { name: 'Use actual duration' })
 
     expect(duration.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(duration)
@@ -1163,13 +1188,13 @@ describe('TrajectoryView state', () => {
         setActualDuration={(value) => { restoredDuration.set(value) }}
       />,
     )
-    expect(screen.getByRole('button', { name: 'Use actual duration' }).getAttribute('aria-pressed'))
+    expect((await screen.findByRole('button', { name: 'Use actual duration' })).getAttribute('aria-pressed'))
       .toBe('true')
   })
 
 
 
-  it('keeps ledger and timeline selection on the same event after prepend', () => {
+  it('keeps ledger and timeline selection on the same event after prepend', async () => {
     const older = {
       kind: 'user', seq: 1, time: 1_000,
       content: [{ type: 'text', text: 'older prompt' }], source: null,
@@ -1187,7 +1212,7 @@ describe('TrajectoryView state', () => {
         loadOlder={vi.fn(() => Promise.resolve(false))}
       />,
     )
-    fireEvent.click(screen.getByRole('row', { name: /selected current response/ }))
+    fireEvent.click(await screen.findByRole('row', { name: /selected current response/ }))
 
     act(() => { store.set(historySnapshot([older, current])) })
 
@@ -1229,7 +1254,7 @@ describe('TrajectoryView state', () => {
     await waitFor(() => { expect(screen.queryByText('Loading trajectory…')).toBeNull() })
   })
 
-  it('a fully loaded history window opens without probing older pages', () => {
+  it('a fully loaded history window opens without probing older pages', async () => {
     const loadOlder = vi.fn(() => Promise.resolve(false))
     render(
       <TrajectoryView
@@ -1240,6 +1265,7 @@ describe('TrajectoryView state', () => {
       />,
     )
     expect(loadOlder).not.toHaveBeenCalled()
+    await screen.findByRole('toolbar', { name: '轨迹工具栏' })
     expect(screen.queryByText('Loading trajectory…')).toBeNull()
   })
 

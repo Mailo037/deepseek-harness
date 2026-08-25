@@ -1776,6 +1776,79 @@ describe('automatic listener and loader composition', () => {
     await expect(recover(ctx, agent(session, MODEL), overflow())).resolves.toBe(false)
   })
 
+  it('adopts the measured overflow size as the effective window for later proactive pressure', async () => {
+    const ctx = new Context()
+    void new LlmRuntime(ctx)
+    void new TokenMeter(ctx)
+    // This route advertises no context capacity at all, so proactive pressure
+    // is impossible until the provider itself confirms an overflow.
+    ctx.llm.registerAdapter([MODEL, 'actual', 'unlisted-provider'], new RoutedContextAdapter({}))
+    void new TestCompactionEngine(ctx, {
+      thresholdRatio: 0.5,
+      retainTokens: 60,
+    })
+    const session = conversation(4)
+    expect(ctx.tokenMeter.measure(session).totalTokens).toBeGreaterThan(0)
+
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+
+    // Before any overflow the route has no capacity, so proactive pressure
+    // warns once and does not summarize.
+    await preStep(ctx, agent(session, MODEL))
+    expect(warnings).toContainEqual(expect.stringContaining('no context capacity'))
+    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+
+    // A provider-confirmed overflow adopts the measured request size as this
+    // chat's effective window (no adapter capacity is needed for recovery) and
+    // recovers through compaction.
+    expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
+    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(true)
+
+    // The same route now has a learned capacity, so proactive pressure on the
+    // chat no longer fails on missing capacity.
+    warnings.length = 0
+    await preStep(ctx, agent(session, MODEL))
+    expect(warnings).not.toContainEqual(expect.stringContaining('no context capacity'))
+  })
+
+  it('does not inherit a learned window across a route change', async () => {
+    const ctx = new Context()
+    void new LlmRuntime(ctx)
+    void new TokenMeter(ctx)
+    // No capacity for the overflowed route, but a large advertised window for
+    // the route the chat later switches to.
+    ctx.llm.registerAdapter(
+      [MODEL, 'actual', 'other-model'],
+      new RoutedContextAdapter({ 'other-model': 100_000 }),
+    )
+    void new TestCompactionEngine(ctx, {
+      thresholdRatio: 0.5,
+      retainTokens: 60,
+    })
+    const session = conversation(4)
+
+    // Overflow on the original route learns that route's effective window and
+    // recovers through compaction.
+    expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
+
+    // The chat switches to a model that advertises a large capacity.
+    session.append('request/header', {
+      header: { config: { provider: 'other-model', model: 'other-model' } },
+      reason: 'change',
+    })
+
+    // Pressure on the new route falls back to the advertised capacity rather
+    // than the learned smaller window from the prior route, so it neither
+    // reports missing capacity nor compacts while far below the new threshold.
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+    const summariesBefore = session.events.filter(event => event.type === 'compaction/summary').length
+    await preStep(ctx, agent(session, 'other-model'))
+    expect(warnings).not.toContainEqual(expect.stringContaining('no context capacity'))
+    expect(session.events.filter(event => event.type === 'compaction/summary')).toHaveLength(summariesBefore)
+  })
+
   it('honors retry caps and ignores non-context failures', async () => {
     const ctx = createContext()
     const compact = new TestCompactionEngine(ctx, { maxOverflowRetries: 1 })

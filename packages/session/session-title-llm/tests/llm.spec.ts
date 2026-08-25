@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import LlmRuntime, { createUserMessage, CallId, isAgentLoopRequest, LlmAdapter  } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, CallId, isAgentLoopRequest, LlmAdapter, ReasoningEffortId  } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionTitleProviderId } from '@deepseek-ai/dsh-session-title'
@@ -27,6 +27,35 @@ class RecordingAdapter extends LlmAdapter {
     this.onDispatch?.()
     this.requests.push(options)
     yield * this.script
+  }
+}
+
+class ReasoningRetryAdapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
+
+  constructor(private readonly scripts: readonly (readonly StreamChunk[])[]) {
+    super()
+  }
+
+  override resolveModel(provider: string, model: string) {
+    return Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+      reasoning: {
+        efforts: [
+          { id: ReasoningEffortId('off'), name: 'Off' },
+          { id: ReasoningEffortId('low'), name: 'Low' },
+          { id: ReasoningEffortId('high'), name: 'High' },
+          { id: ReasoningEffortId('max'), name: 'Max' },
+        ],
+      },
+    })
+  }
+
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    yield * this.scripts[this.requests.length - 1]!
   }
 }
 
@@ -64,6 +93,17 @@ const SCRIPT: StreamChunk[] = [
   { type: 'text-delta', index: 0, text: '  五个字标题  ' },
   { type: 'finish', reason: { kind: 'stop' } },
 ]
+
+const REASONING_MANDATORY_FAILURE: StreamChunk[] = [{
+  type: 'finish',
+  reason: {
+    kind: 'error',
+    failure: {
+      code: 'INVALID_REQUEST',
+      message: 'INVALID_REQUEST: 400: {"message":"Reasoning is mandatory for this endpoint and cannot be disabled.","code":400}',
+    },
+  },
+}]
 
 const CONFIG = {
   targetWords: 5,
@@ -204,6 +244,68 @@ describe('generateSessionTitleWithLlm', () => {
     })
   })
 
+  it('retries a reasoning-disabled rejection at the lowest enabled effort', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(LlmRuntime)
+    const adapter = new ReasoningRetryAdapter([REASONING_MANDATORY_FAILURE, SCRIPT])
+    ctx.llm.registerAdapter(['current-route'], adapter)
+    const providerRequest = request(ctx)
+
+    await expect(generateSessionTitleWithLlm(
+      ctx,
+      resolveSessionTitleLlmConfig(CONFIG),
+      providerRequest,
+      providerRequest.messages,
+      TITLE_PROVIDER,
+    )).resolves.toMatchObject({ title: '五个字标题' })
+
+    expect(adapter.requests.map(options => options.reasoningEffort)).toEqual([
+      undefined,
+      ReasoningEffortId('low'),
+    ])
+    expect(adapter.requests.map(options => options.purpose)).toEqual([
+      'session-title',
+      'session-title-reasoning',
+    ])
+    const records = providerRequest.session.events
+      .filter(event => event.type === 'session/title-llm-request')
+      .map(event => event.data)
+    expect(records.map(record => record.reasoningEffort)).toEqual([
+      undefined,
+      ReasoningEffortId('low'),
+    ])
+  })
+
+  it('limits a mandatory-reasoning title retry to three requests', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(LlmRuntime)
+    const adapter = new ReasoningRetryAdapter([
+      REASONING_MANDATORY_FAILURE,
+      REASONING_MANDATORY_FAILURE,
+      REASONING_MANDATORY_FAILURE,
+      SCRIPT,
+    ])
+    ctx.llm.registerAdapter(['current-route'], adapter)
+    const providerRequest = request(ctx)
+
+    await expect(generateSessionTitleWithLlm(
+      ctx,
+      resolveSessionTitleLlmConfig(CONFIG),
+      providerRequest,
+      providerRequest.messages,
+      TITLE_PROVIDER,
+    )).rejects.toThrow(/Reasoning is mandatory/)
+
+    expect(adapter.requests.map(options => options.reasoningEffort)).toEqual([
+      undefined,
+      ReasoningEffortId('low'),
+      ReasoningEffortId('high'),
+    ])
+    expect(providerRequest.session.events.filter(event => event.type === 'session/title-llm-request')).toHaveLength(3)
+  })
+
   it('requires every deployment limit and a complete optional route pair', () => {
     expect(() => resolveSessionTitleLlmConfig(undefined as never)).toThrow(/configuration is required/)
     expect(() => resolveSessionTitleLlmConfig(null as never)).toThrow(/configuration is required/)
@@ -252,7 +354,7 @@ describe('generateSessionTitleWithLlm', () => {
     [{ kind: 'error', failure: { message: 'provider failed', code: 'SERVER' } }, 'provider failed', 'SERVER'],
     [{ kind: 'aborted', failure: { message: 'provider aborted', code: 'ABORTED' } }, 'provider aborted', 'ABORTED'],
   ] satisfies Array<[FinishReason, string, string]>)('preserves %s terminal failure details', async (reason, message, code) => {
-    const { ctx } = await withScript([{ type: 'finish', reason }])
+    const { ctx, adapter } = await withScript([{ type: 'finish', reason }])
     const providerRequest = request(ctx)
     await expect(generateSessionTitleWithLlm(
       ctx,
@@ -262,6 +364,7 @@ describe('generateSessionTitleWithLlm', () => {
       TITLE_PROVIDER,
     )).rejects.toMatchObject({ message, code })
     expect(providerRequest.session.events.some(event => event.type === 'session/title-llm-request')).toBe(true)
+    expect(adapter.requests).toHaveLength(1)
   })
 
   it.each([

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-turn-error-inline-retry-copy.md
-2026-08-14-turn-error-inline-retry-copy.md: 14398f5bc67b06c4ceeb97920f9a0f8ad24f7127
-2026-08-14-turn-error-inline-retry-copy.zh.md: 7e1e94e577d0eff001a15daf17b1a4c9a99eb672
+2026-08-14-turn-error-inline-retry-copy.md: c3dc3b84d22611b624fcf0e52bb97a8c54210a2f
+2026-08-14-turn-error-inline-retry-copy.zh.md: 05143760741a5f9ced97ff09fe352a6e747b7b12

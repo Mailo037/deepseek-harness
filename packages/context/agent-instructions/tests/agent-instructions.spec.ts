@@ -192,6 +192,7 @@ function stubAgent(cwd?: string, seed: SessionEvent[] = []): Agent {
     status: 'idle',
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => {},
     inject: () => { throw new Error('agent-instructions must append directly to the open step') },
     cancel() {},

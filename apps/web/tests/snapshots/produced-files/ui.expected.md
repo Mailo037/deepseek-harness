@@ -1,0 +1,60 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Produced files overflow" [disabled]
+  - button "Session actions for Produced files overflow":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- navigation "Conversation navigation":
+  - button "Jump to this message"
+  - button "Jump to this message"
+- text: Create the site files. {{clock}}
+- button "Copy":
+  - img
+- button "Ran for {{duration}}":
+  - text: Ran for {{duration}}
+  - img
+- paragraph: Created the site.
+- paragraph: PRODUCED_FILES_DONE
+- text: Produced
+- button "Open 关于我.md": 关于我.md
+- button "Open index.html": index.html
+- button "Open long-generated-experience-specification-for-produced-files-overflow.md": long-generated-experience-specification-for-produced-files-overflow.md
+- button "Open styles.css": styles.css
+- button "Open app.ts": app.ts
+- button "+ 5 files"
+- button "Show in folder"
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}}
+- button "10 files changed, +10 lines and -0 lines" [expanded]:
+  - text: 10 files changed +10 -0
+  - img
+- dialog "10 files changed, +10 lines and -0 lines":
+  - list:
+    - listitem "关于我.md": 关于我.md +1 -0
+    - listitem "index.html": index.html +1 -0
+    - listitem "long-generated-experience-specification-for-produced-files-overflow.md": long-generated-experience-specification-for-produced-files-overflow.md +1 -0
+    - listitem "styles.css": styles.css +1 -0
+    - listitem "app.ts": app.ts +1 -0
+    - listitem "schema.json": schema.json +1 -0
+    - listitem "README.md": README.md +1 -0
+    - listitem "preview.svg": preview.svg +1 -0
+    - listitem "notes.txt": notes.txt +1 -0
+    - listitem "manifest.yaml": manifest.yaml +1 -0
+- textbox "Message the agent"
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps LLM {{duration}} · Tool call {{duration}}

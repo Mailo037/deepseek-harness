@@ -35,11 +35,14 @@ export interface IConversation {
    */
   readonly blocks: ComposerBlocks
   /**
-   * Send a prompt into the caller scope's session (queued turn).
+   * Send a prompt into the caller scope's session.
    * @param text - prompt text, sent verbatim as one text block.
+   * @param mode - 'queue' appends the prompt as a queued turn; 'prepend'
+   *   delivers it as the immediate next turn ahead of every already-queued
+   *   one (the turn-error retry delivery).
    * @returns completion; business failures reject (and land in promptError).
    */
-  send(text: string): Promise<void>
+  send(text: string, mode: 'queue' | 'prepend'): Promise<void>
   /**
    * Apply one edit, remove, or strict steer operation to a pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
@@ -57,6 +60,13 @@ export interface IConversation {
    * @returns completion of the page pull.
    */
   loadOlder(): Promise<void>
+  /**
+   * Resolve a durable image reference for one rendered session.
+   * @param sessionId - owning session authorization scope.
+   * @param attachment - durable image reference.
+   * @returns browser URL valid until the rendered session releases it.
+   */
+  resolveImage(sessionId: SessionId, attachment: ImageAttachmentRef): Promise<string>
 }
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
@@ -126,10 +136,12 @@ export class ConversationController extends Service implements IConversation {
    * session snapshot's promptError (object-layer state); the rejection here
    * exists for caller choreography (the composer restores the draft on it).
    * @param text - prompt text, sent verbatim as one text block.
+   * @param mode - delivery placement: 'queue' appends, 'prepend' jumps the
+   *   prompt to the front of the pending turn queue.
    */
-  async send(text: string): Promise<void> {
+  async send(text: string, mode: 'queue' | 'prepend' = 'queue'): Promise<void> {
     const session = this.scopedSession('send')
-    const result = await session.prompt([{ type: 'text', text }], 'queue')
+    const result = await session.prompt([{ type: 'text', text }], mode)
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
   }
 

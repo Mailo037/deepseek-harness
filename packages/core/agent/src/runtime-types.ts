@@ -124,6 +124,16 @@ export interface Agent {
   followup(message: UserMessage): void
 
   /**
+   * Queue an ordinary turn ahead of every already-pending next-turn item and
+   * wake the driver. The item becomes the sole ordinary message of the next
+   * turn; later queued turns follow in their original order. Same wake
+   * classification as {@link followup}: input submitted after active
+   * cancellation still lands in `next-turn`, only at its front.
+   * @param message - identified prompt content and the source that supplied it.
+   */
+  prepend(message: UserMessage): void
+
+  /**
    * Submit steering for the nearest step. An idle driver starts a turn;
    * a running driver consumes it at its next step boundary.
    * A rejected step leaves steering parked in the inbox until the next

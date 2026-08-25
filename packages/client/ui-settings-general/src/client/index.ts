@@ -35,6 +35,7 @@ import {
   ApplyingUpdateOverlay, clearUpdateRefreshMarker, type ApplyingUpdateOverlayInjected,
 } from './ApplyingUpdateOverlay.tsx'
 import { HarnessSyncStore } from './harness-sync-store.ts'
+import { createSettingsNavigationStore } from './navigation-store.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
 
 export type {
@@ -202,6 +203,7 @@ export function apply(ctx: ClientContext): void {
       'settings.section': { kind: 'list', scope: 'root' },
       'settings.onboarding': { kind: 'list', scope: 'root' },
     },
+    store: createSettingsNavigationStore,
     inject: shellInjected,
   }, SettingsRoot))
 

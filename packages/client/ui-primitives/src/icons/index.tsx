@@ -17,6 +17,19 @@ export const IconNewChatOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** ic_ds_chat_outline_16 */
+export const IconChatOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 1.33325C4.3181 1.33325 1.33337 3.96134 1.33337 7.20366C1.33337 8.37554 1.72777 9.46725 2.40696 10.3646L1.49498 13.7641L4.73683 12.4442C5.71309 12.9797 6.82359 13.2774 8 13.2774C11.6819 13.2774 14.6667 10.6493 14.6667 7.40699C14.6667 4.16466 11.6819 1.53657 8 1.53657V1.33325ZM8 2.66659C11.0448 2.66659 13.3334 4.77247 13.3334 7.40699C13.3334 10.0415 11.0448 12.1474 8 12.1474C6.93836 12.1474 5.94494 11.8909 5.09102 11.4469L4.83731 11.315L3.27517 11.9511L3.71459 10.3128L3.49576 10.0526C2.78444 9.20759 2.66671 8.2839 2.66671 7.20366C2.66671 4.56914 4.95522 2.46327 8 2.46327V2.66659Z"
+      fill="currentColor"
+    />
+    <path d="M4.66663 6.33325H11.3333V7.49992H4.66663V6.33325ZM4.66663 8.66659H9.33329V9.83325H4.66663V8.66659Z" fill="currentColor" />
+  </svg>
+)
+
 /** ic_ds_search_outline_16 */
 export const IconSearchOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -945,6 +958,36 @@ export const IconVideoOutline14 = ({ size = 14, className }: IconProps) => (
       fillRule="evenodd"
       clipRule="evenodd"
       d="M1.5 3.5A1.5 1.5 0 0 1 3 2h5.5A1.5 1.5 0 0 1 10 3.5v1.638l2.276-1.517A.75.75 0 0 1 13.5 4.25v5.5a.75.75 0 0 1-1.224.629L10 8.862v1.638A1.5 1.5 0 0 1 8.5 12H3a1.5 1.5 0 0 1-1.5-1.5v-7zM3 3.2a.3.3 0 0 0-.3.3v7c0 .166.134.3.3.3h5.5a.3.3 0 0 0 .3-.3v-7a.3.3 0 0 0-.3-.3H3zm7 2.612v2.376l2.3 1.533V4.28L10 5.812z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
+/** ic_ds_mic_outline_16 (harness-only): dictation microphone with its stand. */
+export const IconMicOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 2C6.89543 2 6 2.89543 6 4V8C6 9.10457 6.89543 10 8 10C9.10457 10 10 9.10457 10 8V4C10 2.89543 9.10457 2 8 2ZM8 3C7.44772 3 7 3.44772 7 4V8C7 8.55228 7.44772 9 8 9C8.55228 9 9 8.55228 9 8V4C9 3.44772 8.55228 3 8 3Z"
+      fill="currentColor"
+    />
+    <path
+      d="M4 7.5C4.27614 7.5 4.5 7.72386 4.5 8C4.5 9.933 6.067 11.5 8 11.5C9.933 11.5 11.5 9.933 11.5 8C11.5 7.72386 11.7239 7.5 12 7.5C12.2761 7.5 12.5 7.72386 12.5 8C12.5 10.366 10.7172 12.3159 8.5 12.704V14.5C8.5 14.7761 8.27614 15 8 15C7.72386 15 7.5 14.7761 7.5 14.5V12.704C5.28276 12.3159 3.5 10.366 3.5 8C3.5 7.72386 3.72386 7.5 4 7.5Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
+/** ic_ds_mic_fill_16 (harness-only): solid dictation microphone for the active state. */
+export const IconMicFill16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M6 3C6 1.89543 6.89543 1 8 1C9.10457 1 10 1.89543 10 3V8C10 9.10457 9.10457 10 8 10C6.89543 10 6 9.10457 6 8V3Z"
+      fill="currentColor"
+    />
+    <path
+      d="M4 7.5C4.27614 7.5 4.5 7.72386 4.5 8C4.5 9.933 6.067 11.5 8 11.5C9.933 11.5 11.5 9.933 11.5 8C11.5 7.72386 11.7239 7.5 12 7.5C12.2761 7.5 12.5 7.72386 12.5 8C12.5 10.366 10.7172 12.3159 8.5 12.704V14.5C8.5 14.7761 8.27614 15 8 15C7.72386 15 7.5 14.7761 7.5 14.5V12.704C5.28276 12.3159 3.5 10.366 3.5 8C3.5 7.72386 3.72386 7.5 4 7.5Z"
       fill="currentColor"
     />
   </svg>

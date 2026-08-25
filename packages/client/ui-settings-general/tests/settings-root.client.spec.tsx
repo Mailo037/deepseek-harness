@@ -2,10 +2,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import { createSettingsNavigationStore } from '../src/client/navigation-store.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 type Row = { id: string; order: number; label: string }
 type Step = { id: string; order: number }
@@ -49,9 +54,12 @@ function mount({
       byId: { 'active-session': { blank: false } },
     })) as never
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
+  const navigation = createSettingsNavigationStore().create()
   const props: SettingsRootComponentProps = {
     useSessions,
     useWorkspaces: unusedHook,
+    useStore: bindSnapshotSelector(navigation),
+    actions: navigation.actions,
     wide,
     useOnboardingSteps: select => select(steps),
     useSections: (select) => {
@@ -200,6 +208,19 @@ describe('SettingsPanel navigation', () => {
     expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByTestId('section-models')).toBeTruthy()
     expect(screen.queryByTestId('section-general')).toBeNull()
+  })
+
+  it('restores the open panel and selected section after a browser reload', () => {
+    const first = mount()
+    openPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Models' }))
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+    first.view.unmount()
+
+    mount()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByTestId('section-models')).toBeTruthy()
   })
 
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {

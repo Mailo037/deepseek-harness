@@ -34,6 +34,7 @@ function stubAgent(rawId: string, supplied?: Session): StubAgent {
     ctx: new Context(),
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
     inject(input) {
       this.inbox.append('next-step', input)

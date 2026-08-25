@@ -322,6 +322,19 @@ describe('serializeRequest', () => {
     expect(wire.reasoning_effort).toBeUndefined()
   })
 
+  it('enables the selected effort for a session-title reasoning retry', () => {
+    const wire = serializeRequest(
+      request({
+        messages: history,
+        purpose: 'session-title-reasoning',
+        reasoningEffort: ReasoningEffortId('low'),
+      }),
+      { thinking: 'enabled', reasoningEffort: 'max' },
+    )
+    expect(wire.thinking).toEqual({ type: 'enabled' })
+    expect(wire.reasoning_effort).toBe('low')
+  })
+
   it('omits thinking fields when unset (provider default applies)', () => {
     const wire = serializeRequest(request({ messages: history }))
     expect(wire.thinking).toBeUndefined()

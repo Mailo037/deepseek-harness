@@ -172,6 +172,8 @@ export const modelCatalogModelSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   inputModalities: z.array(z.string()).optional(),
+  contextWindow: z.number().int().positive().optional(),
+  maxTokens: z.number().int().positive().optional(),
   reasoning: modelReasoningSchema.optional(),
 }) satisfies z.ZodType<Wire<ModelCatalogModel>>
 
@@ -291,7 +293,7 @@ export const promptContentPartSchema = z.discriminatedUnion('type', [
 /** session.prompt request payload, including optional browser-local request provenance. */
 export const sessionPromptRequestSchema = z.object({
   sessionId: sessionIdSchema,
-  mode: z.union([z.literal('queue'), z.literal('steer')]),
+  mode: z.union([z.literal('queue'), z.literal('steer'), z.literal('prepend')]),
   content: z.array(promptContentPartSchema),
   clientTimeZone: z.string().optional(),
 }) as unknown as z.ZodType<RequestPayload<'session.prompt'>>

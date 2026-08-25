@@ -7,7 +7,7 @@
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
-  FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
+  ElevatorLabel, FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -47,6 +47,7 @@ export function WorkspaceChip({ buttonRef, label, noWorkspace = false, menuOpen 
   onClick?: () => void
   t: HeroTranslate
 }) {
+  const displayedLabel = label ?? t('hero.chooseWorkspace')
   return (
     <button
       ref={buttonRef}
@@ -62,7 +63,7 @@ export function WorkspaceChip({ buttonRef, label, noWorkspace = false, menuOpen 
         : label === undefined
           ? <IconFolderClose16 className={css.folder} size={16} />
           : <IconFolderOpen16 className={css.folder} size={16} />}
-      <span className={css.workspaceLabel}>{label ?? t('hero.chooseWorkspace')}</span>
+      <ElevatorLabel value={displayedLabel} className={css.workspaceLabel} />
       <IconChevronDownOutline14 className={css.chevron} size={12} />
     </button>
   )

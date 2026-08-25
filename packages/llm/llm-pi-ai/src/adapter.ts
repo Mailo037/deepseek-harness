@@ -57,8 +57,10 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
+import { canonicalModelId } from './catalog.ts'
 import { toPiContext } from './context.ts'
 import { toStreamChunks } from './stream.ts'
 
@@ -80,9 +82,11 @@ export interface PiAiAdapterOptions {
    * pi-ai auth, which for an installed catalog route is its provider-native
    * ambient discovery; the plugin allows that only for a profile naming no
    * credential at all, because a named reference that misses throws `LlmError`
-   * `MISSING_CREDENTIAL` rather than falling back.
+   * `MISSING_CREDENTIAL` rather than falling back. The reference travels with
+   * the value so a quota-classified failure can retire exactly the key that
+   * hit the limit.
    */
-  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<{ ref: CredentialRef; value: string } | undefined>
   /**
    * How every collection this adapter builds resolves auth the request-level
    * `apiKey` override does not cover. Required rather than optional: a
@@ -257,6 +261,15 @@ export class PiAiAdapter extends LlmAdapter {
   private modelOf(snapshot: PiAiSnapshot, provider: string, model: string): Model<Api> {
     this.profileOf(snapshot, provider)
     const resolved = snapshot.models.getModel(provider, model)
+      ?? (() => {
+        const bare = canonicalModelId(provider, model)
+        if (bare !== model) return snapshot.models.getModel(provider, bare)
+        // Reverse: caller passed bare id, stored model is prefixed (openrouter).
+        for (const candidate of snapshot.models.getModels(provider)) {
+          if (canonicalModelId(provider, candidate.id) === model) return candidate
+        }
+        return undefined
+      })()
     if (resolved === undefined) {
       throw new LlmError(`pi-ai provider "${provider}" has no configured model "${model}"`, 'UNKNOWN_MODEL')
     }
@@ -347,6 +360,7 @@ export class PiAiAdapter extends LlmAdapter {
       options.reasoningEffort ?? profile.reasoning,
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const apiKeyRef = apiKey?.ref
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -374,7 +388,7 @@ export class PiAiAdapter extends LlmAdapter {
           maxBytes: profile.requestImageMaxBytes,
         })
       const events = snapshot.models.streamSimple(model, context, {
-        ...profileOptions(profile, reasoning, apiKey),
+        ...profileOptions(profile, reasoning, apiKey?.value),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
@@ -393,6 +407,17 @@ export class PiAiAdapter extends LlmAdapter {
           if (result.done) {
             exhausted = true
             return
+          }
+          // An in-stream failure carries the reference it authenticated
+          // through, so key-rotation policy can retire exactly that key
+          // without mistaking a sibling that succeeded.
+          if (result.value.type === 'finish' && result.value.reason.kind === 'error' && apiKeyRef !== undefined) {
+            const reason = result.value.reason
+            yield {
+              ...result.value,
+              reason: { ...reason, failure: { ...reason.failure, apiKeyRef } },
+            }
+            continue
           }
           yield result.value
         }

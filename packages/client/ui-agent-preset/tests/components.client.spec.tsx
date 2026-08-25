@@ -69,7 +69,7 @@ function renderSeat(state: Partial<AgentPresetSeatState> = {}) {
     useAgentPresetSeat: bindSnapshotSelector(store),
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetSeatProps)} />)
-  return actions
+  return { ...actions, store }
 }
 
 function renderLabel(
@@ -245,6 +245,17 @@ describe('the new-session chip', () => {
 
     expect(actions.select).toHaveBeenCalledWith('mine')
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('moves a newly staged preset through the trigger label', () => {
+    const { store } = renderSeat()
+    act(() => { store.set({ ...SEAT_READY, current: 'mine' }) })
+
+    const track = screen.getByRole('button').querySelector('[data-elevator-label]') as HTMLElement
+    const values = track.querySelectorAll('[data-elevator-value]')
+    expect([...values].map(value => value.textContent)).toEqual([en.presetStandardName, 'mine'])
+    expect(values[0]?.getAttribute('aria-hidden')).toBe('true')
+    expect(values[1]?.className).toMatch(/incoming/)
   })
 
   it('disables the trigger while a switch is in flight', () => {

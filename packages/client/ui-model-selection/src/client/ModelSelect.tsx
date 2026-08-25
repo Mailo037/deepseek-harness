@@ -13,15 +13,17 @@
  */
 import {
   useEffect, useLayoutEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
-  type KeyboardEvent, type FocusEvent,
+  type CSSProperties, type KeyboardEvent, type FocusEvent, type PointerEvent,
 } from 'react'
 import clsx from 'clsx'
-import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
+  ElevatorLabel, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconCloseFill14, IconImageOutline14, IconSearchOutline16, IconVideoOutline14,
-  IconWarningOutline16, Toast, Tooltip,
+  IconWarningOutline16, HoverCard, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  ModelCatalogModel, ModelReasoningEffort, ModelSelection,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import type { ModelKey } from './locales.ts'
@@ -29,6 +31,10 @@ import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
+
+/** Inline style value that also accepts CSS custom properties (`--sheet-h`),
+ * which React's `CSSProperties` omits from its `--` index signature. */
+type SheetStyle = CSSProperties & { [key: `--${string}`]: string }
 
 /** One dynamic effort row; undefined means preserve the provider default. */
 interface EffortChoice {
@@ -38,32 +44,68 @@ interface EffortChoice {
   description?: string
 }
 
-/** Render a single compact modality icon with tooltip. */
-function ModalityBadge({ modality, t }: { modality: string; t: (key: ModelKey) => string }) {
+/** Render one modality as an unframed, compact icon. */
+function ModalityBadge({ modality }: { modality: string }) {
   if (modality === 'image') {
     return (
-      <Tooltip label={t('modality.image')} side="top" delayMs={100}>
-        <span className={css.modalityIcon} aria-label={t('modality.image')}>
-          <IconImageOutline14 size={12} />
-        </span>
-      </Tooltip>
+      <span className={css.modalityIcon} data-model-modality-icon="image" aria-hidden="true">
+        <IconImageOutline14 size={14} />
+      </span>
     )
   }
   if (modality === 'video') {
     return (
-      <Tooltip label={t('modality.video')} side="top" delayMs={100}>
-        <span className={css.modalityIcon} aria-label={t('modality.video')}>
-          <IconVideoOutline14 size={12} />
-        </span>
-      </Tooltip>
+      <span className={css.modalityIcon} data-model-modality-icon="video" aria-hidden="true">
+        <IconVideoOutline14 size={14} />
+      </span>
     )
   }
   return (
-    <Tooltip label={t('modality.text')} side="top" delayMs={100}>
-      <span className={clsx(css.modalityIcon, css.modalityT)} aria-label={t('modality.text')}>
-        T
-      </span>
-    </Tooltip>
+    <span className={clsx(css.modalityIcon, css.modalityT)} data-model-modality-icon="text" aria-hidden="true">T</span>
+  )
+}
+
+/** Translate a known modality and preserve adapter-specific names verbatim. */
+function modalityLabel(modality: string, t: (key: ModelKey) => string): string {
+  if (modality === 'image') return t('modality.image')
+  if (modality === 'video') return t('modality.video')
+  if (modality === 'text') return t('modality.text')
+  return modality
+}
+
+/** Present token capacities compactly without making their precision ambiguous. */
+function formatTokenCount(tokens: number | undefined, unknown: string): string {
+  if (tokens === undefined) return unknown
+  if (tokens >= 1_048_576 && tokens % 1_048_576 === 0) return `${String(tokens / 1_048_576)}M`
+  if (tokens >= 1_000_000 && tokens % 1_000_000 === 0) return `${String(tokens / 1_000_000)}M`
+  if (tokens >= 1_000 && tokens % 1_000 === 0) return `${String(tokens / 1_000)}K`
+  if (tokens >= 1_024 && tokens % 1_024 === 0) return `${String(tokens / 1_024)}K`
+  return tokens.toLocaleString()
+}
+
+/** Exact, adapter-advertised details shown in a model row's hover card. */
+function ModelInfoCard({ model, t }: { model: ModelCatalogModel; t: (key: ModelKey) => string }) {
+  const unknown = t('modelInfo.unknown')
+  const modalities = model.inputModalities?.map(modality => modalityLabel(modality, t)).join(' · ') ?? unknown
+  return (
+    <div className={css.modelInfoCard} data-model-info-card="">
+      <div className={css.modelInfoRow}>
+        <span>{t('modelInfo.id')}</span>
+        <code>{model.id}</code>
+      </div>
+      <div className={css.modelInfoRow}>
+        <span>{t('modelInfo.context')}</span>
+        <strong>{formatTokenCount(model.contextWindow, unknown)}</strong>
+      </div>
+      <div className={css.modelInfoRow}>
+        <span>{t('modelInfo.maxOutput')}</span>
+        <strong>{formatTokenCount(model.maxTokens, unknown)}</strong>
+      </div>
+      <div className={css.modelInfoRow}>
+        <span>{t('modelInfo.modalities')}</span>
+        <strong>{modalities}</strong>
+      </div>
+    </div>
   )
 }
 
@@ -76,6 +118,14 @@ const MODALITY_ALIASES: Record<string, readonly string[]> = {
 
 /** Viewport clearance every open menu keeps on each edge (mirrors the Menu primitive's portal margin). */
 const MENU_VIEWPORT_MARGIN = 8
+
+/** Phone bottom-sheet heights, as a fraction of the viewport height. */
+const SHEET_REST_RATIO = 0.5
+const SHEET_EXPAND_RATIO = 0.92
+/** Dragging below this fraction of the viewport height dismisses the sheet. */
+const SHEET_DISMISS_RATIO = 0.25
+/** Drag past the midpoint between rest and expanded snaps the sheet to expanded. */
+const SHEET_SNAP_MID_RATIO = (SHEET_REST_RATIO + SHEET_EXPAND_RATIO) / 2
 
 /**
  * Place the model menu inside the viewport: preferred right-aligned with the
@@ -107,33 +157,6 @@ export function placeMenu(
   if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
   if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
   return { left: x - rootRect.left, top: y - rootRect.top }
-}
-
-/**
- * Phone placement: the card spans the viewport (the CSS media query widens
- * it; only `top` is placed here) and ALWAYS opens upward. The composer sits
- * at the viewport's bottom edge, so the wide-layout downward flip would push
- * the absolutely positioned card past the page fold and make the
- * conversation scroll; overlapping the trigger beats leaving the screen.
- * @param root - the positioned `.root` box the absolute menu is relative to.
- * @param trigger - the trigger button rect (viewport coordinates).
- * @param menu - the open menu element, laid out so offsetHeight is real.
- * @returns root-relative top for the card's inline style.
- */
-export function placeMenuPhoneTop(
-  root: { getBoundingClientRect(): DOMRect },
-  trigger: { getBoundingClientRect(): DOMRect },
-  menu: { offsetHeight: number },
-): { top: number } {
-  const MARGIN = MENU_VIEWPORT_MARGIN
-  const vh = window.innerHeight
-  const rootRect = root.getBoundingClientRect()
-  const t = trigger.getBoundingClientRect()
-  const lh = Math.min(menu.offsetHeight, vh - MARGIN * 2)
-  let y = t.top - lh - 8
-  /* v8 ignore next -- the open menu has real height at placement time; a zero-height layout would clamp to the top margin anyway. */
-  if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
-  return { top: y - rootRect.top }
 }
 
 /** Check whether a model's modalities match a search token. */
@@ -176,15 +199,19 @@ export function ModelSelect(
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
 
-  // Viewport-clamped menu placement: the CSS default (right-aligned, above
-  // the trigger) can run off the screen on phone viewports, so the open menu
+  // Viewport-clamped menu placement on desktop: the CSS default (right-aligned,
+  // above the trigger) can run off the screen near an edge, so the open menu
   // is re-placed from the trigger rect before paint, on every resize, and on
   // every open-menu size change — drilling into a pane, a catalog load, or a
   // group expansion all grow the card after the initial placement, and a
   // top-anchored card would otherwise extend past the viewport's bottom edge.
-  // `null` keeps the CSS default — the layout effect resolves it in the same
-  // commit, before anything paints. On phone the card spans the viewport
-  // (CSS media query) and always opens upward (placeMenuPhoneTop).
+  // `null` keeps the CSS default while the card remains invisible. A browser
+  // can report zero height on its first layout pass; publishing that
+  // incomplete measurement would put an upward menu just above the trigger
+  // by its top edge, then visibly jump it upward once ResizeObserver reports
+  // its real height. On phone the CSS media query turns the card into a
+  // bottom-anchored sheet whose height the `--sheet-h` custom property owns,
+  // so no inline placement is needed — the sentinel below only reveals it.
   const [phone, setPhone] = useState(
     () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches,
   )
@@ -196,17 +223,39 @@ export function ModelSelect(
     return () => { query.removeEventListener('change', onChange) }
   }, [])
   const [menuPos, setMenuPos] = useState<
-    { left: number; top: number; stretch?: undefined } | { top: number; stretch: true } | null
+    { left: number; top: number; sheet?: undefined }
+    // Phone bottom-sheet: the CSS media query owns the geometry (fixed,
+    // bottom-anchored, `--sheet-h` height); this sentinel only reveals the
+    // sheet, and the inline style carries the rest/expanded snap height so it
+    // never fights the CSS media query placement.
+    | { sheet: true }
+    | null
   >(null)
+  // Phone bottom-sheet state. `sheetSnap` is the committed rest/expanded
+  // height the sheet settles on after a drag; `dragging` toggles the
+  // `sheetDragging` class that disables the height transition so the sheet
+  // tracks the finger. While a drag is in progress the `--sheet-h` custom
+  // property is written straight to the DOM (no re-render per move).
+  const [sheetSnap, setSheetSnap] = useState<'rest' | 'expanded'>('rest')
+  const [dragging, setDragging] = useState(false)
+  const dragStartRef = useRef<{ y: number; h: number } | null>(null)
   useLayoutEffect(() => {
     if (!open) { setMenuPos(null); return }
+    if (phone) {
+      // Bottom sheet: the CSS media query fixes it to the viewport's bottom
+      // edge and the `--sheet-h` custom property sizes it to half the viewport
+      // by default, so it needs no measurement, clamps to nothing, and never
+      // extends the page — reveal it immediately rather than waiting for a
+      // real height.
+      setMenuPos({ sheet: true })
+      return
+    }
     const place = (): void => {
       if (rootRef.current === null || triggerRef.current === null || menuRef.current === null) return
-      if (phone) {
-        const top = placeMenuPhoneTop(rootRef.current, triggerRef.current, menuRef.current).top
-        setMenuPos({ top, stretch: true })
-        return
-      }
+      // Keep the CSS upward placement transparent and non-interactive until a
+      // complete measurement is available. ResizeObserver re-enters `place`
+      // once the open card has a real height.
+      if (menuRef.current.offsetHeight === 0) return
       setMenuPos(placeMenu(rootRef.current, triggerRef.current, menuRef.current))
     }
     place()
@@ -233,9 +282,10 @@ export function ModelSelect(
           : { reasoningEffort: model.reasoning.defaultEffort },
       } satisfies ModelSelection,
     }))), [state.groups])
-  const selectedIndex = state.current === null
+  const current = state.current
+  const selectedIndex = current === null
     ? -1
-    : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
+    : choices.findIndex(c => c.selection.provider === current.provider && c.selection.model === current.model)
   const currentChoice = choices[selectedIndex]
   const reasoning = currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
@@ -328,6 +378,8 @@ export function ModelSelect(
 
   const show = (): void => {
     setPane('root')
+    setMenuPos(null)
+    setSheetSnap('rest')
     setOpen(true)
     reload()
   }
@@ -335,6 +387,7 @@ export function ModelSelect(
   const close = (restoreFocus = false): void => {
     setOpen(false)
     setPane('root')
+    setDragging(false)
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
@@ -366,6 +419,48 @@ export function ModelSelect(
     close()
   }
 
+  // Phone bottom-sheet drag. The sheet's height is driven by the `--sheet-h`
+  // custom property; while dragging it is written straight to the element so
+  // the sheet tracks the finger without a re-render per move, and on release
+  // it snaps to rest or expanded (or dismisses when pulled past the threshold)
+  // through the height transition. `setPointerCapture` is guarded because
+  // jsdom ships a throwing stub.
+  const onSheetDragStart = (event: PointerEvent<HTMLDivElement>): void => {
+    if (menuRef.current === null) return
+    dragStartRef.current = { y: event.clientY, h: menuRef.current.getBoundingClientRect().height }
+    setDragging(true)
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* jsdom lacks capture */ }
+    }
+  }
+
+  const onSheetDragMove = (event: PointerEvent<HTMLDivElement>): void => {
+    const start = dragStartRef.current
+    if (start === null || menuRef.current === null) return
+    const vh = window.innerHeight
+    const h = Math.max(0, Math.min(start.h - (event.clientY - start.y), vh * SHEET_EXPAND_RATIO))
+    menuRef.current.style.setProperty('--sheet-h', `${h}px`)
+  }
+
+  const onSheetDragEnd = (event: PointerEvent<HTMLDivElement>): void => {
+    const start = dragStartRef.current
+    const sheet = menuRef.current
+    dragStartRef.current = null
+    if (start === null || sheet === null) return
+    const vh = window.innerHeight
+    const h = Math.max(0, start.h - (event.clientY - start.y))
+    setDragging(false)
+    if (h <= vh * SHEET_DISMISS_RATIO) {
+      close(true)
+      return
+    }
+    const snap: 'rest' | 'expanded' = h >= vh * SHEET_SNAP_MID_RATIO ? 'expanded' : 'rest'
+    sheet.style.setProperty('--sheet-h', snap === 'expanded'
+      ? `${vh * SHEET_EXPAND_RATIO}px`
+      : `${vh * SHEET_REST_RATIO}px`)
+    setSheetSnap(snap)
+  }
+
   const settleSelection = (accepted: boolean): void => {
     if (accepted) {
       if (rootRef.current !== null) close(true)
@@ -379,7 +474,7 @@ export function ModelSelect(
   }
 
   const choose = (selection: ModelSelection): void => {
-    if (state.current?.provider === selection.provider && state.current.model === selection.model) {
+    if (state.current !== null && state.current.provider === selection.provider && state.current.model === selection.model) {
       close(true)
       return
     }
@@ -416,6 +511,18 @@ export function ModelSelect(
     return (node: HTMLButtonElement | null) => { itemRefs.current[at] = node }
   }
 
+  // Menu geometry. `null` keeps the CSS default while the card stays invisible
+  // (pre-paint, before placement). On phone the bottom sheet is fixed by the
+  // CSS media query; the inline style only carries the rest/expanded snap
+  // height so the sheet opens at the right spot. On desktop the placed
+  // left/top override the upward CSS default, and the explicit right/bottom
+  // auto stop the CSS default from stretching the card between the two.
+  const menuStyle: SheetStyle = menuPos === null
+    ? { opacity: 0, pointerEvents: 'none' }
+    : menuPos.sheet === true
+      ? { '--sheet-h': `${Math.round((sheetSnap === 'expanded' ? SHEET_EXPAND_RATIO : SHEET_REST_RATIO) * 100)}dvh` }
+      : { left: menuPos.left, top: menuPos.top, right: 'auto', bottom: 'auto' }
+
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onRootKeyDown} onBlur={onBlur}>
       <button
@@ -436,8 +543,8 @@ export function ModelSelect(
           }
         }}
       >
-        <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        <ElevatorLabel value={modelLabel} className={css.triggerLabel} />
+        {effortLabel !== undefined && <ElevatorLabel value={effortLabel} className={css.triggerEffort} />}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 
@@ -445,20 +552,39 @@ export function ModelSelect(
         <div
           ref={menuRef}
           id={`${id}-menu`}
-          className={css.menu}
+          className={clsx(css.menu, dragging && css.sheetDragging)}
           role="menu"
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
-          style={menuPos === null
-            ? undefined
-            // Explicit right/bottom auto: the CSS default (right:0, bottom:
-            // 100%+8) would otherwise fight the placed top/left and, with an
-            // auto height, stretch the menu between the two. The phone
-            // stretch form spans the viewport between fixed insets.
-            : menuPos.stretch === true
-              ? { top: menuPos.top, left: 8, right: 8, bottom: 'auto', width: 'auto' }
-              : { left: menuPos.left, top: menuPos.top, right: 'auto', bottom: 'auto' }}
+          style={menuStyle}
         >
+          {phone && (
+            <div
+              className={css.sheetHandle}
+              role="presentation"
+              data-sheet-handle=""
+              onPointerDown={onSheetDragStart}
+              onPointerMove={onSheetDragMove}
+              onPointerUp={onSheetDragEnd}
+              onPointerCancel={onSheetDragEnd}
+            >
+              <span className={css.sheetHandleBar} />
+            </div>
+          )}
+          {phone && (
+            <div className={css.menuHeader}>
+              <span className={css.menuTitle}>{t('menu.aria')}</span>
+              <button
+                type="button"
+                className={css.menuClose}
+                aria-label={t('menu.close')}
+                title={t('menu.close')}
+                onClick={() => { close(true) }}
+              >
+                <IconCloseFill14 size={16} />
+              </button>
+            </div>
+          )}
           {pane === 'root' && (
             <>
               <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
@@ -478,21 +604,6 @@ export function ModelSelect(
 
           {pane === 'model' && (
             <>
-              {state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
-              )}
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              )}
-              {state.failures.map(failure => (
-                <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              ))}
               <div className={css.searchBox}>
                 <IconSearchOutline16 size={14} className={css.searchIcon} />
                 <input
@@ -528,6 +639,21 @@ export function ModelSelect(
                   </button>
                 )}
               </div>
+              {state.status === 'loading' && (
+                <div className={css.status}>{t('status.loading')}</div>
+              )}
+              {state.error !== null && lastActionRef.current === 'load' && (
+                <div className={css.error}>
+                  <span>{t('error.action', { message: state.error })}</span>
+                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+                </div>
+              )}
+              {state.failures.map(failure => (
+                <div className={css.warning} key={failure.id}>
+                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+                </div>
+              ))}
               <div className={clsx(css.groups, 'scrollable')}>
                 {filteredGroups.map((group) => {
                   const headingId = `${id}-${group.id}`
@@ -550,36 +676,38 @@ export function ModelSelect(
                       {!isCollapsed && group.models.map((model) => {
                         const selected = state.current?.provider === group.id && state.current.model === model.id
                         return (
-                          <button
-                            ref={itemRef()}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={selected}
-                            className={clsx(css.option, selected && css.selected)}
+                          <HoverCard
                             key={model.id}
-                            title={model.name}
-                            disabled={busy}
-                            onClick={() => { choose({ provider: group.id, model: model.id }) }}
-                          >
-                            <span className={css.optionCopy}>
-                              <span className={css.nameRow}>
-                                <span className={css.modelName}>{model.name}</span>
-                                {model.inputModalities && model.inputModalities.length > 0 && (
-                                  <span className={css.modalityBadges}>
-                                    {model.inputModalities.map(mod => (
-                                      <ModalityBadge key={mod} modality={mod} t={t} />
-                                    ))}
-                                  </span>
-                                )}
-                              </span>
-                              {model.description !== undefined && (
-                                <span className={css.description}>{model.description}</span>
-                              )}
-                            </span>
-                            <span className={css.check}>
-                              {selected ? <IconCheckOutline16 /> : null}
-                            </span>
-                          </button>
+                            openDelayMs={300}
+                            anchor={(
+                              <button
+                                ref={itemRef()}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={selected}
+                                className={clsx(css.option, selected && css.selected)}
+                                title={model.name}
+                                disabled={busy}
+                                onClick={() => { choose({ provider: group.id, model: model.id }) }}
+                              >
+                                <span className={css.check}>
+                                  {selected ? <IconCheckOutline16 /> : null}
+                                </span>
+                                <span className={css.optionCopy}>
+                                  <span className={css.modelName}>{model.name}</span>
+                                  {model.description !== undefined && (
+                                    <span className={css.description}>{model.description}</span>
+                                  )}
+                                </span>
+                                <span className={css.modalityBadges}>
+                                  {model.inputModalities?.map(mod => (
+                                    <ModalityBadge key={mod} modality={mod} />
+                                  ))}
+                                </span>
+                              </button>
+                            )}
+                            content={<ModelInfoCard model={model} t={t} />}
+                          />
                         )
                       })}
                     </section>

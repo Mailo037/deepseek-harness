@@ -22,7 +22,7 @@ import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, 
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
-import type { SubagentListEntry as CatalogSubagentListEntry, SubagentDescendantListEntry } from '@deepseek-ai/dsh-subagent'
+import type { SubagentListEntry as CatalogSubagentListEntry } from '@deepseek-ai/dsh-subagent'
 import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
@@ -264,9 +264,53 @@ function paginate(
   return { events: page, hasMore: cut > 0 }
 }
 
-/** Wrap an ok result echoing the request's rpcId. */
+/**
+ * Wrap an ok result echoing the request's rpcId. */
 function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: true, value } }
+}
+
+/**
+ * The user's provider display order (route ids, first = top), when the Models
+ * settings plugin registered the preference section and the user stored one.
+ * The namespace name is the wire contract that plugin's settings section is
+ * addressed by, exactly as client settings writes address namespaces by name.
+ * @param ctx - host context that may acquire the settings service.
+ * @returns the stored order, or undefined when no preference exists.
+ */
+function providerDisplayOrder(ctx: Context): string[] | undefined {
+  const settings = ctx.get('settings')
+  if (settings === undefined) return undefined
+  const section = settings.get(settingsNamespace('models'))
+  if (typeof section !== 'object' || section === null) return undefined
+  const order = (section as { providerOrder?: unknown }).providerOrder
+  return Array.isArray(order) ? order.filter((id): id is string => typeof id === 'string') : undefined
+}
+
+/**
+ * Order items by the user's display preference: listed provider ids first in
+ * preference order, everything else appended in its natural relative order.
+ * @param items - items to order.
+ * @param idOf - item to provider route id.
+ * @param preference - stored order, or undefined for natural order.
+ * @returns the reordered detached list.
+ */
+function sortByProviderPreference<T>(
+  items: readonly T[],
+  idOf: (item: T) => string,
+  preference: string[] | undefined,
+): T[] {
+  if (preference === undefined || preference.length === 0) return [...items]
+  const rank = new Map<string, number>()
+  preference.forEach((id, index) => { if (!rank.has(id)) rank.set(id, index) })
+  const listed: T[] = []
+  const rest: T[] = []
+  for (const item of items) {
+    if (rank.has(idOf(item))) listed.push(item)
+    else rest.push(item)
+  }
+  listed.sort((a, b) => (rank.get(idOf(a)) ?? 0) - (rank.get(idOf(b)) ?? 0))
+  return [...listed, ...rest]
 }
 
 /**
@@ -305,6 +349,8 @@ async function buildModelCatalog(ctx: Context): Promise<{
           name: model.name,
           ...model.description === undefined ? {} : { description: model.description },
           ...resolved.inputModalities === undefined ? {} : { inputModalities: [...resolved.inputModalities] },
+          ...resolved.context?.contextWindow === undefined ? {} : { contextWindow: resolved.context.contextWindow },
+          ...resolved.defaultMaxTokens === undefined ? {} : { maxTokens: resolved.defaultMaxTokens },
           ...reasoning === undefined ? {} : { reasoning },
         }
       }))
@@ -324,7 +370,11 @@ async function buildModelCatalog(ctx: Context): Promise<{
     }
   }))
   return {
-    groups: catalog.flatMap(item => item.kind === 'group' ? [item.group] : []).filter(group => group.models.length > 0),
+    groups: sortByProviderPreference(
+      catalog.flatMap(item => item.kind === 'group' ? [item.group] : []).filter(group => group.models.length > 0),
+      group => group.id,
+      providerDisplayOrder(ctx),
+    ),
     failures: catalog.flatMap(item => item.kind === 'failure' ? [item.failure] : []),
   }
 }
@@ -1309,24 +1359,54 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     for (const queue of muxQueues) queue.push(envelope)
   }
 
+  /** One live subagent descendant and the durable parent that authorizes its interruption. */
+  interface LiveSubagentDescendant {
+    readonly id: SessionId
+    readonly parentId: SessionId
+  }
+
+  /**
+   * Enumerate live subagent descendants without reading persistence. Ordinary
+   * fork descendants remain traversal nodes so subagents below them are found.
+   * @param rootSessionId - session whose live descendant tree is inspected.
+   * @returns live subagent descendants with their direct parents.
+   */
+  function liveSubagentDescendants(rootSessionId: SessionId): LiveSubagentDescendant[] {
+    const children = new Map<SessionId, { session: Session; parentId: SessionId }[]>()
+    for (const session of ctx.sessions.list()) {
+      const parentId = session.header.parentSession
+      if (parentId === undefined) continue
+      const siblings = children.get(parentId)
+      if (siblings === undefined) children.set(parentId, [{ session, parentId }])
+      else siblings.push({ session, parentId })
+    }
+
+    const descendants: LiveSubagentDescendant[] = []
+    const visited = new Set<SessionId>([rootSessionId])
+    const stack = [...children.get(rootSessionId) ?? []]
+    while (stack.length > 0) {
+      // The length guard proves one child frame exists.
+      // oxlint-disable-next-line typescript/no-non-null-assertion
+      const child = stack.pop()!
+      if (visited.has(child.session.id)) continue
+      visited.add(child.session.id)
+      if (child.session.header.origin === 'subagent') {
+        descendants.push({ id: child.session.id, parentId: child.parentId })
+      }
+      stack.push(...children.get(child.session.id) ?? [])
+    }
+    return descendants
+  }
+
   /**
    * Best-effort stop of every live activity of one session: cancels the main
    * agent's active turn and durably drops its queued inbox work, kills the
-   * running background jobs of the session and of each live descendant agent,
-   * and interrupts every live continuable subagent turn in the descendant
-   * tree under its durable direct-parent authority. A degraded catalog read,
-   * an already-finished job, or a rejected interrupt never blocks the caller.
+   * running background jobs of the session and of each live subagent
+   * descendant, and passes each descendant to the core interruption primitive.
+   * Cold sessions have no live work, so this never reads persistence.
    */
-  async function stopSessionActivity(sessionId: SessionId): Promise<void> {
-    let descendants: readonly SubagentDescendantListEntry[] = []
-    const subagents = ctx.get('subagents')
-    if (subagents !== undefined) {
-      try {
-        descendants = await subagents.listDescendants(sessionId)
-      } catch {
-        // A degraded descendant listing still stops the session's own activity.
-      }
-    }
+  function stopSessionActivity(sessionId: SessionId): void {
+    const descendants = liveSubagentDescendants(sessionId)
     const agent = ctx.agents.get(sessionId)
     if (agent !== undefined && !hasSubagentOwner(agent.session, agent)) {
       // keepInbox stays unset on purpose: archiving abandons queued turns too.
@@ -1335,9 +1415,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const jobs = ctx.get('jobs')
     if (jobs !== undefined) {
       const owners = agent === undefined ? [] : [agent]
-      for (const entry of descendants) {
-        if (entry.kind !== 'child') continue
-        const childAgent = ctx.agents.get(entry.id)
+      for (const descendant of descendants) {
+        const childAgent = ctx.agents.get(descendant.id)
         if (childAgent !== undefined) owners.push(childAgent)
       }
       for (const jobOwner of owners) {
@@ -1350,13 +1429,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       }
     }
-    for (const entry of descendants) {
-      if (entry.kind !== 'child' || entry.mode !== 'continuable') continue
+    const subagents = ctx.get('subagents')
+    for (const descendant of descendants) {
       try {
-        subagents?.interrupt(entry.id, { kind: 'user', parentSessionId: entry.parentId })
+        // The primitive accepts a non-continuable id as a no-op, so live
+        // header traversal need not read each descriptor merely to learn its mode.
+        subagents?.interrupt(descendant.id, { kind: 'user', parentSessionId: descendant.parentId })
       } catch {
-        // Absent, idle, and unauthorized targets are no-ops upstream; an
-        // unexpected rejection must not block the archive either.
+        // A target can finish or lose its direct-parent relationship after the
+        // live snapshot; archiving must still commit.
       }
     }
   }
@@ -1378,7 +1459,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       if (!(error instanceof WorkspaceSessionLiveError)) throw error
       if (!agentHandles.has(sessionId)) throw error
     }
-    await stopSessionActivity(sessionId)
+    stopSessionActivity(sessionId)
     const handle = agentHandles.get(sessionId)
     agentHandles.delete(sessionId)
     await handle?.dispose().catch(() => {
@@ -2618,6 +2699,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             const durable = await durablePromptContent(ctx, content)
             const message: UserMessage = createUserMessage({ content: durable, source })
             if (mode === 'steer') agent.steer(message)
+            else if (mode === 'prepend') agent.prepend(message)
             else agent.followup(message)
           } catch (error: unknown) {
             if (error instanceof AttachmentError) {
@@ -3143,8 +3225,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { sessionId } = request.payload
         // The session leaves every grouping here, so nothing it owns may keep
         // running afterwards: stop the turn, queued inbox work, background
-        // jobs, and subagent activity before the archive set commits.
-        await stopSessionActivity(sessionId)
+        // jobs, and live subagent activity before the archive set commits.
+        // The live-store walk deliberately avoids cold-catalog I/O here.
+        stopSessionActivity(sessionId)
         try {
           await ctx.workspaceRegistry.archiveSession(sessionId)
         } catch (error: unknown) {
@@ -3799,7 +3882,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             active: true,
           })
         }
-        return Promise.resolve(ok(request, { providers: views }))
+        // The user's arrangement rules the surface order: listed ids first in
+        // preference order, everything else appended naturally.
+        return Promise.resolve(ok(request, {
+          providers: sortByProviderPreference(views, view => view.provider, providerDisplayOrder(ctx)),
+        }))
       },
 
       async models(request) {

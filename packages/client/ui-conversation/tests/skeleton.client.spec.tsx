@@ -4,7 +4,7 @@
 // owned draft, and the hero workspace picker (switching = retargetWorkspace).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
@@ -103,6 +103,11 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /**
+     * Projection values for the useProjection seat (contextPressure,
+     * permissions, etc.). When absent projections return undefined.
+     */
+    projections?: Record<string, unknown>
   } = {},
 ) {
   const root = sid('root')
@@ -151,6 +156,9 @@ function mount(
     subscribe: () => () => {},
     version: () => 1,
   }
+  /** Projection seat: reads the caller-provided projection table (undefined otherwise). */
+  const projections = options.projections
+  const useProjection = ((key: string) => projections?.[key]) as ConversationRootProps['useProjection']
   /** Owner share handed to the two composer tool-row seats, per render. */
   const seatOwners: { key: string; owner: unknown }[] = []
   let pickerOwner: unknown
@@ -172,7 +180,7 @@ function mount(
           useSession={useSession}
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
-          useProjection={(() => undefined)}
+          useProjection={useProjection as never}
           useInput={useInput}
           inputActions={inputActions}
           useStore={bindSnapshotSelector(chat)}
@@ -192,7 +200,7 @@ function mount(
           useSession={useSession}
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
-          useProjection={(() => undefined)}
+          useProjection={useProjection as never}
           useInput={useInput}
           inputActions={inputActions}
           useStore={bindSnapshotSelector(chat)}
@@ -215,7 +223,7 @@ function mount(
           useSession={useSession}
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
-          useProjection={(() => undefined)}
+          useProjection={useProjection as never}
           useInput={useInput}
           inputActions={inputActions}
           keyboard={wiring}
@@ -260,7 +268,7 @@ function mount(
     useSession,
     useSessions: bindSnapshotSelector(sessions),
     useWorkspaces: bindSnapshotSelector(workspaces),
-    useProjection: (() => undefined),
+    useProjection: useProjection as never,
     useComposerBlock: select => select(options.composerBlock),
     useInput,
     inputActions,
@@ -409,6 +417,36 @@ describe('ConversationRoot resident composer', () => {
     expect(
       container.querySelector('[class*="titleCluster"]')?.querySelector('[data-testid="view-conversation.session.header.actions"]'),
     ).toBeNull()
+  })
+
+  it('reports the context meter in the header next to the utilities on phone viewports only', () => {
+    const pressure = { contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 } }
+    // Phone: the composer hides its ring, the header shows it beside the
+    // more-options utilities.
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    const phone = mount(conversationSnapshot(), undefined, undefined, { projections: pressure })
+    // The header owns the ring: the button sits inside the header.
+    const headerMeter = within(phone.view.container.querySelector('header')!).queryByRole('button', { name: '上下文已用 25%' })
+    expect(headerMeter).not.toBeNull()
+    // The ring sits inside the right-aligned utilities cluster (next to the
+    // session-actions button), not in the composer's trailing controls.
+    expect(headerMeter?.closest('[class*="headerUtilities"]')).not.toBeNull()
+    expect(phone.view.container.querySelector('[class*="trailing"]')?.querySelector('button[aria-label="上下文已用 25%"]')).toBeNull()
+
+    // Wide: the header reports nothing; the composer keeps the ring.
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    const wide = mount(conversationSnapshot(), undefined, undefined, { projections: pressure })
+    const wideHeader = wide.view.container.querySelector('header')!
+    expect(within(wideHeader).queryByRole('button', { name: '上下文已用 25%' })).toBeNull()
+    expect(wide.view.container.querySelector('[class*="trailing"]')?.querySelector('button[aria-label="上下文已用 25%"]')).not.toBeNull()
   })
 
   it('drops the title-adjacent actions into the tab strip once they overflow the title row', () => {

@@ -319,6 +319,48 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
 }
 
 /**
+ * Strip the routing prefix OpenRouter (and b.ai) prepend to model ids
+ * (`meta/llama-3.1-405b` -> `llama-3.1-405b`). The DB stores only the bare
+ * name, while the wire request keeps the full id — this helper is for the
+ * lookup side only, so the catalog check is tolerant of either spelling.
+ * @param provider - provider route key.
+ * @param id - model id as the endpoint or caller supplied it.
+ * @returns the bare id for lookup, or the original when no prefix applies.
+ */
+export function canonicalModelId(provider: string, id: string): string {
+  if ((provider === 'openrouter' || provider === 'b.ai' || provider === 'bai') && id.includes('/')) {
+    return id.slice(id.indexOf('/') + 1)
+  }
+  return id
+}
+
+/**
+ * Find a catalog entry by either exact id or its bare suffix. Prefers the
+ * exact hit so a catalog that actually ships both spellings still distinguishes
+ * them.
+ * @param defaults - catalog map for one provider.
+ * @param provider - provider route key (decides whether suffix matching applies).
+ * @param id - model id to resolve.
+ * @returns the matched entry, or `undefined`.
+ */
+export function findCatalogModel(
+  defaults: ReadonlyMap<string, Model<Api>>,
+  provider: string,
+  id: string,
+): Model<Api> | undefined {
+  const exact = defaults.get(id)
+  if (exact !== undefined) return exact
+  const bare = canonicalModelId(provider, id)
+  if (bare !== id) return defaults.get(bare)
+  // Reverse: caller passed bare id, catalog stores prefixed one (e.g. openrouter's
+  // `deepseek/deepseek-v4-flash-vision-exp` vs request `deepseek-v4-flash-vision-exp`).
+  for (const [key, model] of defaults) {
+    if (canonicalModelId(provider, key) === id) return model
+  }
+  return undefined
+}
+
+/**
  * Selectable reasoning efforts for one model: each key is a level the model
  * offers (and selectors show), and its value is the wire spelling dispatch
  * sends for it. `off` alone may leave its value empty — "supported, send
@@ -936,7 +978,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       invalid(provider, `sets modelOverrides for "${id}" beside a models list; models already replaces the served`
         + ' catalog, so declare the fields on its entries')
     }
-    if (!defaults.has(id)) {
+    if (findCatalogModel(defaults, provider, id) === undefined) {
       invalid(provider, `modelOverrides names "${id}", which the installed catalog does not describe`)
     }
     // The id lives in the dict key; a value carrying its own would quietly
@@ -970,7 +1012,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
     seen.add(entry.id)
-    const base = defaults.get(entry.id)
+    const base = findCatalogModel(defaults, provider, entry.id)
     const api = request.api ?? base?.api ?? routeApi
     if (api === undefined) {
       invalid(provider, `model "${entry.id}" needs an api; the installed catalog does not describe it, so set the`

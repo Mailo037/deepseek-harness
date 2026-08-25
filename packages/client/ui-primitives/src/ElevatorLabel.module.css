@@ -1,0 +1,76 @@
+/* One-line value exchange for compact selection controls. Both labels share
+   a clipped grid cell while the measured track width tweens with the value;
+   the new value arrives from above and the old one leaves below. */
+.root {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+  overflow: hidden;
+  line-height: inherit;
+  transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.value {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outgoing {
+  animation: elevator-label-out 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.incoming {
+  animation: elevator-label-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.measure {
+  position: absolute;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.measure::before {
+  content: attr(data-value);
+}
+
+@keyframes elevator-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes elevator-label-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    transition: none;
+  }
+
+  .outgoing,
+  .incoming {
+    animation: none;
+  }
+}

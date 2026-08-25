@@ -18,6 +18,8 @@ The `/client` exports are the plugin body (`apply`/`inject`), `ModelDirectoryRes
 
 Indirectly, through the `session.selectModel` RPC available to ordinary sessions, both entries submit the complete `ModelSelection` that the Host snapshots at the next prompt-assembly boundary, so the following request uses the selected provider, model, and effort while a running step keeps its assembled selection; the selection becomes durable only when the existing request header records a request that consumes it, and menu interaction adds no prompt content.
 
+The provider-grouped picker leaves modality badges as bare icons. Hovering a model row opens a read-only card with only exact adapter-advertised metadata: provider model id, context window, configured output cap, and accepted input modalities. Missing adapter data is shown as unknown; the client does not infer capacities from a model name.
+
 #### KV Cache effect
 
 Switching the route can reduce or invalidate provider-side cache reuse for subsequent requests; the prompt prefix itself is untouched.

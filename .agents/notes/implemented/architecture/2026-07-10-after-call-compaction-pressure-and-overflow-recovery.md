@@ -38,6 +38,8 @@ For canonical overflow, compaction-basic requires no capacity metadata and bypas
 
 `maxOverflowRetries` is optional and defaults to `1`; `0` disables overflow recovery without disabling pressure. `auto: false` registers neither automatic listener. Noncanonical errors, exhausted attempts, an already-aborted signal, a missing routed model, no safe range, no generation change, and recovery throws before any replacement all delegate to the next listener. With no later recovery, the loop reports the original provider error object and code. A recovery throw after generation advances authorizes retry from durable progress; cancellation or disposal remains authoritative even if recovery work completes concurrently.
 
+A provider-confirmed overflow also teaches the chat its real window when the adapter-advertised capacity is optimistic (the default DeepSeek catalog claims a much larger window than a deployment enforces). Recovery measures the rejected request through `ctx.tokenMeter` and records that size as the chat's effective context window, even when an indivisible surface or an exhausted retry cap prevents a retry. Subsequent proactive pressure uses the adopted window in place of the advertised capacity, so it reacts to the actual limit instead of riding toward another overflow.
+
 The default summarizer resolves explicit configuration, then the latest logged route, then agent options. Because direct `llm/stream` middleware may reroute that auxiliary call, `compaction/summary.{provider, model}` records the final mutable `GenerateOptions` target observed after dispatch rather than the pre-waterfall candidate.
 
 ## Testing
@@ -54,7 +56,7 @@ Unit tests cover the final-adapter normalization boundary, closed-turn retry num
 
 ## Consequences
 
-The next pre-step pressure check describes the preceding completed routed request, including durable tool results and newly claimed input. Optional model-free pruning removes predictable tool-output bulk before summary selection and can independently create retry-worthy progress. Canonical overflow supplies the backstop when no successful usage anchor exists. Recovery is bounded, cancellation-owned, and monotonic: it retries only after a visible surface generation change.
+The next pre-step pressure check describes the preceding completed routed request, including durable tool results and newly claimed input. Optional model-free pruning removes predictable tool-output bulk before summary selection and can independently create retry-worthy progress. Canonical overflow supplies the backstop when no successful usage anchor exists. Recovery is bounded, cancellation-owned, and monotonic: it retries only after a visible surface generation change, and overflow also adopts the rejected request's measured size as the chat's effective window so later proactive pressure matches the real limit.
 
 The cost is pressure work in the shared pre-step waterfall and adapter-maintained overflow classification. Provider wording and heuristic character density remain maintenance risks. Surface compaction still cannot repair an envelope that alone exceeds the window, split an indivisible non-tool node, or repair a tool unit whose non-prunable remainder remains oversized. The optional pruner can repair an otherwise indivisible tool pair when removable text-bearing tool-result content is the bulk.
 

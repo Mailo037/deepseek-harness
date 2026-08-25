@@ -176,7 +176,13 @@
 }
 
 .compactionBody {
+  /* The summary the model saw after a compaction can be long; the expanded
+     body scrolls inside its own frame instead of stretching the transcript,
+     matching the Think row's expanded scrollport. */
+  max-height: 240px;
   padding: 4px 0 4px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--dsw-alias-label-tertiary);
   font-size: 14px;
   line-height: 24px;
@@ -292,7 +298,8 @@
   margin-left: 18px;
 }
 
-.turnErrorRetry {
+.turnErrorRetry,
+.turnErrorDetailsBtn {
   padding: 2px 8px;
   border: none;
   border-radius: 6px;
@@ -304,12 +311,14 @@
   cursor: pointer;
 }
 
-.turnErrorRetry:hover {
+.turnErrorRetry:hover,
+.turnErrorDetailsBtn:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.turnErrorRetry:focus-visible {
+.turnErrorRetry:focus-visible,
+.turnErrorDetailsBtn:focus-visible {
   outline: 1.5px solid var(--dsw-alias-button-info-fill);
   outline-offset: 1px;
 }
@@ -318,6 +327,40 @@
    module reserves clock padding this row never uses). */
 .turnErrorCopyAction {
   height: 22px;
+}
+
+.turnErrorDetailsPanel {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  margin-left: 18px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  background: var(--dsw-alias-surface-sunken, rgba(0, 0, 0, 0.2));
+  font-size: 12px;
+  line-height: 18px;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.turnErrorDetailRow {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.turnErrorDetailLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.turnErrorDetailValue {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-code-block-small);
+  white-space: pre-wrap;
 }
 
 .turnErrorCopy {

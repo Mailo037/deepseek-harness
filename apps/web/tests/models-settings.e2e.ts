@@ -282,6 +282,28 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('reorders providers and persists the preference into the settings document', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-reorder'))
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.getByRole('button', { name: '模型' }).click()
+    // Directory order: minimax-cn first, the declared route second.
+    const rows = dialog.locator('li')
+    await expect.poll(async () => rows.count(), { timeout: 10_000 }).toBe(2)
+    await expect.poll(async () => rows.nth(0).textContent(), { timeout: 10_000 }).toContain('minimax-cn')
+    await expect.poll(async () => rows.nth(1).textContent(), { timeout: 10_000 }).toContain('Acme 网关')
+    // Move the declared route above minimax-cn with the drag handle.
+    await dialog.getByRole('button', { name: '调整 Acme 网关 (acme-gateway) 的顺序' }).press('ArrowUp')
+    // The write lands in the settings document as the models preference…
+    await expect.poll(
+      async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'),
+      { timeout: 10_000 },
+    ).toContain('providerOrder')
+    // …and the refreshed directory renders the rows in the new order.
+    await expect.poll(async () => rows.nth(0).textContent(), { timeout: 10_000 }).toContain('Acme 网关')
+    await expect.poll(async () => rows.nth(1).textContent(), { timeout: 10_000 }).toContain('minimax-cn')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('confirms an identified provider deletion before removing its profile and key', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-delete'))
     const settingsDialog = page.getByRole('dialog', { name: '设置' })

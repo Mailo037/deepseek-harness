@@ -73,6 +73,7 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(declarations('.flatList > * + *')?.get('margin-top')).toBe('2px')
     expect(declarations(".searchTree > [role='treeitem'] + [role='treeitem']")?.get('margin-top')).toBe('2px')
     expect(declarations('.groupSection > * + *')?.get('margin-top')).toBe('2px')
+    expect(declarations('.groupDisclosureBody > * + *')?.get('margin-top')).toBe('2px')
     expect(declarations('.groupSection + .groupSection')?.get('margin-top')).toBe('4px')
   })
 
@@ -108,9 +109,23 @@ describe('WorkspaceBrowser.module.css list', () => {
       .toBe('var(--dsw-alias-interactive-bg-hover)')
   })
 
-  it('pins both rail controls to the shared left anchor during the column slide', () => {
+  it('pins rail controls and pinned-session navigation to the shared left anchor during the column slide', () => {
     expect(declarations('.rail .sectionHeader')?.get('justify-content')).toBe('flex-start')
     expect(declarations('.rail .iconButton')?.get('width')).toBe('36px')
     expect(declarations('.rail .search')?.get('width')).toBe('36px')
+    expect(declarations('.railPinnedSessions')?.get('width')).toBe('36px')
+    expect(declarations('.railPinnedSessions')?.get('overflow-y')).toBe('auto')
+    expect(declarations('.railPinnedSessions')?.get('margin-top')).toBe('12px')
+    expect(declarations('.railPinnedSession')?.get('height')).toBe('36px')
+  })
+
+  it('discloses a workspace folder through a clipped vertical track', () => {
+    const motionCss = css.slice(0, css.lastIndexOf('@media (prefers-reduced-motion: reduce)'))
+    const motionDisclosure = declarationsFrom(motionCss, '.groupDisclosure')
+    expect(declarations('.groupDisclosure')?.get('grid-template-rows')).toBe('0fr')
+    expect(declarations('.groupDisclosure')?.get('overflow')).toBe('hidden')
+    expect(motionDisclosure?.get('transition')).toContain('grid-template-rows 220ms')
+    expect(declarations('.groupDisclosureOpen')?.get('grid-template-rows')).toBe('1fr')
+    expect(declarations('.groupDisclosure')?.get('transition')).toBe('none')
   })
 })

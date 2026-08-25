@@ -51,6 +51,13 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('send() prepend mode routes the prompt as the immediate next turn', async () => {
+    const b = await bench()
+    await b.scoped.send('retry now', 'prepend')
+    expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'retry now' }], 'prepend')
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)

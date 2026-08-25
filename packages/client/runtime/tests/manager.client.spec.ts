@@ -913,6 +913,27 @@ describe('connected generation', () => {
     })
     expect(manager.getListSnapshot().currentAddress).toEqual(address)
   })
+
+  it('reloadAll repulls the baseline and rebuilds opened windows like a fresh connection', async () => {
+    const api = new FakeApiClient()
+    api.onHistory = () => Promise.resolve(ok({
+      events: entries(plainTurn(0, 0, 'a', 'b')) as never[],
+      hasMore: false,
+      modelSelection: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    }))
+    const manager = new SessionManager(api, fakeRemote())
+    const openedSession = manager.get(S1)
+    await openedSession.open()
+    const listCallsBefore = api.callsOf('session.list').length
+    const historyCallsBefore = api.callsOf('session.history').length
+
+    await manager.reloadAll()
+
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.list').length).toBe(listCallsBefore + 1)
+      expect(api.callsOf('session.history').length).toBe(historyCallsBefore + 1)
+    })
+  })
 })
 
 describe('pending-interaction list status', () => {

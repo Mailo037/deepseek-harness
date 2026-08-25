@@ -434,6 +434,16 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Full user-facing reload for a suspected stale or broken load: baseline
+   * pull plus the same per-generation rebuilds a fresh connection runs
+   * (consumed subagent catalogs, resync of every opened window).
+   * @returns completion of the baseline pull.
+   */
+  refreshAll(): Promise<void> {
+    return this.manager.reloadAll()
+  }
+
+  /**
    * Search the Host's visible message-content index. Results stay
    * request-local; the list snapshot remains the metadata authority.
    * @param query - non-blank literal phrase.

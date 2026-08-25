@@ -1,0 +1,44 @@
+/* Composer voice seat: one icon-only mic button between the model select and
+   the send button. No outline, no background in any state — the recording
+   state swaps the glyph to the solid mic and the label tone. */
+
+.mic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: color 100ms ease;
+}
+
+.mic:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Active dictation: solid glyph in the attention tone, still frameless. */
+.recording,
+.recording:hover:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.mic:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-tertiary);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic {
+    transition: none;
+  }
+}

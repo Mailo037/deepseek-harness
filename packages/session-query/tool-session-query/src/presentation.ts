@@ -225,6 +225,15 @@ function presentSessionTraceCall(args: SessionTargetCallArgs): GenericCallView {
   }
 }
 
+function presentSessionSummaryCall(args: SessionTargetCallArgs): GenericCallView {
+  return {
+    card: 'generic',
+    kind: 'read',
+    title: args.session_id === undefined ? 'Summarize current session' : `Summarize session ${args.session_id}`,
+    ...args.session_id === undefined ? {} : { rawInput: args.session_id },
+  }
+}
+
 function presentEventTargetCall(
   action: string,
   args: EventTargetCallArgs,
@@ -251,5 +260,6 @@ export const presentation = {
   presentSessionSearchCall,
   presentEventSearchCall,
   presentSessionTraceCall,
+  presentSessionSummaryCall,
   presentEventTargetCall,
 }

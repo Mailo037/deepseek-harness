@@ -108,6 +108,8 @@ describe('LlmRuntime', () => {
     expect(isContextWindowExceededError('input is too long for this model')).toBe(true)
     expect(isContextWindowExceededError('request too large for model context')).toBe(true)
     expect(isContextWindowExceededError('input exceeds the model context window limit')).toBe(true)
+    expect(isContextWindowExceededError('Input token exceed the limit')).toBe(true)
+    expect(isContextWindowExceededError('Input tokens exceed the model\u2019s maximum limit')).toBe(true)
   })
 
   it('does not mistake unrelated input validation for context-window overflow', () => {
@@ -1227,6 +1229,19 @@ describe('LlmRuntime', () => {
     expect(() => new LlmError(1 as never, 'RATE_LIMIT')).toThrow(/message/)
     expect(() => new LlmError('busy', 1 as never)).toThrow(/code/)
     expect(() => new LlmError('busy', 'RATE_LIMIT', { requestId: 1 as never })).toThrow(/requestId/)
+    expect(() => new LlmError('busy', 'QUOTA', { apiKeyRef: '' })).toThrow(/apiKeyRef/)
+    expect(() => new LlmError('busy', 'QUOTA', { apiKeyRef: 1 as never })).toThrow(/apiKeyRef/)
+  })
+
+  it('carries the credential reference a request authenticated through', () => {
+    const err = new LlmError('usage limit reached', 'QUOTA', { apiKeyRef: 'DEEPSEEK_API_KEY' })
+    expect(err.failure).toEqual({
+      message: 'usage limit reached',
+      code: 'QUOTA',
+      apiKeyRef: 'DEEPSEEK_API_KEY',
+    })
+    const bare = new LlmError('usage limit reached', 'QUOTA')
+    expect(bare.failure.apiKeyRef).toBeUndefined()
   })
 
   it('LlmError extends the shared HarnessError base', async () => {

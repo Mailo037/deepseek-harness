@@ -68,6 +68,8 @@ interface BenchOptions {
     maxImageDimension: number
     mediaTypes: readonly ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif')[]
   }
+  /** The `contextPressure` projection value (absent = the meter renders nothing). */
+  contextPressure?: { pressureTokens: number; contextWindow: number }
   draft?: string
   running?: boolean
   subagent?: Exclude<ConversationSnapshot['subagent'], null>
@@ -168,7 +170,8 @@ function bench(over?: BenchOptions) {
     useProjection: ((key: string, selector?: (v: unknown) => unknown) =>
       (selector ?? (v => v))(key === 'permissions'
         ? over?.permissions
-        : key === 'plan' ? over?.plan : key === 'imageLimits' ? over?.imageLimits : undefined)),
+        : key === 'plan' ? over?.plan : key === 'imageLimits' ? over?.imageLimits
+          : key === 'contextPressure' ? over?.contextPressure : undefined)),
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
@@ -829,7 +832,11 @@ describe('running and lock semantics', () => {
   })
 
   it('coarse-pointer devices keep the keyboard down: unlock does not focus the textarea', () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }))
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(pointer: coarse)',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
     try {
       const { view, textarea } = bench({ draft: 'x' })
       expect(document.activeElement).not.toBe(textarea)
@@ -837,6 +844,26 @@ describe('running and lock semantics', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('hides the context meter on phone viewports (the header reports it instead)', () => {
+    const pressure = { contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 } }
+    // Phone: matchMedia '(max-width: 639px)' matches → composer hides the ring.
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    try {
+      const phone = bench({ ...pressure })
+      expect(phone.view.queryByRole('button', { name: /上下文已用/ })).toBeNull()
+      phone.view.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    // Wide (no matchMedia or matches=false): the ring renders in the composer.
+    const wide = bench({ ...pressure })
+    expect(wide.view.getByRole('button', { name: /上下文已用/ })).not.toBeNull()
   })
 
   it('typing forwards through the machine (draft state echoes back)', () => {
@@ -1575,7 +1602,7 @@ describe('attachment launcher chrome and control seats', () => {
     expect(view.queryByLabelText(/^访问模式/)).toBeNull()
     // Every seat dispatched, nothing rendered.
     expect(slotCalls.map(c => c.key)).toEqual([
-      'conversation.input.attachments', 'conversation.input.plan', 'conversation.input.model',
+      'conversation.input.attachments', 'conversation.input.plan', 'conversation.input.model', 'conversation.input.voice',
     ])
     expect(view.queryByLabelText('Plan mode')).toBeNull()
     expect(view.queryByLabelText('Model')).toBeNull()

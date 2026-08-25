@@ -137,6 +137,10 @@ export interface ModelCatalogModel {
   description?: string
   /** Accepted input modalities when known (`text`, `image`, `video`). */
   inputModalities?: string[]
+  /** Maximum combined request and response context in tokens, when advertised. */
+  contextWindow?: number
+  /** Adapter-configured default output-token limit, when advertised. */
+  maxTokens?: number
   /** Exact-route reasoning metadata when the adapter exposes it. */
   reasoning?: ModelReasoning
 }
@@ -335,7 +339,8 @@ export interface SessionsApi {
   Promise<RpcResponse<{ title: string; seq: number }>>
 
   /**
-   * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer.
+   * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer,
+   * prepend→front-of-queue delivery (the message becomes the next turn ahead of every already-queued one).
    * A prompt whose content is exactly one text block starting with '/' is a slash command: the host
    * executes it through the command registry (mode-agnostic) and it is never sent to the model. A
    * successful command returns ok with the command slot (its success text, when the command produced
@@ -368,7 +373,7 @@ export interface SessionsApi {
    */
   prompt(request: RpcRequest<{
     sessionId: SessionId
-    mode: 'queue' | 'steer'
+    mode: 'queue' | 'steer' | 'prepend'
     content: PromptContentPart[]
     clientTimeZone?: string
   }>):

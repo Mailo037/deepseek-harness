@@ -45,6 +45,62 @@ function reasoningValuesOf(model: ModelDraft, defaultEfforts: readonly string[] 
  */
 export type ModelDraft = DeepSeekModelDraft
 
+/**
+ * The catalog-match candidates for one entered model id, least aggressive
+ * first. A deployment may label a real catalog model with a route or brand
+ * prefix (a `/`-separated path, or a leading `-` token such as `stealth-`), so
+ * the id is tried as itself and then in progressively trimmed forms:
+ * - the last `/`-segment of a path prefix is kept (`gpt/ox-alpha` → `ox-alpha`);
+ * - leading `-` tokens are stripped one at a time (`stealth-ox-alpha` →
+ *   `ox-alpha`, then `alpha`).
+ * `stealth-ox-alpha` thus resolves to a catalog `ox-alpha` instead of reading
+ * as an unknown, hand-declared model.
+ * @param id - the id as typed.
+ * @returns the unique candidate forms, most specific first.
+ */
+export function catalogCandidates(id: string): string[] {
+  const trimmed = id.trim()
+  if (trimmed.length === 0) return []
+  const candidates: string[] = []
+  const seen = new Set<string>()
+  const push = (candidate: string): void => {
+    if (candidate.length === 0 || seen.has(candidate)) return
+    seen.add(candidate)
+    candidates.push(candidate)
+  }
+  // The id exactly as typed is always the first candidate. When it is a
+  // `/`-separated path, the last segment (the model) is the base for the
+  // remaining dash trimming; otherwise the whole id is. Leading `-` tokens are
+  // then dropped one at a time on that base, so intermediate path prefixes are
+  // never standalone candidates.
+  push(trimmed)
+  const segments = trimmed.split('/')
+  const modelBase = segments.length > 1 ? segments[segments.length - 1]! : trimmed
+  const dashStart = segments.length > 1 ? 0 : 1
+  const dashes = modelBase.split('-')
+  for (let drop = dashStart; drop < dashes.length; drop++) {
+    push(dashes.slice(drop).join('-'))
+  }
+  return candidates
+}
+
+/**
+ * The catalog entry an entered model id denotes, allowing a routing prefix.
+ * {@link catalogCandidates} trims the id into progressively looser forms, and
+ * the first one the catalog knows names the model. The id as stored is never
+ * rewritten — this only decides whether the row inherits catalog settings.
+ * @param modelId - the id as typed.
+ * @param catalog - the provider's known catalog ids to their information.
+ * @returns the matching catalog entry, or `undefined` when nothing matches.
+ */
+function catalogOf(modelId: string, catalog: ReadonlyMap<string, CatalogModelInfo>): CatalogModelInfo | undefined {
+  for (const candidate of catalogCandidates(modelId)) {
+    const info = catalog.get(candidate)
+    if (info !== undefined) return info
+  }
+  return undefined
+}
+
 /** A row's text field, or the empty string when unset or not a string. */
 function textOf(model: ModelDraft, key: string): string {
   const value = model[key]
@@ -180,8 +236,8 @@ interface CatalogModelInfo {
 
 /**
  * The catalog modality badges of one model, with the inferred-vision hint —
- * shared by the row header, the expanded row panel, and the fetch dialog so
- * all three surfaces spell modalities one way.
+ * shared by the expanded row panel and the fetch dialog so both surfaces
+ * spell modalities one way.
  */
 function ModalityBadges({ info, t }: {
   info: {
@@ -424,7 +480,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
       {models.map((model, index) => {
         const modelId = textOf(model, 'id')
-        const catalogInfo = modelId !== '' ? catalogMap.get(modelId) : undefined
+        const catalogInfo = modelId !== '' ? catalogOf(modelId, catalogMap) : undefined
         const inCatalog = catalogInfo !== undefined
         const isReasoningDisabled = disabled
         const defaultEfforts = catalogInfo?.defaultEfforts ?? []
@@ -452,9 +508,6 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 disabled={disabled}
                 onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
               />
-              {catalogInfo !== undefined && catalogInfo.inputModalities.length > 0 ? (
-                <ModalityBadges info={catalogInfo} t={t} />
-              ) : null}
               <button
                 type="button"
                 className={styles['iconButton']}

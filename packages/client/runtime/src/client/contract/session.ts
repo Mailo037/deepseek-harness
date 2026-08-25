@@ -35,12 +35,13 @@ export interface ISession {
   /**
    * Send a prompt into the session.
    * @param content - text plus browser-owned temporary image uploads.
-   * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
+   * @param mode - 'queue' appends a turn; 'prepend' makes the prompt the next
+   *   turn ahead of every already-queued one; 'steer' interrupts the running one.
    * @returns acceptance, or the business error (also mirrored into snapshot.promptError).
    */
   prompt(
     content: PromptContentPart[],
-    mode: 'queue' | 'steer',
+    mode: 'queue' | 'prepend' | 'steer',
     signal?: AbortSignal,
   ): Promise<RpcResult<{ accepted: true }>>
   /**

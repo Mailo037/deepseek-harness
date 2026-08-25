@@ -15,6 +15,12 @@ export interface IWorkspaces {
   /** The useWorkspaces standard feed (read face — writes stay inside the domain). */
   readonly list: ObservableSnapshot<WorkspaceListState>
   /**
+   * Re-pull the Workspace baseline from the Host (the user-facing refresh
+   * gesture; reuses an in-flight pull).
+   * @returns completion of the current or newly started baseline pull.
+   */
+  refresh(): Promise<void>
+  /**
    * Connect a Workspace to its reusable or freshly created blank session.
    * @param workspaceId - target workspace, or omitted for a standalone/unlinked session.
    * @returns the connected session id.

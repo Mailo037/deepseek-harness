@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import {
   EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -25,12 +26,26 @@ afterEach(cleanup)
 
 const SID = 's1' as SessionId
 const iid = (id: string): QueueItemId => id as QueueItemId
+const IMAGE_ATTACHMENT = {
+  attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+  mediaType: 'image/png' as const, bytes: 68, width: 1, height: 1,
+}
 
-function row(id: string, text: string | null, preview = text ?? '[image]'): QueuedMessage {
+function row(id: string, text: string): QueuedMessage {
   return {
     id: iid(id), messageId: `message-${id}` as never, placement: 'queued',
-    content: text === null ? [{ type: 'image', data: 'x' } as never] : [{ type: 'text', text }],
-    preview, text,
+    content: [{ type: 'text', text }], preview: text, text,
+  }
+}
+
+function imageRow(id: string, text = ''): QueuedMessage {
+  return {
+    id: iid(id), messageId: `message-${id}` as never, placement: 'queued',
+    content: [
+      ...(text === '' ? [] : [{ type: 'text' as const, text }]),
+      { type: 'image' as const, attachment: IMAGE_ATTACHMENT },
+    ],
+    preview: text === '' ? '[image]' : `${text} [image]`, text: null,
   }
 }
 
@@ -94,6 +109,7 @@ function kitFor(
     beginQueueEdit: vi.fn(() => true),
     cancelQueueEdit: vi.fn(),
     notify: vi.fn(),
+    loadImage: () => new Promise<string>(() => {}),
     ...injected,
   }
 }
@@ -139,6 +155,21 @@ describe('QueueDock', () => {
     fireEvent.click(header)
     expect(header.getAttribute('aria-expanded')).toBe('false')
     expect(view.queryByText('one')).toBeNull()
+  })
+
+  it('renders queued images as inline thumbnails instead of image marker text', async () => {
+    const snap = snapshotWith([imageRow('i-image', 'Check this')])
+    const loadImage = vi.fn(() => Promise.resolve('blob:queue-image'))
+    const view = render(
+      <QueueDock {...kitFor(snap, { loadImage })} useSession={liveSession(snap).useSession} />,
+    )
+
+    await waitFor(() => {
+      expect(view.getByRole('img', { name: '图片' }).getAttribute('src')).toBe('blob:queue-image')
+    })
+    expect(view.container.textContent).toContain('Check this')
+    expect(view.container.textContent).not.toContain('[image]')
+    expect(loadImage).toHaveBeenCalledWith(IMAGE_ATTACHMENT)
   })
 
   it('keeps the strip expanded while the composer edits one of its rows', () => {
@@ -322,14 +353,14 @@ describe('QueueDock', () => {
   it('renders active actions and disables editing for mixed-content rows', () => {
     const snap = snapshotWith([
       row('i-1', '第一条排队消息'),
-      row('i-2', null, 'image [image]'),
+      imageRow('i-2', 'image'),
     ])
     const source = liveSession(snap)
     const { container, getByRole } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
     fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
     expect([...container.querySelectorAll('li')].map(item =>
-      item.textContent?.replace('拖动调整发送顺序', ''),
-    )).toEqual(['第一条排队消息', 'image [image]'])
+      item.textContent?.replace('拖动调整发送顺序', '').trim(),
+    )).toEqual(['第一条排队消息', 'image'])
     expect(container.querySelectorAll('[aria-label="拖动调整发送顺序"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="编辑排队消息"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="删除排队消息"]')).toHaveLength(2)
@@ -356,7 +387,7 @@ describe('QueueDock', () => {
   })
 
   it('strictly steers complete row content only while the agent is running', async () => {
-    const running = snapshotWith([row('i-steer', null, 'image [image]')])
+    const running = snapshotWith([imageRow('i-steer', 'image')])
     const source = liveSession(running)
     const updateQueue = vi.fn(() => Promise.resolve())
     const rendered = render(

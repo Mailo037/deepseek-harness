@@ -93,16 +93,133 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Phone: the card spans the viewport between fixed insets (left/right come
- * from the inline placement, ModelSelect.tsx) and always opens upward over
- * the composer — never flipped downward past it, which would extend the
- * page and invite a scroll. */
+/* Phone: the card becomes a bottom sheet that rests at half the viewport,
+ * slides up to near-fullscreen when dragged to its top, and can be pulled
+ * down past a dismiss threshold. The height is driven by the `--sheet-h`
+ * custom property, defaulting to the half-viewport rest height; the drag
+ * handle (ModelSelect.tsx) overwrites it in pixels while dragging and the
+ * sheet snaps back through the `height` transition on release. A near-full
+ * 100dvh snap target tracks the dynamic viewport so the expanded sheet stays
+ * inside the screen when the on-screen keyboard opens the search field.
+ * `position: fixed` resolves against the viewport because the composer stack
+ * deliberately avoids a transform ancestor (ConversationRoot's
+ * `.composerHero`); the inline placement is therefore left empty for this
+ * pane, and the sheet slides up on open via the one-shot `sheetUp` keyframe. */
 @media (max-width: 639px) {
   .menu {
-    width: auto;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: var(--sheet-h, 50dvh);
     max-width: none;
-    max-height: calc(100vh - 96px);
+    max-height: none;
+    padding: 0;
+    border: none;
+    border-top: 1px solid var(--dsw-alias-border-inverted);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--dsw-shadow-lv3);
+    overflow-x: hidden;
+    overflow-y: hidden;
+    /* Snap between rest and expanded on release; dragging forces
+       `transition: none` through the sheetDragging class so the sheet tracks
+       the finger without lag. */
+    transition: height 220ms ease;
+    animation: sheetUp 240ms ease;
   }
+
+  /* Grab zone across the sheet's top edge; the rounded bar is the visual
+     handle. `touch-action: none` keeps pointermove on the handle instead of
+     letting the browser scroll, and user-select stops the drag from selecting
+     the surrounding copy. */
+  .sheetHandle {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    padding: 8px 0 2px;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .sheetHandle:active {
+    cursor: grabbing;
+  }
+
+  .sheetHandleBar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--dsw-alias-border-l3);
+  }
+
+  .sheetDragging {
+    transition: none;
+  }
+
+  .searchBox {
+    padding: 4px 12px 6px;
+  }
+
+  /* Fill the space under the header + search box so the list scrolls within
+     the sheet rather than growing it past the rest height. */
+  .groups {
+    flex: 1 1 auto;
+  }
+}
+
+/* Slide the sheet up from below the viewport on open. It runs once per mount,
+   so a pane drill inside the open sheet does not re-animate it. */
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Phone sheet chrome: a slim title row with the dismiss button on the
+   trailing edge. Rendered only while `phone` (ModelSelect.tsx), so these
+   styles never apply to the desktop dropdown card. */
+.menuHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 0 12px 4px;
+}
+
+.menuTitle {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuClose {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.menuClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.menuClose:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
 .searchBox {
@@ -285,7 +402,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Selection marker is the trailing check, not a fill */
+/* Selection marker sits before the model name, while capabilities stay on the trailing edge. */
 .selected {
   background: transparent;
 }
@@ -303,15 +420,6 @@
   overflow: hidden;
 }
 
-.nameRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-}
-
 .modalityBadges {
   display: inline-flex;
   align-items: center;
@@ -320,25 +428,50 @@
 }
 
 .modalityIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--dsw-alias-bg-layer-2);
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
   color: var(--dsw-alias-label-secondary);
-  border: 1px solid var(--dsw-alias-border-l3);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
 }
 
 .modalityT {
   font-family: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--dsw-alias-label-secondary);
+}
+
+.modelInfoCard {
+  display: grid;
+  gap: 6px;
+  color: var(--dsw-static-neutral-bluish-00);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.modelInfoRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 12px;
+}
+
+.modelInfoRow > span {
+  color: var(--dsw-static-neutral-bluish-300);
+}
+
+.modelInfoRow > code,
+.modelInfoRow > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .modelName {

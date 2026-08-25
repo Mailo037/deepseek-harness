@@ -19,6 +19,7 @@ export const zh = {
   'menu.aria': '模型与推理等级',
   'menu.model': '模型',
   'menu.effort': '推理等级',
+  'menu.close': '关闭',
   'effort.providerDefault': 'Default',
   'status.loading': '正在刷新模型列表…',
   'error.action': '模型操作失败：{message}',
@@ -32,6 +33,11 @@ export const zh = {
   'modality.text': '文本',
   'modality.image': '图片',
   'modality.video': '视频',
+  'modelInfo.id': '模型 ID',
+  'modelInfo.context': '上下文',
+  'modelInfo.maxOutput': '最大输出',
+  'modelInfo.modalities': '输入类型',
+  'modelInfo.unknown': '未知',
 } satisfies Record<string, string>
 
 /** The model namespace key union. */
@@ -48,6 +54,7 @@ export const en = {
   'menu.aria': 'Model and reasoning effort',
   'menu.model': 'Model',
   'menu.effort': 'Effort',
+  'menu.close': 'Close',
   'effort.providerDefault': 'Default',
   'status.loading': 'Refreshing model list…',
   'error.action': 'Model operation failed: {message}',
@@ -61,4 +68,9 @@ export const en = {
   'modality.text': 'Text',
   'modality.image': 'Image',
   'modality.video': 'Video',
+  'modelInfo.id': 'Model ID',
+  'modelInfo.context': 'Context',
+  'modelInfo.maxOutput': 'Max output',
+  'modelInfo.modalities': 'Modalities',
+  'modelInfo.unknown': 'Unknown',
 } satisfies Record<ModelKey, string>

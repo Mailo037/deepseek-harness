@@ -565,9 +565,10 @@ describe('ChatView', () => {
     expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeNull()
   })
 
-  it('renders a TRAILING Think step in flow, outside the tool group it follows', () => {
-    // A think-only step after the run's last tool call reasons for the answer
-    // text that follows — it does not belong inside the tool window above.
+  it('renders a TRAILING Think step inside the tool group it follows', () => {
+    // A think-only step after the run's last tool call reasons for the next
+    // tool or visible text — it belongs inside the tool-role window, not in
+    // flow. The window holds the two tool calls plus the trailing Think row.
     const thinkBlock = (seq: number, turn = 1): ReturnType<typeof assistant> => ({
       ...assistant(seq, '', turn),
       blocks: [{ kind: 'reasoning', text: 'summarizing...' }],
@@ -586,14 +587,11 @@ describe('ChatView', () => {
     expect(groups).toHaveLength(1)
     fireEvent.click(groups[0]?.querySelector('button') as HTMLElement)
     const scroll = groups[0]?.querySelector('[data-tool-scroll]')
-    // The window holds only the tool calls; the Think row renders in flow.
-    expect(scroll?.querySelector('[data-variant="think"]')).toBeNull()
-    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:4"]')).toBeNull()
-    expect(view.container.querySelector('[data-variant="think"]')).toBeTruthy()
-    const thinkRow = view.container.querySelector('[data-chat-flow-key="fixture:assistant:4"]')
-    expect(thinkRow).not.toBeNull()
-    // The Think row sits before the answer text, both outside the group.
-    expect(thinkRow?.nextElementSibling?.getAttribute('data-chat-flow-key')).toBe('fixture:assistant:5')
+    // The window holds the tool calls AND the trailing Think row.
+    expect(scroll?.querySelector('[data-variant="think"]')).toBeTruthy()
+    expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeNull()
+    // The answer text sits outside the group as before.
+    expect(view.container.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeTruthy()
   })
 
   it('keeps an INTERRUPTED Think step in flow — the Stopped marker never joins the tool group', () => {
@@ -908,14 +906,32 @@ describe('ChatView', () => {
     ])
   })
 
-  it('offers inline retry and copy on turn errors; retry sends the continue prompt', () => {
+  it('offers inline retry, details toggle, and copy on turn errors; retry sends continue prompt', () => {
     const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'AUTH')] })
     const view = render(<h.ChatView {...h.props} />)
     const errorBlock = view.getByRole('status').parentElement
     expect(errorBlock).not.toBeNull()
-    // The error block carries its own copy action beside retry.
+    // The error block carries retry, details toggle, and copy actions.
     const copy = within(errorBlock as HTMLElement).getByRole('button', { name: '复制' })
     const retry = within(errorBlock as HTMLElement).getByRole('button', { name: '重试' })
+    const details = within(errorBlock as HTMLElement).getByRole('button', { name: '详情' })
+    expect(details.getAttribute('aria-expanded')).toBe('false')
+
+    // Click details to expand panel
+    fireEvent.click(details)
+    expect(details.getAttribute('aria-expanded')).toBe('true')
+    expect(details.textContent).toBe('隐藏详情')
+    expect(view.getByText('错误码：')).toBeDefined()
+    expect(view.getAllByText('AUTH')).toHaveLength(2)
+    expect(view.getByText('详细信息：')).toBeDefined()
+
+    // Click again to collapse
+    fireEvent.click(details)
+    expect(details.getAttribute('aria-expanded')).toBe('false')
+    expect(details.textContent).toBe('详情')
+    expect(view.queryByText('错误码：')).toBeNull()
+    expect(view.getAllByText('AUTH')).toHaveLength(1)
+
     fireEvent.click(retry)
     expect(h.sendMessage).toHaveBeenCalledTimes(1)
     expect(h.sendMessage).toHaveBeenCalledWith('发生意外错误，请继续你之前的工作。')
@@ -1706,10 +1722,10 @@ describe('ChatView', () => {
       // reader reaches the top zone of a scrollable window -> next page.
       readerScroll(host, 0)
       expect(h.loadOlder).toHaveBeenCalledTimes(1)
-      // A positioned mid-window read (above the anchor-test offsets) never pages.
+      // A positioned mid-window read (below the paging trigger zone) never pages.
       h.loadOlder.mockClear()
       metrics.setLayout(2_000, 400)
-      readerScroll(host, 150)
+      readerScroll(host, 300)
       expect(h.loadOlder).not.toHaveBeenCalled()
     } finally {
       host.remove()
@@ -1743,10 +1759,12 @@ describe('ChatView', () => {
     expect(view.getByText(/历史加载失败：boom/)).toBeTruthy()
     const loading = makeHarness({ openState: 'loading' })
     const lv = render(<loading.ChatView {...loading.props} />)
-    // The replay window renders message-shaped skeleton bones behind the
-    // screen-reader loading status instead of a bare text hint.
+    // The replay window keeps the transcript's assistant/user rhythm while
+    // exposing only one screen-reader loading status.
     expect(lv.getByRole('status').textContent).toContain('载入历史…')
-    expect(lv.container.querySelectorAll('[data-skeleton-bubble]')).toHaveLength(3)
+    expect(lv.container.querySelectorAll('[data-history-message="assistant"]')).toHaveLength(2)
+    expect(lv.container.querySelectorAll('[data-history-message="user"]')).toHaveLength(1)
+    expect(lv.container.querySelectorAll('[data-skeleton-bubble]')).toHaveLength(0)
   })
 
   it('pending waits leave the flow entirely — questions and approvals both take over the composer', () => {

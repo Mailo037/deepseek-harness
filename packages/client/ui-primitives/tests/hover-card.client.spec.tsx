@@ -393,6 +393,44 @@ describe('HoverCard', () => {
     }
   })
 
+  it('opens left of an anchor when the right side would leave the viewport', () => {
+    const priorWidth = window.innerWidth
+    const priorOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
+    window.innerWidth = 1024
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 244 })
+    try {
+      const { wrapper } = mount()
+      stubAnchorRect(screen.getByText('row'), { top: 40, right: 1000 })
+      fireEvent.pointerEnter(wrapper)
+      act(() => { vi.advanceTimersByTime(500) })
+      const card = screen.getByText('card body').parentElement as HTMLElement
+      // Wrapper left is 900: 900 − 244 − 8 = 648.
+      expect(card.style.left).toBe('648px')
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', priorOffsetWidth)
+      window.innerWidth = priorWidth
+    }
+  })
+
+  it('clamps a card between viewport margins when neither side fits', () => {
+    const priorWidth = window.innerWidth
+    const priorOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
+    window.innerWidth = 300
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 244 })
+    try {
+      const { wrapper } = mount()
+      stubAnchorRect(screen.getByText('row'), { top: 40, right: 200 })
+      fireEvent.pointerEnter(wrapper)
+      act(() => { vi.advanceTimersByTime(500) })
+      const card = screen.getByText('card body').parentElement as HTMLElement
+      // 300 − 244 − 8 = 48: the card's right edge lands on the safe margin.
+      expect(card.style.left).toBe('48px')
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', priorOffsetWidth)
+      window.innerWidth = priorWidth
+    }
+  })
+
   it('clamps inside placement itself when the card is already measured (resize path)', () => {
     window.innerHeight = 300
     const { wrapper } = mount()

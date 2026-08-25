@@ -909,14 +909,26 @@ export class SessionManager {
     }
   }
 
-  /** After each connection generation: refresh the session baseline and rebuild opened windows. */
-  handleConnected(): void {
+  /**
+   * Full domain reload: session baseline pull, then the same per-generation
+   * rebuilds a fresh connection runs — every consumed subagent catalog and a
+   * resync of each opened window. Also the reconnect path.
+   * @returns completion of the baseline pull; catalog refreshes and resyncs
+   *   run to completion independently.
+   */
+  reloadAll(): Promise<void> {
     void this.refreshList()
     const selectedAddress = this.selected === undefined ? undefined : this.addresses.get(this.selected)
     if (selectedAddress !== undefined) void this.refreshSubagents(selectedAddress.parentSessionId)
     if (this.selected !== undefined) void this.refreshSubagents(this.selected)
     for (const parentSessionId of this.openCatalogs) void this.refreshSubagents(parentSessionId)
     for (const session of this.sessions.values()) void session.resync()
+    return this.listInflight ?? Promise.resolve()
+  }
+
+  /** After each connection generation: reload the session domain from the wire. */
+  handleConnected(): void {
+    void this.reloadAll()
   }
 
   /** Debounce membership refetches while one parent catalog is selected or open. */

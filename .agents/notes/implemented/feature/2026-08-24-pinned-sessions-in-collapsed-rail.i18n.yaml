@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-pinned-sessions-in-collapsed-rail.md
+2026-08-24-pinned-sessions-in-collapsed-rail.md: bfc18684425a400abdfd1605b03fa76f413d69cb
+2026-08-24-pinned-sessions-in-collapsed-rail.zh.md: fdd1f4b8c49a86428b64537464d216799ac3caea

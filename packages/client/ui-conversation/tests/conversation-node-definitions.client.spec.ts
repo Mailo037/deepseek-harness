@@ -975,11 +975,17 @@ describe('built-in conversation node Definitions', () => {
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'turn/end', {
         turn: 1,
-        reason: { kind: 'error', error: { code: 'TRANSPORT', message: 'failed' } },
+        reason: { kind: 'error', error: { code: 'SERVER', message: 'upstream failed', status: 503, requestId: 'req-123' as never } },
       }),
     ])
     expect(node(snapshot(failed), 'turn-max-tokens')).toBeUndefined()
-    expect(node(snapshot(failed), 'turn-error')).toBeDefined()
+    expect(node(snapshot(failed), 'turn-error')?.data).toMatchObject({
+      kind: 'turn-error',
+      code: 'SERVER',
+      message: 'upstream failed',
+      status: 503,
+      requestId: 'req-123',
+    })
   })
 
   it('keeps the max-tokens notice when the window starts after the owning turn/start', () => {

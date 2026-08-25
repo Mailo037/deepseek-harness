@@ -127,6 +127,20 @@ describe('search', () => {
   })
 })
 
+describe('refreshAll', () => {
+  it('re-pulls the session baseline (the user-facing full reload entry)', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }])
+    const before = b.api.callsOf('session.list').length
+
+    await b.svc.refreshAll()
+
+    await vi.waitFor(() => {
+      expect(b.api.callsOf('session.list').length).toBe(before + 1)
+    })
+  })
+})
+
 describe('scope tree', () => {
   it('mints lazily on first resolution, tags the ctx, and keeps binding identity stable', async () => {
     const b = bench()
@@ -238,6 +252,22 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
     const second = bench()
     await feedList(second, [{ id: 's1' }])
     expect(second.svc.list.getSnapshot().current).toBe('s1')
+  })
+
+  it('clears a persisted selection that no longer exists into the New Session state', async () => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => storage.get(k) ?? null,
+      setItem: (k: string, v: string) => { storage.set(k, v) },
+    })
+    const first = bench()
+    await feedList(first, [{ id: 's1' }])
+    first.svc.open(sid('s1'))
+
+    const afterDeletion = bench()
+    await feedList(afterDeletion, [{ id: 's2' }])
+    expect(afterDeletion.svc.list.getSnapshot().current).toBeUndefined()
+    expect(storage.get('dsh.sessions.current')).toBe('{}')
   })
 })
 

@@ -285,13 +285,14 @@ export function apply(ctx: Context): void {
   slots.register({
     name: 'conversation.composer.bar',
     locale: NS,
-    // The two named control seats in the bar's tool row (plan beside the
-    // access control, model right); empty until their owning plugins
-    // register.
+    // The named control seats in the bar's tool row (plan beside the
+    // access control, model and voice right); empty until their owning
+    // plugins register.
     children: {
       'conversation.input.attachments': { kind: 'single', scope: 'session-maybe' },
       'conversation.input.plan': { kind: 'single', scope: 'session' },
       'conversation.input.model': { kind: 'single', scope: 'session' },
+      'conversation.input.voice': { kind: 'single', scope: 'session' },
     },
     inject: (sessionId: SessionId | undefined): ComposerBarInjected => {
       if (sessionId === undefined) {
@@ -435,9 +436,11 @@ export function apply(ctx: Context): void {
           actions.setInspect({ callId })
           actions.setView('trajectory')
         },
-        // Fire-and-forget retry send (turn-error inline action).
+        // Fire-and-forget retry send (turn-error inline action). Prepend
+        // delivery: the continue prompt must be the next turn, ahead of any
+        // messages the user queued before the failure.
         sendMessage: (text) => {
-          scoped.send(text).catch(() => {
+          scoped.send(text, 'prepend').catch(() => {
             // Rejected admission lands in the snapshot's promptError; nothing to restore here.
           })
         },

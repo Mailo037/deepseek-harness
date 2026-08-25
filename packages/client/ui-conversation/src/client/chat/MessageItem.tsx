@@ -164,13 +164,32 @@ function ModelRetryItem({ node, active, t }: {
   )
 }
 
+function formatTurnErrorCopyText(node: TurnErrorNode): string {
+  const parts: string[] = []
+  if (node.code !== undefined && !node.message.startsWith(node.code)) {
+    parts.push(`${node.code}: ${node.message}`)
+  } else {
+    parts.push(node.message)
+  }
+  if (node.status !== undefined) {
+    parts.push(`(HTTP ${node.status})`)
+  }
+  if (node.requestId !== undefined) {
+    parts.push(`[Request ID: ${node.requestId}]`)
+  }
+  return parts.join(' ')
+}
+
 /** Persistent, turn-positioned feedback for a terminal failure. */
 function TurnErrorItem({ node, onRetry, t }: {
   node: TurnErrorNode
-  /** Send the continue prompt into the session (queued turn). */
+  /** Send the continue prompt into the session as the immediate next turn. */
   onRetry: () => void
   t: ChatViewSlotProps['t']
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const copyText = useMemo(() => formatTurnErrorCopyText(node), [node])
+
   return (
     <div className={css.turnErrorBlock}>
       <div className={css.turnErrorRow} role="status">
@@ -185,8 +204,42 @@ function TurnErrorItem({ node, onRetry, t }: {
         <button type="button" className={css.turnErrorRetry} onClick={onRetry}>
           {t('message.turnError.retry')}
         </button>
-        <MessageIconActions text={node.message} clock="end" className={css.turnErrorCopyAction} t={t} />
+        <button
+          type="button"
+          className={css.turnErrorDetailsBtn}
+          aria-expanded={detailsOpen}
+          onClick={() => { setDetailsOpen(open => !open) }}
+        >
+          {detailsOpen ? t('message.turnError.hideDetails') : t('message.turnError.details')}
+        </button>
+        <MessageIconActions text={copyText} clock="end" className={css.turnErrorCopyAction} t={t} />
       </div>
+      {detailsOpen && (
+        <div className={css.turnErrorDetailsPanel}>
+          {node.code !== undefined && (
+            <div className={css.turnErrorDetailRow}>
+              <span className={css.turnErrorDetailLabel}>{t('message.turnError.detail.code')}</span>
+              <code className={css.turnErrorDetailValue}>{node.code}</code>
+            </div>
+          )}
+          {node.status !== undefined && (
+            <div className={css.turnErrorDetailRow}>
+              <span className={css.turnErrorDetailLabel}>{t('message.turnError.detail.status')}</span>
+              <span className={css.turnErrorDetailValue}>{node.status}</span>
+            </div>
+          )}
+          {node.requestId !== undefined && (
+            <div className={css.turnErrorDetailRow}>
+              <span className={css.turnErrorDetailLabel}>{t('message.turnError.detail.requestId')}</span>
+              <span className={css.turnErrorDetailValue}>{node.requestId}</span>
+            </div>
+          )}
+          <div className={css.turnErrorDetailRow}>
+            <span className={css.turnErrorDetailLabel}>{t('message.turnError.detail.message')}</span>
+            <span className={css.turnErrorDetailValue}>{node.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -39,6 +39,29 @@
   z-index: 100;
   min-width: 218px;
   max-width: calc(100vw - 24px);
+  transform-origin: top center;
+  animation: menu-slide-down var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+/* A newly opened picker enters from above its settled position. Keeping this
+ * on the shared menu surface gives workspace, mode, and other menu-backed
+ * selections the same motion without changing their individual behavior. */
+@keyframes menu-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list {
+    animation: none;
+  }
 }
 
 /* Portal mode: fixed in the viewport, coordinates supplied inline from the

@@ -160,6 +160,12 @@ export type WorkspaceBrowserInjected = {
   updateWorkspaceSettings: (workspaceId: WorkspaceId, settings: Record<string, unknown>) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /**
+   * Full reload of everything the region shows — Workspace baseline, Session
+   * baseline and every opened conversation window — for the sidebar's
+   * pull-to-refresh gesture. Resolves when both baselines re-pulled.
+   */
+  refreshAll: () => Promise<void>
 }
 
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */

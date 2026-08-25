@@ -6,6 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LlmRuntime, { CallId, createUserMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   LlmError,
@@ -58,7 +59,7 @@ function adapterOf(
   const { apiKey, ...rest } = config
   return new DeepSeekAdapter({
     options: () => resolveAdapterOptions(rest),
-    resolveApiKey: () => Promise.resolve(apiKey ?? 'k'),
+    resolveApiKey: () => Promise.resolve({ ref: credentialRef('TEST_API_KEY'), value: apiKey ?? 'k' }),
     resolveUserId: () => TEST_USER_ID,
     resolveAttachments: () => attachments,
     ...files === undefined ? {} : { resolveFiles: () => files },
@@ -874,7 +875,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     'rejects image input for text-only model %s before credentials, attachments, or fetch',
     async (model) => {
       const server = await mockServer([])
-      const resolveApiKey = vi.fn(() => Promise.resolve('k'))
+      const resolveApiKey = vi.fn(() => Promise.resolve({ ref: credentialRef('TEST_API_KEY'), value: 'k' }))
       const resolveAttachments = vi.fn(() => ({}) as AttachmentStore)
       const adapter = new DeepSeekAdapter({
         options: () => resolveAdapterOptions({ baseURL: server.url }),
@@ -899,7 +900,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
   it('rejects vision input without an attachment provider before credentials or fetch', async () => {
     const server = await mockServer([])
-    const resolveApiKey = vi.fn(() => Promise.resolve('k'))
+    const resolveApiKey = vi.fn(() => Promise.resolve({ ref: credentialRef('TEST_API_KEY'), value: 'k' }))
     const adapter = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({
         baseURL: server.url,
@@ -1017,6 +1018,95 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
   })
 
+  it('escalates the reasoning effort up to three times when the endpoint mandates reasoning', async () => {
+    const mandatory = JSON.stringify({
+      error: { message: 'Reasoning is mandatory for this endpoint and cannot be disabled' },
+    })
+    const server = await mockServer([
+      { kind: 'http-error', status: 400, body: mandatory },
+      { kind: 'http-error', status: 400, body: mandatory },
+      { kind: 'http-error', status: 400, body: mandatory },
+      { kind: 'sse', events: textEvents },
+    ])
+    const ctx = await harness(server.url, { reasoningEffort: 'off' })
+
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'hi' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    expect(server.requests).toHaveLength(4)
+    expect(server.requests[0]).toMatchObject({ thinking: { type: 'disabled' } })
+    expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
+    expect(server.requests[1]).toMatchObject({ thinking: { type: 'enabled' }, reasoning_effort: 'low' })
+    expect(server.requests[2]).toMatchObject({ thinking: { type: 'enabled' }, reasoning_effort: 'high' })
+    expect(server.requests[3]).toMatchObject({ thinking: { type: 'enabled' }, reasoning_effort: 'max' })
+  })
+
+  it('surfaces the mandatory-reasoning error after exhausting the escalation ladder', async () => {
+    const mandatory = JSON.stringify({
+      error: { message: 'Reasoning is mandatory for this endpoint and cannot be disabled' },
+    })
+    const server = await mockServer([
+      { kind: 'http-error', status: 400, body: mandatory },
+      { kind: 'http-error', status: 400, body: mandatory },
+      { kind: 'http-error', status: 400, body: mandatory },
+      { kind: 'http-error', status: 400, body: mandatory },
+    ])
+    const adapter = adapterOf({ baseURL: server.url })
+
+    await expect(drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      messages: [],
+    }))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      message: 'Reasoning is mandatory for this endpoint and cannot be disabled',
+    })
+    const efforts = (server.requests as Array<{ reasoning_effort?: string }>).map(r => r.reasoning_effort)
+    expect(efforts).toEqual([undefined, 'low', 'high', 'max'])
+  })
+
+  it('does not escalate a mandatory-reasoning error when the request already sent max', async () => {
+    const mandatory = JSON.stringify({
+      error: { message: 'Reasoning is mandatory for this endpoint and cannot be disabled' },
+    })
+    const server = await mockServer([{ kind: 'http-error', status: 400, body: mandatory }])
+    const adapter = adapterOf({ baseURL: server.url })
+
+    await expect(drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      reasoningEffort: ReasoningEffortId('max'),
+      messages: [],
+    }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    expect(server.requests).toHaveLength(1)
+  })
+
+  it('does not escalate an unrelated invalid-request rejection', async () => {
+    const server = await mockServer([
+      { kind: 'http-error', status: 400, body: JSON.stringify({ error: { message: 'invalid temperature' } }) },
+    ])
+    const ctx = await harness(server.url, { reasoningEffort: 'off' })
+
+    const result = await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'hi' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+    expect(result.finish).toMatchObject({
+      kind: 'error',
+      failure: { code: 'INVALID_REQUEST', message: 'invalid temperature' },
+    })
+    expect(server.requests).toHaveLength(1)
+    expect(server.requests[0]).toMatchObject({ thinking: { type: 'disabled' } })
+  })
+
   it('uses the configured maxTokens default and preserves an explicit request cap', async () => {
     const server = await mockServer([
       { kind: 'sse', events: textEvents },
@@ -1114,7 +1204,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     const result = await assemble(ctx,{ model: 'deepseek-v4-flash', messages: [] })
     expect(result.finish).toEqual({
       kind: 'error',
-      failure: { message: `failed with ${status}`, code, status },
+      failure: { message: `failed with ${status}`, code, status, apiKeyRef: 'DEEPSEEK_API_KEY' },
     })
   })
 
@@ -1169,6 +1259,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         status: 429,
         providerRetryAfterMs: 2_000,
         requestId: ProviderRequestId('req-429'),
+        apiKeyRef: 'DEEPSEEK_API_KEY',
       },
     })
   })
@@ -1196,6 +1287,7 @@ describe('DeepSeekAdapter against a mock server', () => {
           status: 503,
           providerRetryAfterMs: 3_000,
           requestId: ProviderRequestId('deepseek-503'),
+          apiKeyRef: 'DEEPSEEK_API_KEY',
         },
       })
     } finally {
@@ -1221,13 +1313,15 @@ describe('DeepSeekAdapter against a mock server', () => {
       const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
       expect(result.finish).toEqual({
         kind: 'error',
-        failure: { message: 'retry later', code: 'RATE_LIMIT', status: 429 },
+        failure: { message: 'retry later', code: 'RATE_LIMIT', status: 429, apiKeyRef: 'DEEPSEEK_API_KEY' },
       })
     }
   })
 
   it('classifies only context-capacity HTTP 400 details as context overflow', () => {
     expect(httpErrorCode(400, { message: 'request too large for model context' }))
+      .toBe(CONTEXT_WINDOW_EXCEEDED_CODE)
+    expect(httpErrorCode(400, { message: 'Input token exceed the limit' }))
       .toBe(CONTEXT_WINDOW_EXCEEDED_CODE)
     expect(httpErrorCode(400, { message: 'invalid input: temperature exceeds maximum allowed value' }))
       .toBe('INVALID_REQUEST')
@@ -1627,7 +1721,7 @@ describe('plugin registration and config', () => {
     const connection = resolveAdapterOptions({ models: [] })
     const adapter = new DeepSeekAdapter({
       options: () => ({ ...connection, models: [{ id: 'adapter-model' }] }),
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveApiKey: () => Promise.resolve({ ref: credentialRef('TEST_API_KEY'), value: 'k' }),
       resolveUserId: () => TEST_USER_ID,
     })
     await expect(adapter.listModels('deepseek-official')).resolves.toEqual([{
@@ -2021,7 +2115,7 @@ describe('plugin registration and config', () => {
   it('resolves connection facts and the credential exactly once per stream call', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const options = vi.fn(() => resolveAdapterOptions({ baseURL: server.url }))
-    const resolveApiKey = vi.fn(() => Promise.resolve('per-request-key'))
+    const resolveApiKey = vi.fn(() => Promise.resolve({ ref: credentialRef('TEST_API_KEY'), value: 'per-request-key' }))
     const resolveUserId = vi.fn(() => TEST_USER_ID)
     const adapter = new DeepSeekAdapter({ options, resolveApiKey, resolveUserId })
 
@@ -2080,5 +2174,28 @@ describe('plugin registration and config', () => {
       retryPolicy: { mode: 'normal', maxRetries: -1 },
     })).rejects.toThrow(/retryPolicy/)
     expect(ctx.llm.listProviders()).toEqual([])
+  })
+
+  it('validates rotation backups and cooldown at resolution', () => {
+    const connection = resolveAdapterOptions({
+      backupApiKeys: ['DEEPSEEK_API_KEY_2', 'DEEPSEEK_API_KEY_3'],
+      apiKeyCooldownMs: 60_000,
+    })
+    expect(connection.backupApiKeys).toEqual(['DEEPSEEK_API_KEY_2', 'DEEPSEEK_API_KEY_3'])
+    expect(connection.apiKeyCooldownMs).toBe(60_000)
+
+    expect(resolveAdapterOptions({}).backupApiKeys).toEqual([])
+    expect(resolveAdapterOptions({}).apiKeyCooldownMs).toBe(3_600_000)
+
+    expect(() => resolveAdapterOptions({ backupApiKeys: ['DEEPSEEK_API_KEY'] }))
+      .toThrow(/must not repeat the primary key reference/)
+    expect(() => resolveAdapterOptions({ backupApiKeys: ['DUP', 'DUP'] }))
+      .toThrow(/must not contain duplicate reference/)
+    expect(() => resolveAdapterOptions({ backupApiKeys: ['not a ref'] }))
+      .toThrow(/must match/)
+    expect(() => resolveAdapterOptions({ apiKeyCooldownMs: 0 }))
+      .toThrow(/apiKeyCooldownMs.*positive finite/)
+    expect(() => resolveAdapterOptions({ apiKeyCooldownMs: MAX_TIMER_DELAY_MS + 1 }))
+      .toThrow(/apiKeyCooldownMs.*no greater/)
   })
 })

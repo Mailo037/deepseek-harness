@@ -635,6 +635,35 @@ describe('subagent ownership fence', () => {
     expect(followup).toHaveBeenCalledOnce()
   })
 
+  it('dispatches prepend mode to agent.prepend without the queue or steer verbs', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-prepend'), { meta: { cwd: '/proj' } })
+    const followup = vi.fn()
+    const steer = vi.fn()
+    const prepend = vi.fn()
+    const agent = {
+      id: session.id, session, status: 'idle', ctx, followup, steer, prepend,
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: agent.id,
+      mode: 'prepend',
+      content: [{ type: 'text', text: 'retry work' }],
+    }))
+    expect(response.result.ok).toBe(true)
+    expect(prepend).toHaveBeenCalledOnce()
+    expect(prepend).toHaveBeenCalledWith(expect.objectContaining({
+      source: { kind: 'user', rpcId: expect.any(String) },
+    }))
+    expect(followup).not.toHaveBeenCalled()
+    expect(steer).not.toHaveBeenCalled()
+  })
+
   it('canonicalizes a supplied browser zone on the exact prompt and rejects invalid names', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -766,10 +795,11 @@ describe('sessions.prompt synchronous rejection', () => {
       ctx,
       followup: () => { throw new Error('agent "session-throwing" lifecycle disposed') },
       steer: () => { throw new Error('agent "session-throwing" lifecycle disposed') },
+      prepend: () => { throw new Error('agent "session-throwing" lifecycle disposed') },
     } as unknown as Agent)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    for (const mode of ['queue', 'steer'] as const) {
+    for (const mode of ['queue', 'steer', 'prepend'] as const) {
       const response = await api.sessions.prompt(request({
         sessionId: session.id, mode, content: [{ type: 'text' as const, text: 'x' }],
       }))

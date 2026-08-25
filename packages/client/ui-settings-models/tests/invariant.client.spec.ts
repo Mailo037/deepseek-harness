@@ -11,9 +11,9 @@ describe('invariant companion', () => {
     await expect(ctx.plugin(ModelsInvariant).await()).resolves.toBeDefined()
   })
 
-  it('node-half apply is a no-op host placeholder', async () => {
+  it('node-half apply is a host registration entry', async () => {
     const { apply } = await import('@deepseek-ai/dsh-client-ui-settings-models')
-    apply()
+    apply(new Context())
     expect(true).toBe(true) // reaching here without throw is the contract
   })
 

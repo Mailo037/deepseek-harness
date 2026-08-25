@@ -534,6 +534,31 @@ describe('workspace browser rows', () => {
     }
   })
 
+  it('renames a non-pinned Session from its hover-card title', async () => {
+    vi.useFakeTimers()
+    const onInlineRename = vi.fn(async () => {})
+    try {
+      const node: SessionNode = {
+        id: sid('inline-rename'), title: 'Regular chat', blank: false, running: false,
+        runningSubagentCount: 0, completed: false, updatedAt: 0,
+      }
+      render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+        onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onInlineRename={onInlineRename} t={t} />)
+      const wrapper = screen.getByRole('treeitem').parentElement as HTMLElement
+      fireEvent.pointerEnter(wrapper)
+      act(() => { vi.advanceTimersByTime(500) })
+      fireEvent.click(screen.getByRole('button', { name: '重命名会话' }))
+      const input = screen.getByRole('textbox', { name: '会话名称' })
+      fireEvent.change(input, { target: { value: 'Renamed regular chat' } })
+      fireEvent.submit(input.closest('form')!)
+      await act(async () => { await Promise.resolve() })
+      expect(onInlineRename).toHaveBeenCalledWith(node.id, 'Renamed regular chat')
+      expect(screen.getByText('Renamed regular chat')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it.each([
     ['approval', '等待审批'],
     ['plan-review', '计划待审'],

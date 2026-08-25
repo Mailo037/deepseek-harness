@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import clsx from 'clsx'
 import type {
   ChatConversationViewNode, ConversationTimelineSnapshot, ToolCallBlock,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -28,17 +29,67 @@ import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { ToolCallGroup } from './ToolCallGroup.tsx'
 import { TurnWorkSummary } from './TurnWorkSummary.tsx'
 import { formatRunDuration } from './message-chrome.ts'
+import assistantCss from './AssistantMarkdown.module.css'
+import messageCss from './MessageItem.module.css'
 import a11yCss from './accessibility.module.css'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
 
+/** Static line widths that make the replay placeholder read as a short conversation. */
+const HISTORY_PREVIEW_ROWS = [
+  { kind: 'assistant', lines: [72, 48] },
+  { kind: 'user', lines: [100] },
+  { kind: 'assistant', lines: [84, 61, 38] },
+] as const
+
+/** Reuses the transcript's message geometry while its durable history is replaying. */
+function HistoryLoadingPreview({ t }: Pick<ChatViewSlotProps, 't'>) {
+  return (
+    <div className={css.historySkeleton} role="status" aria-live="polite" data-history-skeleton="">
+      <span className={a11yCss.visuallyHidden}>{t('chat.loadingHistory')}</span>
+      {HISTORY_PREVIEW_ROWS.map((row, index) => (
+        row.kind === 'user'
+          ? (
+            <div key={index} className={messageCss.userRow} data-history-message="user" aria-hidden="true">
+              <div className={messageCss.userStack}>
+                <div className={clsx(messageCss.bubble, css.historyUserBubble)}>
+                  <HistoryLoadingLines widths={row.lines} />
+                </div>
+              </div>
+            </div>
+          )
+          : (
+            <div key={index} className={clsx(assistantCss.root, css.historyAssistant)} data-history-message="assistant" aria-hidden="true">
+              <div className={assistantCss.body}>
+                <HistoryLoadingLines widths={row.lines} />
+              </div>
+            </div>
+          )
+      ))}
+    </div>
+  )
+}
+
+/** One unavailable transcript paragraph, sized like its eventual text instead of a generic card. */
+function HistoryLoadingLines({ widths }: { widths: readonly number[] }) {
+  return (
+    <div className={css.historyLoadingLines}>
+      {widths.map((width, index) => (
+        <span key={index} className={css.historyLoadingLine} style={{ width: `${width}%` }} />
+      ))}
+    </div>
+  )
+}
+
 /**
- * Scroll-top zone (px) that requests the next older history page. Kept under
- * the anchor-test setup offsets (50/80) so a reader scrolling to a positioned
- * anchor does not itself page; only reaching the top zone does.
+ * Scroll-top zone (px) that requests the next older history page. The zone is
+ * deliberately generous so paging begins while the reader is still a short way
+ * from the loaded head — combined with exponential page sizes, the next page is
+ * already in flight as the reader closes on the head, instead of only at the
+ * exact top. Still modest enough that a mid-window read never pages.
  */
-const OLDER_TRIGGER_TOP = 8
+const OLDER_TRIGGER_TOP = 200
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -255,15 +306,22 @@ function blockActive(block: ToolCallBlock): boolean {
 }
 
 /**
- * Whether any call inside a run is still running (drives the window's
- * open-while-active / tuck-when-settled behavior).
+ * Whether any call inside a run is still running — or the run holds a Think
+ * seat still reasoning — for the window's open-while-active / tuck-when-settled
+ * behavior. A running Think row is treated like a running call so a streaming
+ * trailing think stays visible instead of hiding behind the group header.
  * @param nodes - the run's member nodes, in display order.
- * @returns true when at least one member call lacks its result.
+ * @returns true when at least one member call or streamed Think lacks its result.
  */
 function runIsActive(nodes: readonly ChatConversationViewNode[]): boolean {
   return nodes.some((node) => {
-    if (node.kind !== 'tool-call') return false
-    return blockActive((node.data as { readonly root: ToolCallBlock }).root)
+    if (node.kind === 'tool-call') {
+      return blockActive((node.data as { readonly root: ToolCallBlock }).root)
+    }
+    if (node.kind === 'assistant-step') {
+      return (node.data as AssistantMeta).status === 'running'
+    }
+    return false
   })
 }
 
@@ -635,13 +693,13 @@ export function ChatView({
     />
   )
 
-  // Flow construction. Contiguous tool runs live inside one bounded scroll
-  // window whose header names the run's last action; a run of one call renders
-  // as the bare row (no window chrome). Think-only steps join the surrounding
-  // run while tool calls keep following them; a TRAILING think-only step (no
-  // further tool call precedes the next visible content) renders in flow — its
-  // reasoning belongs to the answer text it leads, not to the tool window
-  // above; steps with visible text render in flow and split the run.
+  // Flow construction. Contiguous tool/think runs live inside one bounded
+  // scroll window whose header names the run's last action; a run of one call
+  // renders as the bare row (no window chrome). Think-only steps join the
+  // surrounding run the same way tool calls do — their reasoning belongs to
+  // the tool-role window, not to the answer text in flow. Steps with visible
+  // text render in flow and split the run. An interrupted step stays in flow
+  // because its Stopped marker must never hide behind a work-summary fold.
   interface FlowElement { readonly el: ReactNode; readonly fold: boolean }
   const foldableNode = (node: ChatConversationViewNode, closingSeq: number | null): boolean => {
     if (node.kind === 'tool-call' || node.kind === 'model-retry' || node.kind === 'context' || isThinkOnly(node)) return true
@@ -656,33 +714,10 @@ export function ChatView({
   const buildElements = (keys: readonly string[], closingSeq: number | null): FlowElement[] => {
     const out: FlowElement[] = []
     let run: {
-      firstKey: string
       toolKey: string
       children: ReactNode[]
       nodes: ChatConversationViewNode[]
     } | null = null
-    // Think-only steps met since the run's last tool call. They join the run
-    // when another tool call follows; otherwise they flush as standalone rows.
-    let trailingThink: { key: string; node: ChatConversationViewNode }[] = []
-    const flushThinkIntoRun = (): void => {
-      if (run === null) {
-        const first = trailingThink[0]
-        if (first === undefined) return
-        run = { firstKey: first.key, toolKey: first.key, children: [], nodes: [] }
-      }
-      for (const pending of trailingThink) {
-        run.children.push(seat(pending.key))
-        run.nodes.push(pending.node)
-      }
-      trailingThink = []
-    }
-    const flushTrailingThinkStandalone = (): void => {
-      if (run !== null) flushRun()
-      for (const pending of trailingThink) {
-        out.push({ el: seat(pending.key), fold: foldableNode(pending.node, closingSeq) })
-      }
-      trailingThink = []
-    }
     const flushRun = (): void => {
       if (run === null) return
       if (run.children.length === 1) {
@@ -709,28 +744,19 @@ export function ChatView({
     }
     for (const key of keys) {
       const node = nodeStore.get(key)
-      if (node === undefined) {
-        flushTrailingThinkStandalone()
-        out.push({ el: seat(key), fold: false })
-        continue
-      }
-      if (node.kind === 'tool-call' || node.kind === 'model-retry') {
-        flushThinkIntoRun()
+      if (node !== undefined && (node.kind === 'tool-call' || node.kind === 'model-retry'
+        || node.kind === 'context' || isThinkOnly(node))) {
         if (run === null) {
-          run = { firstKey: key, toolKey: key, children: [], nodes: [] }
+          run = { toolKey: key, children: [], nodes: [] }
         }
         run.children.push(seat(key))
         run.nodes.push(node)
         continue
       }
-      if (isThinkOnly(node)) {
-        trailingThink.push({ key, node })
-        continue
-      }
-      flushTrailingThinkStandalone()
-      out.push({ el: seat(key), fold: foldableNode(node, closingSeq) })
+      flushRun()
+      out.push({ el: seat(key), fold: node === undefined ? false : foldableNode(node, closingSeq) })
     }
-    flushTrailingThinkStandalone()
+    flushRun()
     return out
   }
 
@@ -833,14 +859,7 @@ export function ChatView({
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
         <div ref={columnRef} className={css.column} data-chat-flow="">
-          {openState === 'loading' && (
-            <div className={css.historySkeleton} role="status" aria-live="polite">
-              <span className={a11yCss.visuallyHidden}>{t('chat.loadingHistory')}</span>
-              {[82, 64, 74].map((width, index) => (
-                <div key={index} className={css.skeletonBubble} style={{ width: `${width}%` }} data-skeleton-bubble="" />
-              ))}
-            </div>
-          )}
+          {openState === 'loading' && <HistoryLoadingPreview t={t} />}
           {openState === 'error' && openError !== null && (
             <div className={css.openError}>
               {t('chat.loadError', { message: openError.message, code: openError.code })}

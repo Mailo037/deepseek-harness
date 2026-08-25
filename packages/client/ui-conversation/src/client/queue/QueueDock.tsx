@@ -6,6 +6,7 @@
 // The 'conversation.input.dock' SlotMap declaration lives in
 // ../contract/slots.ts beside the other input-region slots.
 import type { Context } from '@deepseek-ai/cordis'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { DragEvent, KeyboardEvent } from 'react'
 import { useEffect, useId, useMemo, useState } from 'react'
 import clsx from 'clsx'
@@ -13,10 +14,10 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCloseOutline16, IconChevronDownOutline14, IconChevronUpOutline14,
-  IconEditOutline16, IconGripOutline14, IconQueueOutline14, IconSendOutline14,
+  IconEditOutline16, IconGripOutline14, IconImageOutline14, IconQueueOutline14, IconSendOutline14,
   IconTrashOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { QueueAction, QueueItemId } from '../contract/queue.ts'
+import type { QueueAction, QueueItemId, QueueRow } from '../contract/queue.ts'
 import { NS } from '../locales.ts'
 import css from './QueueDock.module.css'
 
@@ -24,6 +25,8 @@ import css from './QueueDock.module.css'
 export interface QueueDockInjected {
   updateQueue: (itemId: QueueItemId, action: QueueAction) => Promise<void>
   notify: (level: 'info' | 'error', text: string) => void
+  /** Resolve a queued image attachment to a browser-owned URL. */
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   /** Load one queued row into the composer for editing (stashes the draft). */
   beginQueueEdit: (itemId: QueueItemId) => boolean
   /** Leave composer-side editing and restore the stashed draft. */
@@ -42,12 +45,128 @@ interface QueueEditorFace {
 /** Full props of a dock entry: InputZone owner share + session standard kit + global seat + the locale seat. */
 export type QueueDockProps = PropsRuntime<'conversation.input.dock'> & QueueDockInjected & PropsLocale<'conversation'>
 
+type QueuePreviewPart =
+  | { readonly kind: 'text'; text: string }
+  | { readonly kind: 'image'; attachment: ImageAttachmentRef }
+
+const IMAGE_MARKER = '[image]'
+
+/** Append adjacent text to one part so truncation preserves inline image positions. */
+function appendPreviewText(parts: QueuePreviewPart[], text: string): void {
+  if (text === '') return
+  const last = parts.at(-1)
+  if (last?.kind === 'text') last.text += text
+  else parts.push({ kind: 'text', text })
+}
+
+/**
+ * Rebuild a QueueMirror preview with image blocks retained as semantic parts.
+ * `row.preview` supplies the mirror's existing bounded text budget; each
+ * retained image consumes its original textual marker only for that budget.
+ */
+function queuePreviewParts(row: QueueRow): QueuePreviewPart[] {
+  const parts: QueuePreviewPart[] = []
+  let hasContent = false
+  let pendingSpace = false
+
+  const appendText = (text: string): void => {
+    for (const char of text) {
+      if (/\s/u.test(char)) {
+        if (hasContent) pendingSpace = true
+        continue
+      }
+      if (pendingSpace) appendPreviewText(parts, ' ')
+      pendingSpace = false
+      appendPreviewText(parts, char)
+      hasContent = true
+    }
+  }
+
+  const appendImage = (attachment: ImageAttachmentRef): void => {
+    if (pendingSpace) appendPreviewText(parts, ' ')
+    pendingSpace = false
+    parts.push({ kind: 'image', attachment })
+    hasContent = true
+  }
+
+  for (const [index, block] of row.content.entries()) {
+    if (index > 0) appendText(' ')
+    if (block.type === 'text') appendText(block.text)
+    else if (block.type === 'image') appendImage(block.attachment)
+    // Merge-extensible blocks retain QueueMirror's textual fallback.
+    else appendText(`[${block.type}]`)
+  }
+
+  const truncated = row.preview.endsWith('…')
+  let remaining = Array.from(truncated ? row.preview.slice(0, -1) : row.preview).length
+  const visible: QueuePreviewPart[] = []
+  for (const part of parts) {
+    if (remaining === 0) break
+    if (part.kind === 'image') {
+      if (remaining >= IMAGE_MARKER.length) {
+        visible.push(part)
+        remaining -= IMAGE_MARKER.length
+      } else {
+        appendPreviewText(visible, IMAGE_MARKER.slice(0, remaining))
+        remaining = 0
+      }
+      continue
+    }
+    const chars = Array.from(part.text)
+    appendPreviewText(visible, chars.slice(0, remaining).join(''))
+    remaining = Math.max(0, remaining - chars.length)
+  }
+  if (truncated) appendPreviewText(visible, '…')
+  return visible
+}
+
+/** One queued image thumbnail, with a neutral glyph until its attachment resolves. */
+function QueueImagePreview({ attachment, loadImage, label }: {
+  attachment: ImageAttachmentRef
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  label: string
+}) {
+  const [src, setSrc] = useState<string>()
+
+  useEffect(() => {
+    let active = true
+    setSrc(undefined)
+    void loadImage(attachment).then(
+      (url) => { if (active) setSrc(url) },
+      () => { if (active) setSrc(undefined) },
+    )
+    return () => { active = false }
+  }, [attachment, loadImage])
+
+  if (src === undefined) {
+    return <span className={css.imagePlaceholder} aria-hidden><IconImageOutline14 /></span>
+  }
+  return <img className={css.imagePreview} src={src} alt={attachment.name ?? label} draggable={false} />
+}
+
+/** Queue-row preview that replaces semantic image markers with loaded thumbnails. */
+function QueuePreview({ row, loadImage, label }: {
+  row: QueueRow
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  label: string
+}) {
+  return (
+    <>
+      {queuePreviewParts(row).map((part, index) => (
+        part.kind === 'image'
+          ? <QueueImagePreview key={index} attachment={part.attachment} loadImage={loadImage} label={label} />
+          : <span key={index}>{part.text}</span>
+      ))}
+    </>
+  )
+}
+
 /**
  * Queue strip: one item renders directly; multiple items default to a
  * collapsible count header; an empty queue renders nothing. Rows carry a
  * drag handle (far left) whenever two or more rows can reorder.
  */
-export function QueueDock({ useSession, input, updateQueue, notify, beginQueueEdit, cancelQueueEdit, t }: QueueDockProps) {
+export function QueueDock({ useSession, input, updateQueue, notify, loadImage, beginQueueEdit, cancelQueueEdit, t }: QueueDockProps) {
   const inbox = useSession(s => s.queue)
   const queue = useMemo(() => inbox.filter(row => row.placement === 'queued'), [inbox])
   const running = useSession(s => s.running)
@@ -191,7 +310,11 @@ export function QueueDock({ useSession, input, updateQueue, notify, beginQueueEd
                       </button>
                     </Tooltip>
                   )}
-                <span className={clsx(css.preview, editingThisRow && css.previewEditing)}>{row.preview}</span>
+                <span className={clsx(css.preview, editingThisRow && css.previewEditing)}>
+                  {row.content.some(block => block.type === 'image')
+                    ? <QueuePreview row={row} loadImage={loadImage} label={t('image.label')} />
+                    : row.preview}
+                </span>
                 {queueMutable && <div className={css.actions}>
                   {editingThisRow
                     ? (
@@ -294,6 +417,7 @@ export const queueDockEntry = {
         return {
           updateQueue: (itemId, action) => conversation.updateQueue(itemId, action),
           notify: (level, text) => { conversation.input.for(actx).notify(level, text) },
+          loadImage: attachment => conversation.resolveImage(sessionId, attachment),
           beginQueueEdit: itemId => input.beginQueueEdit(itemId),
           cancelQueueEdit: () => { input.cancelQueueEdit() },
         }

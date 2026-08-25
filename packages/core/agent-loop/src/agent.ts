@@ -123,6 +123,15 @@ export class ReactLoopAgent implements Agent {
     this.send(input, 'next-turn', true)
   }
 
+  prepend(input: UserMessage): void {
+    // Same wake classification as send(): waking input cannot join an aborted
+    // activity, so it starts the next turn — the prepend target stays next-turn
+    // either way, only the wake latch differs.
+    const wakingAfterAbort = this.phase.kind !== 'idle' && this.phase.abort.signal.aborted
+    this.inbox.prepend('next-turn', input)
+    this.wakeDriver(wakingAfterAbort)
+  }
+
   steer(input: UserMessage): void {
     this.send(input, 'next-step', true)
   }

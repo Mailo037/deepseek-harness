@@ -77,6 +77,8 @@ function scriptedFace(options: {
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
+  /** Per-ref credential state the describe answers, for configured backup slots. */
+  credentialStates?: Record<string, { configured?: boolean; writable?: boolean }>
 } = {}) {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
@@ -108,10 +110,13 @@ function scriptedFace(options: {
     },
     credentials: {
       describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
-        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+        credentials: Object.fromEntries(payload.refs.map(ref => [
+          ref,
+          options.credentialStates?.[ref] ?? { configured: false, writable: true },
+        ])),
       }))),
       set,
-      unset: vi.fn(),
+      unset: vi.fn(() => Promise.resolve(ok({}))),
     },
   }
   return { face, discover, mutate, set, namespace }
@@ -1483,7 +1488,7 @@ describe('API key field', () => {
     })
   })
 
-  it('renders modality badges and allows toggling inherit model settings', async () => {
+  it('renders modality badges in the expanded panel and allows toggling inherit model settings', async () => {
     await mountSection({
       providers: {
         openrouter: {
@@ -1515,23 +1520,150 @@ describe('API key field', () => {
     openEditor('openrouter')
     fireEvent.click(screen.getByText(en.customized))
 
-    // Modality badges should render
+    // Expand advanced settings; the expanded panel is the one surface that
+    // states the accepted modalities, under its own label.
+    fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
     await waitFor(() => {
+      expect(screen.getByText(en.modelModalities)).toBeDefined()
       expect(screen.getByText(en.modalityText)).toBeDefined()
       expect(screen.getByText(en.modalityImage)).toBeDefined()
       expect(screen.getByText(en.modalityVideo)).toBeDefined()
+      const inheritCheckbox = screen.getByLabelText(en.inheritModelSettings) as HTMLInputElement
+      expect(inheritCheckbox.checked).toBe(true)
+    })
+  })
+
+  it('recognizes a brand-prefixed id as the catalog model it trims to', async () => {
+    // A deployment labels the catalog model `ox-alpha` as `stealth-ox-alpha`:
+    // after trimming the leading `-` token the row is a known catalog model and
+    // inherits its settings instead of reading as a hand-declared custom one.
+    await mountSection({
+      providers: {
+        openrouter: {
+          baseURL: 'https://openrouter.ai/api/v1',
+          models: [{ id: 'stealth-ox-alpha' }],
+        },
+      },
+      groups: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          models: [
+            {
+              id: 'ox-alpha',
+              name: 'Ox Alpha',
+              inputModalities: ['text', 'image'],
+              reasoning: {
+                efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+              },
+            },
+          ],
+        },
+      ],
     })
 
-    // Expand advanced settings and check inherit checkbox
-    fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
-    const inheritCheckbox = screen.getByLabelText(en.inheritModelSettings) as HTMLInputElement
-    expect(inheritCheckbox.checked).toBe(true)
+    openEditor('openrouter')
+    fireEvent.click(screen.getByText(en.customized))
 
-    // The expanded panel repeats the modalities under their own label, so the
-    // opened row states what the model accepts without hunting the header.
-    expect(screen.getByText(en.modelModalities)).toBeDefined()
-    expect(screen.getAllByText(en.modalityText)).toHaveLength(2)
-    expect(screen.getAllByText(en.modalityImage)).toHaveLength(2)
-    expect(screen.getAllByText(en.modalityVideo)).toHaveLength(2)
+    // The stored id is never rewritten: the row keeps the user's spelling.
+    expect((screen.getAllByLabelText(new RegExp(en.modelId))[0] as HTMLInputElement).value)
+      .toBe('stealth-ox-alpha')
+    // But the row is recognized as catalog `ox-alpha`, so the advanced panel
+    // offers the inherit toggle and the catalog's modality badges.
+    fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} 1`))
+    await waitFor(() => {
+      const inheritCheckbox = screen.getByLabelText(en.inheritModelSettings) as HTMLInputElement
+      expect(inheritCheckbox.checked).toBe(true)
+      expect(screen.getByText(en.modalityText)).toBeDefined()
+      expect(screen.getByText(en.modalityImage)).toBeDefined()
+    })
+  })
+})
+
+describe('backup key rotation fields', () => {
+  it('adds a backup key field that stores under the derived ref and lists it on the profile', async () => {
+    const { set, mutate } = await mountSection()
+    openEditor('openai')
+
+    fireEvent.click(screen.getByRole('button', { name: en.addKey }))
+    fireEvent.change(screen.getByLabelText(`${en.keyBackupLabel} 1`), { target: { value: 'backup-key-2' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY_2', value: 'backup-key-2' })
+    })
+    const write = firstMutate(mutate)
+    expect(write.ops).toContainEqual({
+      op: 'set',
+      path: ['providers', 'openai', 'backupApiKeys'],
+      value: ['OPENAI_API_KEY_2'],
+    })
+  })
+
+  it('renders one field per configured backup ref and leaves an untouched slot unwritten', async () => {
+    const { mutate, set } = await mountSection({
+      providers: {
+        openai: { apiKeyEnv: 'OPENAI_API_KEY', backupApiKeys: ['OPENAI_API_KEY_2'] },
+      },
+      credentialStates: { OPENAI_API_KEY_2: { configured: true, writable: true } },
+    })
+    openEditor('openai')
+
+    const field = screen.getByLabelText(`${en.keyBackupLabel} 1`) as HTMLInputElement
+    await waitFor(() => { expect(field.placeholder).toBe(en.keyStored) })
+    fireEvent.click(screen.getByText(en.apply))
+
+    // An untouched configured slot writes nothing: the profile already lists
+    // the ref and the credential is already stored.
+    await waitFor(() => { expect(screen.queryByText(providerCopy(en.savedProvider, { provider: 'openai', displayName: 'openai' }))).toBeTruthy() })
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('removes a backup slot and unsets its stored credential on apply', async () => {
+    const { face, mutate, set } = await mountSection({
+      providers: {
+        openai: { apiKeyEnv: 'OPENAI_API_KEY', backupApiKeys: ['OPENAI_API_KEY_2'] },
+      },
+      credentialStates: { OPENAI_API_KEY_2: { configured: true, writable: true } },
+    })
+    const unset = face.credentials.unset as ReturnType<typeof vi.fn>
+    openEditor('openai')
+
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeKey} 1` }))
+    expect(screen.queryByLabelText(`${en.keyBackupLabel} 1`)).toBeNull()
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(unset).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY_2' }) })
+    const write = firstMutate(mutate)
+    expect(write.ops).toContainEqual({
+      op: 'unset',
+      path: ['providers', 'openai', 'backupApiKeys'],
+    })
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('shows the rotation hint and derives the next unused backup ref', async () => {
+    const { set } = await mountSection({
+      providers: {
+        openai: { apiKeyEnv: 'OPENAI_API_KEY', backupApiKeys: ['OPENAI_API_KEY_2', 'OPENAI_API_KEY_3'] },
+      },
+      credentialStates: {
+        OPENAI_API_KEY_2: { configured: true, writable: true },
+        OPENAI_API_KEY_3: { configured: true, writable: true },
+      },
+    })
+    openEditor('openai')
+
+    expect(screen.getByText(en.keyRotationHint)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: en.addKey }))
+    // The first unused derived ref skips the two occupied suffixes.
+    expect(screen.getByLabelText(`${en.keyBackupLabel} 3`)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(`${en.keyBackupLabel} 3`), { target: { value: 'backup-key-4' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY_4', value: 'backup-key-4' })
+    })
   })
 })

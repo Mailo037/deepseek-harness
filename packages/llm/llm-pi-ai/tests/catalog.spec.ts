@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
@@ -407,7 +408,7 @@ describe('catalog routes with per-model configuration', () => {
     const listed = await ctx.llm.listModels('deepseek')
     // The injected DeepSeek vision model serves beside the installed catalog.
     expect(listed.map(model => model.id).sort())
-      .toEqual([...getBuiltinModels('deepseek').map(model => model.id), 'deepseek-v4-flash-vision-exp'].sort())
+      .toEqual([...new Set([...getBuiltinModels('deepseek').map(model => model.id), 'deepseek-v4-flash-vision-exp'])].sort())
   })
 
   it('overrides one catalog model field and defaults the rest from the catalog', async () => {
@@ -695,7 +696,7 @@ describe('modelOverrides', () => {
 
   it('reshapes one catalog model while the rest of the catalog keeps serving', () => {
     // The injected DeepSeek vision model joins the installed catalog here.
-    const catalogSize = getBuiltinModels('deepseek').length + 1
+    const catalogSize = new Set([...getBuiltinModels('deepseek').map(m => m.id), 'deepseek-v4-flash-vision-exp']).size
     const target = deepseekModel()
     const resolved = resolveProfiles({
       deepseek: {
@@ -1081,7 +1082,7 @@ describe('resolution snapshots', () => {
       profiles: () => current,
       // Credential resolution is the real await inside a stream call, and the
       // window a configuration change has to land in.
-      resolveApiKey: async () => { await held; return 'k' },
+      resolveApiKey: async () => { await held; return { ref: credentialRef('TEST_KEY'), value: 'k' } },
       auth: memoryAuth(),
     })
 
@@ -1113,7 +1114,7 @@ describe('resolution snapshots', () => {
     let current = resolveProfiles({ deepseek: { baseURL: `${first.url}/v1` } })
     const adapter = new PiAiAdapter({
       profiles: () => current,
-      resolveApiKey: () => Promise.resolve('k'),
+      resolveApiKey: () => Promise.resolve({ ref: credentialRef('TEST_KEY'), value: 'k' }),
       auth: memoryAuth(),
     })
     const drain = async (): Promise<void> => {

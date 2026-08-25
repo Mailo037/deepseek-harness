@@ -18,6 +18,7 @@ function row(overrides: Partial<ProviderRow> = {}): ProviderRow {
     configured: true,
     removable: false,
     apiKeyEnv: 'DEEPSEEK_API_KEY',
+    backupApiKeys: [],
     credential: missingCredential,
     ...overrides,
   }
@@ -36,6 +37,7 @@ function otherRow(overrides: Partial<ProviderRow> = {}): ProviderRow {
     configured: true,
     removable: true,
     apiKeyEnv: 'HFAI_API_KEY',
+    backupApiKeys: [],
     credential: { configured: true, source: 'file', writable: true },
     ...overrides,
   }

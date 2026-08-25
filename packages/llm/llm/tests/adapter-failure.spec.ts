@@ -65,4 +65,28 @@ describe('adapter failure normalization', () => {
     Object.defineProperty(error, 'message', { get() { throw new Error('message getter failed') } })
     expect(normalizeLlmFailure(error)).toEqual({ message: 'LLM adapter failed', code: 'UNKNOWN' })
   })
+
+  it('detaches a carried credential reference with the rest of the snapshot', () => {
+    const error = new Error('usage limit reached') as Error & { failure: unknown; code: string }
+    error.failure = {
+      message: 'usage limit reached',
+      code: 'QUOTA',
+      status: 402,
+      apiKeyRef: 'DEEPSEEK_API_KEY',
+    }
+    error.code = 'QUOTA'
+    expect(normalizeLlmFailure(error)).toEqual({
+      message: 'usage limit reached',
+      code: 'QUOTA',
+      status: 402,
+      apiKeyRef: 'DEEPSEEK_API_KEY',
+    })
+  })
+
+  it('rejects a malformed carried credential reference', () => {
+    const error = new Error('usage limit reached') as Error & { failure: unknown; code: string }
+    error.failure = { message: 'usage limit reached', code: 'QUOTA', apiKeyRef: '' }
+    error.code = 'QUOTA'
+    expect(normalizeLlmFailure(error)).toEqual({ message: 'usage limit reached', code: 'UNKNOWN' })
+  })
 })

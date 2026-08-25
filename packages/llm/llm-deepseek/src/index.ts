@@ -13,9 +13,20 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import {
+  assertUsableApiKey,
+  DEFAULT_KEY_COOLDOWN_MS,
+  KeyRotation,
+  LlmError,
+  pickRotationRef,
+  resolveRetryPolicy,
+  RetryPolicySchema,
+  rotateAfterQuotaFailure,
+} from '@deepseek-ai/dsh-llm'
+import type { LlmFailure, ModelModality, ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -106,6 +117,15 @@ const MODEL_MODALITIES = ['text', 'image', 'video'] as const satisfies readonly 
 export interface Config {
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary. Each is resolved through the same seams as
+   * {@link apiKeyEnv}; a backup with no stored value fails the request that
+   * reaches it rather than being silently skipped.
+   */
+  backupApiKeys?: string[]
+  /** How long a quota-failed key stays retired before it is tried again (default one hour). */
+  apiKeyCooldownMs?: number
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
@@ -159,6 +179,8 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
 
 export const Config: z<Config> = z.object({
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
+  backupApiKeys: z.array(z.string().role('credential-ref')),
+  apiKeyCooldownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_KEY_COOLDOWN_MS),
   baseURL: z.string(),
   thinking: z.union(['enabled', 'disabled']),
   reasoningEffort: z.union(['off', 'low', 'high', 'max']),
@@ -263,6 +285,32 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
 }
 
 /**
+ * Validate, brand, and detach the rotation backups. A backup must name a
+ * valid credential reference, differ from the primary, and be unique among
+ * its siblings — anything else would resolve the same key twice or break the
+ * rotation contract silently, so it fails loud at resolution.
+ * @param backups - raw backup reference names from configuration.
+ * @param primary - the validated primary reference of the same resolution.
+ * @returns the ordered branded backup references.
+ */
+function resolveBackupApiKeys(backups: readonly string[] | undefined, primary: CredentialRef): readonly CredentialRef[] {
+  const seen = new Set<string>()
+  const resolved: CredentialRef[] = []
+  for (const raw of backups ?? []) {
+    const ref = credentialRef(raw)
+    if (ref === primary) {
+      throw new Error(`llm-deepseek: backupApiKeys must not repeat the primary key reference "${primary}"`)
+    }
+    if (seen.has(ref)) {
+      throw new Error(`llm-deepseek: backupApiKeys must not contain duplicate reference "${ref}"`)
+    }
+    seen.add(ref)
+    resolved.push(ref)
+  }
+  return resolved
+}
+
+/**
  * The one explicit resolve step from raw config to validated connection
  * facts. Programmatic construction may bypass Schemastery normalization, so
  * every default and bound is re-judged here — for the composition entry at
@@ -356,8 +404,20 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     || fileQuotaCleanupBatch > 1_000) {
     throw new Error('llm-deepseek: fileQuotaCleanupBatch must be an integer from 1 through 1000')
   }
+  const primary = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
+  const backupApiKeys = resolveBackupApiKeys(config.backupApiKeys, primary)
+  const apiKeyCooldownMs = config.apiKeyCooldownMs ?? DEFAULT_KEY_COOLDOWN_MS
+  if (!Number.isFinite(apiKeyCooldownMs)
+    || apiKeyCooldownMs <= 0
+    || apiKeyCooldownMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(
+      `llm-deepseek: apiKeyCooldownMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
+    )
+  }
   return {
-    apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
+    apiKeyEnv: primary,
+    backupApiKeys,
+    apiKeyCooldownMs,
     baseURL: config.baseURL
       ?? environment?.get(BASE_URL_ENV)?.value
       ?? PUBLIC_BASE_URL,
@@ -410,20 +470,31 @@ export function apply(ctx: Context, config: Config): void {
   }
   options()
 
-  const resolveApiKey = async (connection: ResolvedDeepSeekOptions): Promise<string> => {
+  // Rotation state is shared by the resolver (picks the next usable key) and
+  // the recovery listener (retires a quota-failed key), so both must see the
+  // same cooldown facts. In-memory by design: a restart re-probes the primary.
+  const rotation = new KeyRotation()
+
+  const resolveApiKey = async (
+    connection: ResolvedDeepSeekOptions,
+  ): Promise<{ ref: CredentialRef; value: string }> => {
     // Every credential fact comes from the caller's snapshot, so a rejected
     // settings generation cannot leak its key onto the previous endpoint.
-    const ref = connection.apiKeyEnv
+    // The first non-exhausted ref serves this request; an exhausted ref only
+    // reappears after its cooldown, or as the fallback when every ref is out.
+    const ref = pickRotationRef(rotation, PROVIDER, [connection.apiKeyEnv, ...connection.backupApiKeys])
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)
-      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-deepseek', ref)
+      if (hit !== undefined) {
+        return { ref, value: assertUsableApiKey(hit.value, 'llm-deepseek', ref) }
+      }
     } else {
       // Without the seam there is no managed store to rank against, so the
       // environment is the whole credential plane.
       const ambient = launchEnvironmentOf(ctx).get(ref)
       if (ambient !== undefined && ambient.value.length > 0) {
-        return assertUsableApiKey(ambient.value, 'llm-deepseek', ref)
+        return { ref, value: assertUsableApiKey(ambient.value, 'llm-deepseek', ref) }
       }
     }
     throw new LlmError(
@@ -432,6 +503,35 @@ export function apply(ctx: Context, config: Config): void {
       'MISSING_CREDENTIAL',
     )
   }
+
+  // A quota-classified failure retires exactly the key the failed request
+  // used, then re-runs the step through the loop's retry decision while a
+  // different key remains usable. The bound is the configured key count: each
+  // retry retires one key, so the step ends after the last usable key fails.
+  ctx.on('agent/request-error', async (
+    { provider, failure }: {
+      agent: Agent
+      turn: number
+      step: number
+      provider: string
+      failure: LlmFailure
+      retryPolicy: ResolvedRetryPolicy | undefined
+      signal: AbortSignal
+    },
+    next: () => Promise<RequestErrorAction>,
+  ): Promise<RequestErrorAction> => {
+    if (provider !== PROVIDER) return next()
+    const connection = options()
+    const refs = [connection.apiKeyEnv, ...connection.backupApiKeys]
+    const decision = rotateAfterQuotaFailure(
+      rotation,
+      PROVIDER,
+      failure,
+      refs,
+      connection.apiKeyCooldownMs,
+    )
+    return decision === 'retry' ? { kind: 'retry' as const } : next()
+  })
 
   let userId: AnonymousUserId | undefined
   const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()

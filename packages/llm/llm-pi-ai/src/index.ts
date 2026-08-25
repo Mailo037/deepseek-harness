@@ -57,9 +57,17 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
-import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
+import {
+  assertUsableApiKey,
+  KeyRotation,
+  LlmError,
+  pickRotationRef,
+  rotateAfterQuotaFailure,
+} from '@deepseek-ai/dsh-llm'
+import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProviderIds } from './catalog.ts'
@@ -163,23 +171,32 @@ export function apply(ctx: Context, config: Config): void {
   }
   profiles()
 
+  // Rotation state is shared by the resolver (picks the next usable key) and
+  // the recovery listener (retires a quota-failed key), so both must see the
+  // same cooldown facts. In-memory by design: a restart re-probes the primary.
+  const rotation = new KeyRotation()
+
   const resolveApiKey = async (
     provider: string,
     profile: ResolvedPiAiProviderProfile,
-  ): Promise<string | undefined> => {
-    const ref = profile.apiKeyEnv
+  ): Promise<{ ref: CredentialRef; value: string } | undefined> => {
     // Only a profile that names no credential at all defers to pi-ai's
     // provider-native discovery. Once one is named, a miss must fail loud:
     // handing pi-ai `undefined` would let it pick up an unrelated ambient key
     // (OPENAI_API_KEY and friends), billing another tenant for a request the
     // deployment meant to authenticate differently.
-    if (ref === undefined) return undefined
+    if (profile.apiKeyEnv === undefined) return undefined
+    // The first non-exhausted ref serves this request; an exhausted ref only
+    // reappears after its cooldown, or as the fallback when every ref is out.
+    const ref = pickRotationRef(rotation, provider, [profile.apiKeyEnv, ...profile.backupApiKeys])
     const credentials = ctx.get('credentials')
     const hit = credentials !== undefined
       ? (await credentials.resolve(ref))?.value
       // Without the seam the environment is the whole credential plane.
       : launchEnvironmentOf(ctx).get(ref)?.value
-    if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
+    if (hit !== undefined && hit.length > 0) {
+      return { ref, value: assertUsableApiKey(hit, 'llm-pi-ai', ref) }
+    }
     throw new LlmError(
       `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not`
       + ` set — store ${ref} through the credentials service (the web Models page writes it) or export it,`
@@ -187,6 +204,34 @@ export function apply(ctx: Context, config: Config): void {
       'MISSING_CREDENTIAL',
     )
   }
+
+  // A quota-classified failure retires exactly the key the failed request
+  // used, then re-runs the step through the loop's retry decision while a
+  // different key remains usable. The bound is the configured key count: each
+  // retry retires one key, so the step ends after the last usable key fails.
+  ctx.on('agent/request-error', async (
+    { provider, failure }: {
+      agent: Agent
+      turn: number
+      step: number
+      provider: string
+      failure: LlmFailure
+      retryPolicy: ResolvedRetryPolicy | undefined
+      signal: AbortSignal
+    },
+    next: () => Promise<RequestErrorAction>,
+  ): Promise<RequestErrorAction> => {
+    const profile = profiles().get(provider)
+    if (profile?.apiKeyEnv === undefined) return next()
+    const decision = rotateAfterQuotaFailure(
+      rotation,
+      provider,
+      failure,
+      [profile.apiKeyEnv, ...profile.backupApiKeys],
+      profile.apiKeyCooldownMs,
+    )
+    return decision === 'retry' ? { kind: 'retry' as const } : next()
+  })
 
   // One store and one ambient context for the whole plugin instance: both read
   // through `ctx` per call, so they stay correct across the collection rebuilds
@@ -243,7 +288,7 @@ export function apply(ctx: Context, config: Config): void {
     if (provider === undefined) return undefined
     const profile = profiles().get(provider)
     if (profile === undefined) return undefined
-    return resolveApiKey(provider, profile)
+    return (await resolveApiKey(provider, profile))?.value
   }
   // Interrogating an endpoint is a configuration-time action over a draft, so
   // it is offered for the whole namespace rather than per route: the provider

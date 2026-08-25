@@ -26,8 +26,8 @@ function projections(values: Record<string, unknown>): ContextMeterProps['usePro
   return (key: string) => values[key]
 }
 
-function meter(values: Record<string, unknown>, translate: ContextMeterProps['t'] = t) {
-  return render(<ContextMeter useProjection={projections(values)} t={translate} />)
+function meter(values: Record<string, unknown>, translate: ContextMeterProps['t'] = t, panelBelow = false) {
+  return render(<ContextMeter useProjection={projections(values)} t={translate} panelBelow={panelBelow} />)
 }
 
 describe('ContextMeter', () => {
@@ -154,5 +154,18 @@ describe('ContextMeter', () => {
     openPanel()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(view.container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('opens the panel below the ring in the header seat (panelBelow)', () => {
+    const panelBelowClass = css.panelBelow
+    if (panelBelowClass === undefined) throw new Error('panelBelow class missing from ContextMeter.module.css')
+    const view = meter({
+      contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+      contextBreakdown: BREAKDOWN,
+    }, t, true)
+    fireEvent.click(view.getByRole('button', { name: '上下文已用 25%' }))
+    const panel = view.container.querySelector('[role="dialog"]')!
+    expect(panel.className).toContain(panelBelowClass)
+    expect(panel.textContent).toContain('~32K / 128K')
   })
 })

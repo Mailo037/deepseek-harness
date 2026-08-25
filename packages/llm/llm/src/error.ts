@@ -71,6 +71,17 @@ const EXCEEDS_MODEL_CONTEXT = new RegExp(
 )
 
 /**
+ * "Input token(s) ... exceed ... limit" wording that names input size as the
+ * bound without spelling out the model context. DeepSeek reports this form
+ * (e.g. `Input token exceed the limit`) when the request literally exceeds the
+ * model's context capacity.
+ */
+const INPUT_TOKEN_LIMIT = new RegExp(
+  String.raw`\binput\s+tokens?\s+exceed(?:s|ed)?\b.{0,40}\blimit\b`,
+  'i',
+)
+
+/**
  * Recognize the context-overflow wording used by OpenAI-compatible providers
  * and library adapters. Adapters pass all available provider code, type, and
  * message text so both thrown and in-band delivery styles share one classifier.
@@ -83,6 +94,7 @@ export function isContextWindowExceededError(detail: string): boolean {
     || TOO_LARGE_FOR_CONTEXT.test(detail)
     || /\b(?:input|prompt|request)\s+(?:is\s+)?too\s+(?:long|large)\s+for\s+(?:this|the)\s+model\b/i.test(detail)
     || EXCEEDS_MODEL_CONTEXT.test(detail)
+    || INPUT_TOKEN_LIMIT.test(detail)
 }
 
 /**

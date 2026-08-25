@@ -30,6 +30,8 @@
       - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
         - /placeholder: 已配置——输入新值可替换
+      - button "添加另一个密钥"
+      - paragraph: 某个密钥达到用量限制时，将自动尝试下一个密钥。
       - group:
         - text: 自定义设置 API 地址
         - textbox "API 地址":

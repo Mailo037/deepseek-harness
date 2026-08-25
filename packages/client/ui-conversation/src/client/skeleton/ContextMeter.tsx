@@ -35,9 +35,15 @@ export interface ContextMeterProps {
   useProjection: UseProjection
   /** The owning bar's locale seat, passed down as a plain prop. */
   t: ComposerBarProps['t']
+  /**
+   * Open the breakdown panel below the ring instead of above it. The composer
+   * (bottom-anchored) opens upward; the phone header seat sits at the top of
+   * the viewport, where the upward panel would leave the screen.
+   */
+  panelBelow?: boolean
 }
 
-export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+export function ContextMeter({ useProjection, t, panelBelow = false }: ContextMeterProps) {
   const pressure = useProjection('contextPressure')
   const breakdown = useProjection('contextBreakdown')
   const [open, setOpen] = useState(false)
@@ -90,7 +96,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
 
   return (
     <span ref={rootRef} className={css.root}>
-      <Tooltip label={t('context.aria', { percent: reading })} side="top" delayMs={200} disabled={open}>
+      <Tooltip label={t('context.aria', { percent: reading })} side={panelBelow ? 'bottom' : 'top'} delayMs={200} disabled={open}>
         <button
           type="button"
           className={css.trigger}
@@ -113,7 +119,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
         </button>
       </Tooltip>
       {open && (
-        <div className={css.panel} role="dialog" aria-label={t('context.used')}>
+        <div className={panelBelow ? `${css.panel} ${css.panelBelow}` : css.panel} role="dialog" aria-label={t('context.used')}>
           <div className={css.header}>
             {/* Empty sides collapse through `.headline:empty` so the locale that
                 needs no leading (or trailing) text spends no header gap. */}

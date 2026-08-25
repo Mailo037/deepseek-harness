@@ -1,0 +1,26 @@
+- button "Open sidebar"
+- button "New session":
+  - img
+- button "Add workspace":
+  - img
+- button "Search sessions":
+  - img
+- navigation "Pinned":
+  - 'button "Open pinned session: {{session}}"':
+    - img
+- button:
+  - img
+- text: Into the Unknown Preview
+- button "Choose workspace":
+  - img
+  - text: Choose workspace
+  - img
+- button "Standard mode":
+  - img
+  - text: Standard mode
+  - img
+- textbox "Choose workspace":
+  - /placeholder: Choose a workspace to start
+- button "Add attachment" [disabled]:
+  - img
+- button "Send message" [disabled]

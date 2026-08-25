@@ -16,7 +16,7 @@ The `turn-error` chat node renders an inline action strip under its status row: 
 - Copy reuses `MessageIconActions` with the error's display-safe message as copy text; it inherits the established copied/check-swap chrome.
 - The callback reaches the renderer through the slot system, not a service import: `ChatNodeOwnerProps` gains `sendMessage(text)`, supplied by the chat view entry's inject from `scopedConversation(...).send(...)`. A rejected admission lands in the snapshot's `promptError`; the inject swallows the rejection because nothing on the caller side can recover it.
 - The buttons sit outside the `role="status"` element, so screen readers still announce exactly the failure text.
-- Every historical turn error shows the strip, not only the latest one; retrying while another turn runs simply queues behind it (the send path's queue mode).
+- Every historical turn error shows the strip, not only the latest one; retrying delivers the continue prompt to the front of the next-turn queue, so it runs after the current turn but ahead of any previously queued messages ([turn-error retry prepends to the queue](../bug-fix/2026-08-25-turn-error-retry-prepends-to-queue.md)).
 
 Context: the failure itself and its AUTH sanitization are owned by [bounded LLM request recovery](../architecture/2026-06-21-bounded-llm-request-recovery.md); this note only adds presentation-layer affordances on top of that node.
 

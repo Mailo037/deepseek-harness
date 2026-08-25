@@ -283,6 +283,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * a model here.
      */
     'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
+    /**
+     * The named voice-input seat in the composer tool row, between the
+     * context meter and the send button — one occupant, so taking it means
+     * rendering the whole dictation affordance yourself. Same `locked`-only
+     * owner share and same renders-nothing-while-empty contract as the plan
+     * and model seats. The seat stays declared even when no recognizer API
+     * exists; the occupant renders nothing then. On phone viewports the
+     * composer drops its trailing context meter (the session header reports
+     * it beside the more-options button), so the voice seat then sits beside
+     * the send button directly.
+     */
+    'conversation.input.voice': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
   }
 
   /**
@@ -435,7 +447,7 @@ export interface ChatNodeOwnerProps {
   openFile: (path: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
-  /** Send one prompt into the session as a queued user turn. */
+  /** Send one prompt into the session as the immediate next turn (ahead of any queued turns); the turn-error retry path. */
   sendMessage: (text: string) => void
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
@@ -632,6 +644,7 @@ export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
   & PropsRenderSlots<
     'conversation.input.attachments' | 'conversation.input.plan' | 'conversation.input.model'
+    | 'conversation.input.voice'
   >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>
@@ -789,8 +802,9 @@ export interface ChatViewInjected {
   /** Hand a call off to the trajectory view: write the one-shot inspect target and switch tabs. */
   inspectCall: (callId: CallId) => void
   /**
-   * Send one prompt into the session as a queued user turn (the turn-error
-   * retry path; send failures surface through the snapshot's promptError).
+   * Send one prompt into the session as the immediate next turn — ahead of
+   * any queued turns (the turn-error retry path; send failures surface
+   * through the snapshot's promptError).
    */
   sendMessage: (text: string) => void
   /**

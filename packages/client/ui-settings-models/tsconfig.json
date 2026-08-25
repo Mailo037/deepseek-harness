@@ -27,6 +27,9 @@
       "path": "../locale"
     },
     {
+      "path": "../../settings/settings"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

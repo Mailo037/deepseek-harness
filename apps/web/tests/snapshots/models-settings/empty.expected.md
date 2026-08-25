@@ -62,6 +62,8 @@
   - text: API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥，或留空使用环境认证
+  - button "添加另一个密钥"
+  - paragraph: 某个密钥达到用量限制时，将自动尝试下一个密钥。
   - group: 自定义设置
   - button "取消"
   - button "保存"

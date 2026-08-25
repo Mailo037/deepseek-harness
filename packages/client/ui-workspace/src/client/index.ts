@@ -127,6 +127,10 @@ export function apply(ctx: ClientContext): void {
       await ctx.workspaces.updateSettings(workspaceId, settings)
     },
     createWorkspace: input => ctx.workspaces.create(input),
+    refreshAll: async () => {
+      // Independent baselines; one gesture settles when both re-pulled.
+      await Promise.all([ctx.workspaces.refresh(), ctx.sessions.refreshAll()])
+    },
     hooks: { directoryFlow: browserFlowSource, hostDescription },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({

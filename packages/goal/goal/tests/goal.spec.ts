@@ -40,6 +40,7 @@ function stubAgentForSession(session: Session): StubAgent {
     status: 'idle',
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => {},
     inject(input) { inbox.append('next-step', input) },
     cancel() {},

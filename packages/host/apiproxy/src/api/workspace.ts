@@ -119,10 +119,10 @@ export interface WorkspaceApi {
    * Adds one session to the registry-global archive set: the session
    * disappears from every grouping surface but keeps its session log and its
    * workspace accounting slot (a future unarchive restores its position).
-   * Before the archive commits, the session's live activity stops: the main
-   * agent's turn plus queued inbox work is cancelled, its running background
-   * jobs are killed, and every live continuable subagent turn in its
-   * descendant tree is interrupted (best-effort, never blocking the archive).
+   * Before the archive commits, the gateway stops all live activity without
+   * reading persistence: it cancels the main agent's turn and queued inbox
+   * work, kills its and live subagents' running jobs, and passes each live
+   * subagent to the core interruption primitive (a one-shot id is a no-op).
    * Idempotent for an already archived id. A session neither live nor in
    * session persistence fails with `session-not-found`. Returns the full
    * updated set (same snapshot the changed frame carries).

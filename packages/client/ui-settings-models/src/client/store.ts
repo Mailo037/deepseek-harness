@@ -30,6 +30,8 @@ export interface ProviderRow {
   removable: boolean
   /** The credential reference the resolved profile names, when one does. */
   apiKeyEnv: string | undefined
+  /** Rotation backup references the resolved profile names, in order. */
+  backupApiKeys: readonly string[]
   /** Credential state for {@link apiKeyEnv}, once described. */
   credential: CredentialView | undefined
 }
@@ -104,6 +106,21 @@ function apiKeyEnvOf(
   return typeof ref === 'string' && ref.length > 0 ? ref : undefined
 }
 
+/** The rotation backups a resolved profile names (its `backupApiKeys` field). */
+function backupApiKeysOf(
+  namespace: SettingsNamespaceView | undefined,
+  path: readonly string[],
+  schema: SettingsSchemaOperations,
+): readonly string[] {
+  if (namespace === undefined) return []
+  const profile = schema.getPath(namespace.value, path)
+  if (typeof profile !== 'object' || profile === null) return []
+  const list = (profile as { backupApiKeys?: unknown }).backupApiKeys
+  return Array.isArray(list)
+    ? list.filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+    : []
+}
+
 /** The models settings page controller (one per settings surface). */
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
@@ -173,6 +190,7 @@ export class ModelsSettingsStore {
         configured,
         removable,
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
+        backupApiKeys: backupApiKeysOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
       }
     })

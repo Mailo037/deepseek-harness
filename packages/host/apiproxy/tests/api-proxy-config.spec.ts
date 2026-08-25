@@ -690,6 +690,40 @@ describe('llm domain', () => {
     expect(value.failures).toEqual([{ id: 'broken', name: 'Broken', message: 'catalog backend down' }])
   })
 
+  it('orders providers and catalog groups by the stored providerOrder preference', async () => {
+    const ctx = await harness()
+    // The models settings plugin owns this namespace; the api-proxy reads it
+    // by name, so the spec registers the same wire contract.
+    ctx.settings.register(settingsNamespace('models'), z.object({ providerOrder: z.array(z.string()) }))
+    await ctx.settings.update(settingsNamespace('models'), { providerOrder: ['openai', 'deepseek-official'] })
+    ctx.llm.registerAdapter(['deepseek-official'], new CatalogAdapter('DeepSeek', ['deepseek-v4-flash']))
+    ctx.llm.registerAdapter(['openai'], new CatalogAdapter('openai', ['gpt-4o']))
+    ctx.llm.registerAdapter(['undeclared'], new CatalogAdapter('Undeclared', ['u-1']))
+    const api = createApiProxy(ctx, DEFAULTS)
+
+    // Listed ids first in preference order; unlisted routes keep their
+    // natural order after them.
+    const providers = expectOk(await api.llm.providers(request({})))
+    expect(providers.providers.map(view => view.provider)).toEqual(['openai', 'deepseek-official', 'undeclared'])
+
+    // The shared catalog assembly applies the same preference to the groups
+    // the model selector renders.
+    const catalog = expectOk(await api.llm.models(request({})))
+    expect(catalog.groups.map(group => group.id)).toEqual(['openai', 'deepseek-official', 'undeclared'])
+  })
+
+  it('keeps the natural registration order without a stored preference', async () => {
+    const ctx = await harness()
+    ctx.settings.register(settingsNamespace('models'), z.object({ providerOrder: z.array(z.string()) }))
+    ctx.llm.registerAdapter(['deepseek-official'], new CatalogAdapter('DeepSeek', ['deepseek-v4-flash']))
+    ctx.llm.registerAdapter(['openai'], new CatalogAdapter('openai', ['gpt-4o']))
+    const api = createApiProxy(ctx, DEFAULTS)
+    const providers = expectOk(await api.llm.providers(request({})))
+    expect(providers.providers.map(view => view.provider)).toEqual(['deepseek-official', 'openai'])
+    const catalog = expectOk(await api.llm.models(request({})))
+    expect(catalog.groups.map(group => group.id)).toEqual(['deepseek-official', 'openai'])
+  })
+
   it('forwards llm/adapters-updated at every topology commit point', async () => {
     const ctx = await harness()
     const api = createApiProxy(ctx, DEFAULTS)

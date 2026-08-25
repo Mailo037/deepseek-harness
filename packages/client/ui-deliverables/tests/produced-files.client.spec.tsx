@@ -22,8 +22,10 @@ import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-r
 import {
   fitProducedFiles, ProducedFiles, type ProducedFilesProps,
 } from '../src/client/ProducedFiles.tsx'
+import { LineChangeSummary, type LineChangeSummaryProps } from '../src/client/LineChangeSummary.tsx'
 import {
   basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
+  summarizeLineChanges,
   type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -68,6 +70,7 @@ const turnLocation = (turn: number, deliverables?: DeliverablesTurnData): TurnLo
 
 const produced = (...values: ReadonlyArray<readonly [seq: number, path: string]>): DeliverablesTurnData => ({
   produced: values.map(([seq, path]) => ({ seq, path })),
+  lineChanges: [],
 })
 
 function tailOwner(
@@ -137,7 +140,13 @@ function call(
   )
 }
 
-function result(seq: number, callId: string, isError = false, turn = 1): ConversationEventInput {
+function result(
+  seq: number,
+  callId: string,
+  isError = false,
+  turn = 1,
+  view?: Exclude<ToolResultNode['resultView'], null>,
+): ConversationEventInput {
   return at(seq, 'tool/result', {
     turn,
     step: 1,
@@ -145,7 +154,7 @@ function result(seq: number, callId: string, isError = false, turn = 1): Convers
       source: { type: 'tool-result', callId },
       content: [{ type: 'tool-result', content: [], isError }],
     },
-  })
+  }, view === undefined ? undefined : { for: 'result', view })
 }
 
 function diff(...paths: string[]): ToolResultNode['callView'] {
@@ -160,6 +169,10 @@ function edit(path: string): ToolResultNode['callView'] {
   return { card: 'generic', title: `insert ${path}`, kind: 'edit', locations: [{ path }] }
 }
 
+function appliedDiff(path: string, oldText: string | null, newText: string): Exclude<ToolResultNode['resultView'], null> {
+  return { card: 'diff', diffs: [{ path, oldText, newText }] }
+}
+
 function assembler(entries: readonly ConversationEventInput[], hasMore = false): ConversationNodeAssembler {
   const value = new ConversationNodeAssembler(new TestEventDefinitions(), new TestViewDefinitions())
   value.replaceWindow(entries, hasMore)
@@ -170,6 +183,10 @@ function assembler(entries: readonly ConversationEventInput[], hasMore = false):
 function deliverablesOf(value: ConversationNodeAssembler, turn = 1): Readonly<DeliverablesTurnData> | undefined {
   const snapshot = value.snapshot('test') as TimelineSnapshot
   return snapshot.timeline.turns.get(turn)?.data.get('deliverables')
+}
+
+function timelineOf(value: ConversationNodeAssembler): ConversationTimelineSnapshot {
+  return (value.snapshot('test') as TimelineSnapshot).timeline
 }
 
 describe('produced-file Turn data', () => {
@@ -275,6 +292,78 @@ describe('produced-file Turn data', () => {
     value.append(result(5, 'second'))
     value.flush()
     expect(producedForClosing(deliverablesOf(value))).toEqual(['first.txt', 'second.txt'])
+  })
+
+  it('records applied result diff counts and groups repeated paths across Turns', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      call(2, 'write', diff('src/app.ts')),
+      result(3, 'write', false, 1, appliedDiff('src/app.ts', 'before\n', 'after\nnew\n')),
+      at(4, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(5, 'turn/start', { turn: 2 }),
+      call(6, 'edit', diff('src/app.ts')),
+      result(7, 'edit', false, 2, appliedDiff('src/app.ts', 'new\n', 'next\n')),
+      call(8, 'write-style', diff('src/style.css')),
+      result(9, 'write-style', false, 2, appliedDiff('src/style.css', null, 'body {}\n')),
+    ])
+
+    expect(deliverablesOf(value)?.lineChanges).toEqual([
+      { seq: 3, path: 'src/app.ts', added: 2, removed: 1 },
+    ])
+    expect(summarizeLineChanges(timelineOf(value))).toEqual({
+      files: [
+        { path: 'src/app.ts', added: 3, removed: 2 },
+        { path: 'src/style.css', added: 1, removed: 0 },
+      ],
+      added: 4,
+      removed: 2,
+    })
+  })
+})
+
+describe('LineChangeSummary', () => {
+  const t = makeTranslate(en)
+
+  function props(data: DeliverablesTurnData): LineChangeSummaryProps {
+    const session = {
+      chat: { timeline: { turnOrder: [1], turns: new Map([[1, turnLocation(1, data)]]) } },
+    }
+    return { session } as LineChangeSummaryProps
+  }
+
+  it('centers a clickable total above the composer and opens the per-file breakdown', () => {
+    const view = render(
+      <LineChangeSummary
+        {...props({
+          produced: [],
+          lineChanges: [
+            { seq: 2, path: 'src/ChatView.tsx', added: 26, removed: 10 },
+            { seq: 3, path: 'README.md', added: 2, removed: 0 },
+          ],
+        })}
+        t={t}
+      />,
+    )
+    const trigger = view.getByRole('button', { name: '2 files changed, +28 lines and -10 lines' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const panel = view.getByRole('dialog', { name: '2 files changed, +28 lines and -10 lines' })
+    expect(within(panel).getByText('ChatView.tsx')).toBeTruthy()
+    expect(within(panel).getByText('src/ChatView.tsx')).toBeTruthy()
+    expect(within(panel).getByText('README.md')).toBeTruthy()
+    expect(within(panel).getByText('+26')).toBeTruthy()
+    expect(within(panel).getAllByText('-10')).toHaveLength(1)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(view.queryByRole('dialog')).toBeNull()
+  })
+
+  it('stays absent until a successful result supplies applied diff lines', () => {
+    const view = render(<LineChangeSummary {...props({ produced: [], lineChanges: [] })} t={t} />)
+    expect(view.container.firstChild).toBeNull()
   })
 })
 
@@ -481,14 +570,17 @@ describe('package shells', () => {
 })
 
 describe('plugin registration', () => {
-  it('registers the tail entry and fiber disposal removes it', async () => {
+  it('registers the tail and composer-summary entries and fiber disposal removes them', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     await ctx.plugin(ConversationEventRegistry).await()
     // The owning view's child declaration, stood up by a bench root entry.
     ctx.slots.register({
       name: 'root',
-      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' } },
+      children: {
+        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+        'conversation.input.dock': { kind: 'list', scope: 'session' },
+      },
     } as never, () => null)
     const hostDescription = { getSnapshot: () => undefined, subscribe: () => () => {} }
     ctx.provide('connection', {
@@ -506,6 +598,7 @@ describe('plugin registration', () => {
     const [entry] = ctx.slots.entries('conversation.chat.turnTail')
     expect(entry).toBeDefined()
     expect(entry?.inject?.()).toEqual({ isLoopback: false, hooks: { hostDescription } })
+    expect(ctx.slots.entries('conversation.input.dock')).toHaveLength(1)
 
     // The prose face is live while the plugin is: a produced turn yields a
     // resolver whose matches open through the owner-supplied opener.
@@ -524,6 +617,7 @@ describe('plugin registration', () => {
 
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
+    expect(ctx.slots.entries('conversation.input.dock')).toHaveLength(0)
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
     expect((ctx as unknown as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
   })

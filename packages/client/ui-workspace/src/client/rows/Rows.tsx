@@ -5,7 +5,7 @@
  * action menu from their ellipsis trigger and the native context-menu gesture;
  * session and workspace hover cards are suppressed while a menu is open.
  */
-import { useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconArchiveOutline20, IconBranchOutline16, IconEditOutline16,
@@ -13,7 +13,7 @@ import {
   IconPinOutline16, IconPlusOutline16, IconSettingsOutline16, IconTrashOutline16, IconTriangleRightFill14,
   Menu, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry, StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
@@ -28,13 +28,87 @@ function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
 }
 
-/** Zero-sized viewport anchor for a pointer-positioned portal menu. */
-function viewportPointRect(x: number, y: number): DOMRect {
+/**
+ * Zero-sized viewport anchor for a pointer-positioned portal menu.
+ * @param x - viewport x coordinate.
+ * @param y - viewport y coordinate.
+ * @returns a DOM rectangle fixed at the supplied viewport point.
+ */
+export function viewportPointRect(x: number, y: number): DOMRect {
   return {
     x, y, width: 0, height: 0,
     top: y, right: x, bottom: y, left: x,
     toJSON: () => ({ x, y, width: 0, height: 0, top: y, right: x, bottom: y, left: x }),
   }
+}
+
+/** Operations available from one Session's standard context menu. */
+export interface SessionMenuActions {
+  /** Open the browser-owned rename dialog. */
+  onRename: (id: SessionNode['id'], currentTitle: string) => void
+  /** Fork the Session at its last completed turn. */
+  onFork: (id: SessionNode['id']) => void
+  /** Open the browser-owned move dialog when this composition supports it. */
+  onMove?: ((id: SessionNode['id']) => void) | undefined
+  /** Archive the Session. */
+  onArchive: (id: SessionNode['id']) => void
+  /** Restore an archived Session. */
+  onRestore?: ((id: SessionNode['id']) => void) | undefined
+  /** Permanently delete an archived Session. */
+  onDelete?: ((id: SessionNode['id']) => void) | undefined
+  /** Persist the Session's pin membership. */
+  onSetPinned?: ((id: SessionNode['id'], pinned: boolean) => void) | undefined
+}
+
+/**
+ * Build the shared Session action menu for a row or collapsed-sidebar pin.
+ * @param props - Session state, available actions, and localized labels.
+ * @returns menu entries in the standard Session-action order.
+ */
+export function sessionMenuEntries({ archived = false, pinned = false, onMove, onDelete, onSetPinned, t }: {
+  archived?: boolean | undefined
+  pinned?: boolean | undefined
+  onMove?: SessionMenuActions['onMove']
+  onDelete?: SessionMenuActions['onDelete']
+  onSetPinned?: SessionMenuActions['onSetPinned']
+  t: RowTranslate
+}): MenuEntry[] {
+  return [
+    ...(!archived && onSetPinned !== undefined ? [{
+      id: 'pin',
+      label: pinned ? t('menu.unpinSession') : t('menu.pinSession'),
+      icon: <IconPinOutline16 />,
+    }] : []),
+    ...(!archived ? [
+      { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
+      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
+      ...onMove !== undefined ? [{ id: 'move', label: t('menu.moveSession'), icon: <IconFolderOpenOutline16 /> }] : [],
+    ] : []),
+    ...(archived ? [
+      { id: 'restore', label: t('menu.restoreSession'), icon: <IconArchiveOutline20 size={16} /> },
+      ...(onDelete !== undefined ? [{ id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutline16 />, danger: true }] : []),
+    ] : [
+      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} />, danger: true },
+    ]),
+  ]
+}
+
+/**
+ * Dispatch one selected Session context-menu item to its owning browser action.
+ * @param id - selected menu-item identifier.
+ * @param node - Session that owns the menu.
+ * @param pinned - current durable pin membership.
+ * @param actions - browser callbacks for the available operations.
+ * @returns nothing.
+ */
+export function selectSessionMenuEntry(id: string, node: SessionNode, pinned: boolean, actions: SessionMenuActions): void {
+  if (id === 'pin') actions.onSetPinned?.(node.id, !pinned)
+  else if (id === 'restore') actions.onRestore?.(node.id)
+  else if (id === 'delete') actions.onDelete?.(node.id)
+  else if (id === 'rename') actions.onRename(node.id, node.title)
+  else if (id === 'fork') actions.onFork(node.id)
+  else if (id === 'move') actions.onMove?.(node.id)
+  else if (id === 'archive') actions.onArchive(node.id)
 }
 
 /** Localized compact relative time ("刚刚"/"5分钟" in zh, "now"/"5min" in en). */
@@ -321,12 +395,95 @@ function SessionStatusDots({ statuses }: { statuses: readonly [SessionStatus, ..
   )
 }
 
-/** Hover-card body: full title, relative time, and every relevant live status. */
-function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number; t: RowTranslate }) {
+/** Hover-card body: full title, relative time, every relevant live status, and optional title rename. */
+function SessionHoverContent({ node, now, t, onRename }: {
+  node: SessionNode
+  now: number
+  t: RowTranslate
+  onRename?: ((sessionId: SessionNode['id'], title: string) => Promise<void>) | undefined
+}) {
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(node.title)
+  const [renamingTitle, setRenamingTitle] = useState(false)
+  const [titleError, setTitleError] = useState<string | null>(null)
+  const [renamedTitle, setRenamedTitle] = useState<string | undefined>(undefined)
+  const composingRef = useRef(false)
   const statuses = sessionStatuses(node, t)
+  const title = renamedTitle ?? displayTitle(node, t)
+  const confirmTitle = () => {
+    if (onRename === undefined || renamingTitle || composingRef.current) return
+    const nextTitle = titleDraft.trim()
+    if (nextTitle === '') {
+      setTitleError(t('rename.session.empty'))
+      return
+    }
+    if (nextTitle === title) {
+      setEditingTitle(false)
+      return
+    }
+    setRenamingTitle(true)
+    setTitleError(null)
+    onRename(node.id, nextTitle).then(() => {
+      setRenamingTitle(false)
+      setRenamedTitle(nextTitle)
+      setEditingTitle(false)
+    }).catch((reason: unknown) => {
+      setRenamingTitle(false)
+      setTitleError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
   return (
     <div className={css.hoverContent}>
-      <div className={css.hoverTitle}>{displayTitle(node, t)}</div>
+      {onRename === undefined || node.blank
+        ? <div className={css.hoverTitle}>{title}</div>
+        : editingTitle
+          ? (
+            <form
+              className={css.hoverRenameForm}
+              onSubmit={(event) => {
+                event.preventDefault()
+                confirmTitle()
+              }}
+            >
+              <input
+                className={css.hoverTitleInput}
+                value={titleDraft}
+                aria-label={t('field.sessionName')}
+                autoFocus
+                disabled={renamingTitle}
+                onFocus={(event) => { event.target.select() }}
+                onChange={(event) => {
+                  setTitleDraft(event.target.value)
+                  setTitleError(null)
+                }}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={() => { composingRef.current = false }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && !renamingTitle) {
+                    event.preventDefault()
+                    setEditingTitle(false)
+                    setTitleError(null)
+                  }
+                }}
+              />
+            </form>
+          )
+          : (
+            <button
+              type="button"
+              className={css.hoverTitleButton}
+              aria-label={t('rename.session.title')}
+              onClick={() => {
+                setTitleDraft(title)
+                setTitleError(null)
+                setEditingTitle(true)
+              }}
+            >
+              {title}
+            </button>
+          )}
+      {renamingTitle && <div className={css.hoverRenamePending} role="status">{t('rename.session.pending')}</div>}
+      {titleError !== null && <div className={css.hoverRenameError} role="alert">{titleError}</div>}
       {/* Same placeholder rule as the row's trailing cell: no timestamp
           before the first prompt. */}
       {!node.blank && <div className={css.hoverTime}>{hoverTimeLabel(node.updatedAt, now, t)}</div>}
@@ -337,6 +494,38 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * Render the standard Session hover card around one navigation anchor.
+ * @param props.anchor - row or compact control that opens the Session.
+ * @param props.node - derived Session facts shown in the card.
+ * @param props.now - current epoch used for the relative-time label.
+ * @param props.t - Workspace-browser translation seat.
+ * @param props.disabled - whether the anchor currently suppresses its card.
+ * @param props.onRename - optional inline title mutation for this card.
+ * @returns the anchor wrapped with the standard Session hover card.
+ */
+export function SessionHoverCard({
+  anchor, node, now, t, disabled = false, onRename,
+}: {
+  anchor: ReactNode
+  node: SessionNode
+  now: number
+  t: RowTranslate
+  disabled?: boolean | undefined
+  onRename?: ((sessionId: SessionNode['id'], title: string) => Promise<void>) | undefined
+}) {
+  return (
+    <HoverCard
+      anchor={anchor}
+      content={<SessionHoverContent node={node} now={now} t={t} onRename={onRename} />}
+      disabled={disabled}
+      copyText={onRename === undefined && !node.blank ? node.title : undefined}
+      copyLabel={t('copy')}
+      copiedLabel={t('hover.copied')}
+    />
   )
 }
 
@@ -407,7 +596,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  */
 export function SessionNodeItem({
   node, currentId, now, onOpen, onRename, onFork, onMove, onArchive,
-  archived = false, onRestore, onDelete, pinned = false, onSetPinned, drag, flat = false, t,
+  archived = false, onRestore, onDelete, pinned = false, onSetPinned, onInlineRename, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -431,6 +620,8 @@ export function SessionNodeItem({
   pinned?: boolean | undefined
   /** Set this session's durable pin membership. */
   onSetPinned?: ((id: SessionNode['id'], pinned: boolean) => void) | undefined
+  /** Persist a title typed directly into this row's hover card. */
+  onInlineRename?: ((id: SessionNode['id'], title: string) => Promise<void>) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
@@ -452,25 +643,7 @@ export function SessionNodeItem({
   // Archive hides the row through the registry-global archive set and never
   // touches the session log, so it needs no confirmation dialog — but it is
   // still the row's removing gesture, styled danger like the header menu's.
-  const sessionMenuItems = [
-    ...(!archived && onSetPinned !== undefined ? [{
-      id: 'pin',
-      label: pinned ? t('menu.unpinSession') : t('menu.pinSession'),
-      icon: <IconPinOutline16 />,
-    }] : []),
-    ...(!archived ? [
-      { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
-      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
-      ...onMove !== undefined ? [{ id: 'move', label: t('menu.moveSession'), icon: <IconFolderOpenOutline16 /> }] : [],
-    ] : []),
-    // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
-    ...(archived ? [
-      { id: 'restore', label: t('menu.restoreSession'), icon: <IconArchiveOutline20 size={16} /> },
-      ...(onDelete !== undefined ? [{ id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutline16 />, danger: true }] : []),
-    ] : [
-      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} />, danger: true },
-    ]),
-  ]
+  const sessionMenuItems = sessionMenuEntries({ archived, pinned, onMove, onDelete, onSetPinned, t })
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
     <div
@@ -543,13 +716,15 @@ export function SessionNodeItem({
             items={sessionMenuItems}
             onSelect={(id) => {
               closeMenu()
-              if (id === 'pin') onSetPinned?.(node.id, !pinned)
-              else if (id === 'restore') onRestore?.(node.id)
-              else if (id === 'delete') onDelete?.(node.id)
-              else if (id === 'rename') onRename(node.id, row.title)
-              else if (id === 'fork') onFork(node.id)
-              else if (id === 'move') onMove?.(node.id)
-              else if (id === 'archive') onArchive(node.id)
+              selectSessionMenuEntry(id, node, pinned, {
+                onRename,
+                onFork,
+                onMove,
+                onArchive,
+                onRestore,
+                onDelete,
+                onSetPinned,
+              })
             }}
             portal
             closeOnPointerLeave
@@ -573,14 +748,12 @@ export function SessionNodeItem({
       )}
     </div>
   )
-  return (
-    <HoverCard
-      anchor={ownRow}
-      content={<SessionHoverContent node={node} now={now} t={t} />}
-      disabled={menuOpen || drag?.active === true}
-      copyText={row.blank ? undefined : row.title}
-      copyLabel={t('copy')}
-      copiedLabel={t('hover.copied')}
-    />
-  )
+  return <SessionHoverCard
+    anchor={ownRow}
+    node={node}
+    now={now}
+    t={t}
+    disabled={menuOpen || drag?.active === true}
+    onRename={onInlineRename}
+  />
 }

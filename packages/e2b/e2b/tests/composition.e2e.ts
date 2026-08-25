@@ -90,6 +90,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
         ctx,
         send() {},
         followup() {},
+        prepend() {},
         steer() {},
         inject() {},
         cancel() {},

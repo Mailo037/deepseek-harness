@@ -443,6 +443,26 @@ describe('paging', () => {
     await Promise.all([first, second])
     expect(api.callsOf('session.history')).toHaveLength(2) // open + one page, not two
   })
+
+  it('grows the older page size exponentially and caps it', async () => {
+    const { api, session } = makeSession()
+    let turn = 400
+    api.onHistory = (payload) => {
+      if (payload.beforeSeq === undefined) {
+        return histResponse(plainTurn(60, turn++, 'recent', 'tail'), true)
+      }
+      // A contiguous older page ending one seq before the requested base.
+      const start = (payload.beforeSeq ?? 0) - 6
+      return histResponse(plainTurn(start, turn++, 'old', 'page'), true)
+    }
+    await session.open()
+    // Six pages after open: sizes 50, 100, 200, 400, then capped 800.
+    for (let i = 0; i < 6; i++) await session.loadOlder()
+    const pageCalls = (api.callsOf('session.history') as { maxMessages?: number }[])
+      .slice(1)
+      .map(call => call.maxMessages)
+    expect(pageCalls).toEqual([50, 100, 200, 400, 800, 800])
+  })
 })
 
 describe('prompt and cancel errors', () => {

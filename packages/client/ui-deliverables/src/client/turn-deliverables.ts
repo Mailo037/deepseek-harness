@@ -4,10 +4,11 @@
  * `locations`, never the closing prose.
  */
 import type {
-  ConversationNodeDefinition, ToolResultNode,
+  ConversationNodeDefinition, ConversationTimelineSnapshot, ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import { diffLineCounts } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 interface ProducedPath {
@@ -15,9 +16,19 @@ interface ProducedPath {
   readonly path: string
 }
 
+/** One settled diff's line totals for its file. */
+export interface DeliverableLineChange {
+  readonly seq: number
+  readonly path: string
+  readonly added: number
+  readonly removed: number
+}
+
 /** Immutable produced-file facts published against one Turn. */
 export interface DeliverablesTurnData {
   readonly produced: readonly ProducedPath[]
+  /** Applied diff totals, retained per result so session summaries can group paths. */
+  readonly lineChanges: readonly DeliverableLineChange[]
 }
 
 declare module '@deepseek-ai/dsh-client-runtime/client' {
@@ -47,6 +58,76 @@ function producedPaths(view: ToolResultNode['callView']): readonly string[] {
     return (view.locations ?? []).map(location => location.path)
   }
   return []
+}
+
+/**
+ * Read one applied result diff after checking its wire-owned fields. The API
+ * envelope validates only the card tag, so the array and each hunk still need
+ * narrowing before this package hands them to the shared line-count helper.
+ * @param view - host-computed completed-call presentation.
+ * @returns Per-file added and removed line totals, or an empty list when this result is not a usable diff.
+ */
+function resultLineChanges(view: unknown): readonly Omit<DeliverableLineChange, 'seq'>[] {
+  if (typeof view !== 'object' || view === null) return []
+  const record = view as Record<string, unknown>
+  if (record.card !== 'diff' || !Array.isArray(record.diffs)) return []
+  const changes: Omit<DeliverableLineChange, 'seq'>[] = []
+  for (const raw of record.diffs) {
+    if (typeof raw !== 'object' || raw === null) return []
+    const diff = raw as Record<string, unknown>
+    const path = diff.path
+    const oldText = diff.oldText
+    const newText = diff.newText
+    if (typeof path !== 'string'
+      || (oldText !== null && typeof oldText !== 'string')
+      || typeof newText !== 'string') return []
+    const { added, removed } = diffLineCounts([{
+      path,
+      oldText,
+      newText,
+    }])
+    if (added > 0 || removed > 0) changes.push({ path, added, removed })
+  }
+  return changes
+}
+
+/** Immutable line totals grouped by path over the currently assembled Session timeline. */
+export interface SessionLineChangeSummary {
+  readonly files: readonly Omit<DeliverableLineChange, 'seq'>[]
+  readonly added: number
+  readonly removed: number
+}
+
+/**
+ * Group successful result-time diffs in Turn order, retaining the first path
+ * position while summing subsequent edits to the same file. The timeline is
+ * the current assembled window, so this display stays intentionally local to
+ * what the browser has reconstructed rather than claiming a durable whole-log
+ * projection it does not own.
+ * @param timeline - current Chat Turn index.
+ * @returns Path rows and their session-wide added/removed totals.
+ */
+export function summarizeLineChanges(timeline: ConversationTimelineSnapshot): SessionLineChangeSummary {
+  const byPath = new Map<string, Omit<DeliverableLineChange, 'seq'>>()
+  let added = 0
+  let removed = 0
+  for (const turnNumber of timeline.turnOrder) {
+    const data = timeline.turns.get(turnNumber)?.data.get('deliverables')
+    if (data === undefined) continue
+    for (const change of data.lineChanges) {
+      const previous = byPath.get(change.path)
+      byPath.set(change.path, previous === undefined
+        ? { path: change.path, added: change.added, removed: change.removed }
+        : {
+          path: change.path,
+          added: previous.added + change.added,
+          removed: previous.removed + change.removed,
+        })
+      added += change.added
+      removed += change.removed
+    }
+  }
+  return { files: [...byPath.values()], added, removed }
 }
 
 /**
@@ -107,7 +188,7 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
   },
   start: (_context, match) => {
     if (match.event.type !== 'turn/start') throw new Error('deliverables start requires turn/start')
-    return { turn: match.event.data.turn, calls: new Map(), produced: [] }
+    return { turn: match.event.data.turn, calls: new Map(), produced: [], lineChanges: [] }
   },
   update: (context, match) => {
     if (match.event.type === 'tool/call') {
@@ -124,9 +205,15 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
     const callId = String(match.event.data.message.source.callId)
     const additions = producedPaths(context.state.calls.get(callId) ?? null)
       .map(path => ({ seq: match.event.seq, path }))
-    return additions.length === 0
+    const lineChanges = (match.view?.for === 'result' ? resultLineChanges(match.view.view) : [])
+      .map(change => ({ ...change, seq: match.event.seq }))
+    return additions.length === 0 && lineChanges.length === 0
       ? context.state
-      : { ...context.state, produced: [...context.state.produced, ...additions] }
+      : {
+        ...context.state,
+        produced: [...context.state.produced, ...additions],
+        lineChanges: [...context.state.lineChanges, ...lineChanges],
+      }
   },
   buildLocationData: (context, scope) => scope !== 'turn' || context.state === undefined
     ? null
@@ -134,7 +221,10 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
       kind: 'turn',
       turn: context.state.turn,
       key: 'deliverables',
-      value: { produced: context.state.produced },
+      value: {
+        produced: context.state.produced,
+        lineChanges: context.state.lineChanges,
+      },
     },
 }
 

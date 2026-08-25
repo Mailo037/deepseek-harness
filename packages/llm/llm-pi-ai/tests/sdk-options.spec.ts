@@ -13,6 +13,7 @@ vi.mock('@earendil-works/pi-ai/api/openai-completions.lazy', () => ({
 
 import { PiAiAdapter } from '../src/adapter.ts'
 import { resolveProfiles } from '../src/config.ts'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { memoryAuth } from './auth-double.ts'
 
 afterEach(() => { streamSimple.mockReset() })
@@ -27,7 +28,7 @@ function gatewayAdapter(): PiAiAdapter {
         models: [{ id: 'local-model', contextWindow: 8192, maxTokens: 1024 }],
       },
     }),
-    resolveApiKey: () => Promise.resolve('test-key'),
+    resolveApiKey: () => Promise.resolve({ ref: credentialRef('TEST_KEY'), value: 'test-key' }),
     auth: memoryAuth(),
   })
 }

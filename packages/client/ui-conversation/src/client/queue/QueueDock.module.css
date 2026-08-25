@@ -152,6 +152,30 @@
   word-break: break-word;
 }
 
+.imagePreview,
+.imagePlaceholder {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: 0 2px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.imagePreview {
+  display: inline-block;
+  background: var(--dsw-alias-bg-base);
+  object-fit: cover;
+}
+
+.imagePlaceholder {
+  display: inline-grid;
+  place-items: center;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+}
+
 /* The row currently loaded into the composer reads as active, not dimmed. */
 .previewEditing {
   color: var(--dsw-alias-label-primary);

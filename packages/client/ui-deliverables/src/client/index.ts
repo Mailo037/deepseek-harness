@@ -1,16 +1,16 @@
 /**
  * Deliverables plugin, browser half: registers the produced-files row into
- * the chat view's turn-tail chain, and provides the `chatFileMentions`
- * service that links inline-code mentions of produced files in the closing
- * prose. All policy lives here — the derivation from the mutation tools'
- * `locations`, the mention matching, the chip cap, and the copy — so
- * composing this plugin out of cordis.yml removes both surfaces entirely;
- * the owning view renders an empty chain and inert prose at zero cost.
+ * the chat view's turn-tail chain, the applied line-change summary above the
+ * composer, and the `chatFileMentions` service that links inline-code mentions
+ * of produced files in closing prose. All policy lives here — mutation-tool
+ * locations, result-time diff counts, mention matching, the chip cap, and copy
+ * — so composing this plugin out of cordis.yml removes all three surfaces.
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import { LineChangeSummary } from './LineChangeSummary.tsx'
 import { ProducedFiles } from './ProducedFiles.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
@@ -27,11 +27,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export { ProducedFiles, type ProducedFilesProps } from './ProducedFiles.tsx'
 export { producedForClosing } from './turn-deliverables.ts'
 
-/** Required services for the tail-slot registration and its dictionaries. */
+/** Required services for the Deliverables entries and their dictionaries. */
 export const inject = ['slots', 'locale', 'conversationEvents', 'connection']
 
 /**
- * Client plugin body: register the dictionaries and the turn-tail entry.
+ * Client plugin body: register the dictionaries, the turn-tail entry, and the composer summary.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -49,6 +49,15 @@ export function apply(ctx: ClientContext): void {
         hooks: { hostDescription: connection.hostDescription },
       }),
     }, ProducedFiles),
+  )
+  ctx.slots.inject(
+    'conversation.input.dock',
+    () => ctx.slots.register({
+      name: 'conversation.input.dock',
+      id: 'line-changes',
+      order: -10,
+      locale: NS,
+    }, LineChangeSummary),
   )
   // The prose side of the same vocabulary: the chat view reaches this face
   // via ctx.get, so its absence — this plugin composed out — is the off state.

@@ -49,6 +49,7 @@ function stubAgent(session: Session): Agent {
     ctx: new Context(),
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
     inject: () => {},
     cancel() {},
@@ -584,7 +585,7 @@ describe('Host Workspace increments', () => {
     abort.abort()
   })
 
-  it('stops the session activity when archiving: cancels the agent, kills its jobs, and interrupts continuable descendants', async () => {
+  it('stops live session activity when archiving without waiting for the cold subagent catalog', async () => {
     const { api, ctx, root } = await harness()
     const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'archive-stop') }))).workspace
     const sessionId = SessionId('session-archive-stop')
@@ -594,34 +595,43 @@ describe('Host Workspace increments', () => {
     const cancel = vi.fn()
     agent!.cancel = cancel
 
+    const intermediateId = SessionId('archive-stop-intermediate')
+    ctx.sessions.create(intermediateId, { meta: { parentSession: sessionId } })
+    const childId = SessionId('child-subagent')
+    const childSession = ctx.sessions.create(childId, {
+      meta: { parentSession: intermediateId, origin: 'subagent' },
+    })
+    const childAgent = stubAgent(childSession)
+    ctx.agents.register(childAgent)
+
     const kill = vi.fn(() => 'requested' as const)
     ctx.provide('jobs', {
       list: (caller: Agent | undefined) => caller === agent
         ? [{ id: 'job-1', status: 'running' }]
-        : [],
+        : caller === childAgent ? [{ id: 'child-job-1', status: 'running' }] : [],
       kill,
     } as never)
     const interrupt = vi.fn()
-    const childId = SessionId('child-continuable')
+    const listDescendants = vi.fn(() => new Promise<never>(() => {}))
     ctx.provide('subagents', {
-      listDescendants: async () => [
-        { kind: 'child', id: childId, activity: 'running', hasChildren: false, mode: 'continuable', label: 'helper', parentId: sessionId, depth: 1 },
-        { kind: 'child', id: SessionId('child-one-shot'), activity: 'running', hasChildren: false, mode: 'one-shot', parentId: sessionId, depth: 1 },
-        { kind: 'diagnostic', id: SessionId('child-broken'), reason: 'corrupt', parentId: sessionId, depth: 1 },
-      ],
+      listDescendants,
       interrupt,
     } as never)
 
     expect(expectOk(await api.workspace.archiveSession(request({ sessionId }))).archivedSessionIds)
       .toEqual([sessionId])
+    // A catalog read remains deliberately unresolved: archive completion proves
+    // the user-facing path only inspects live state.
+    expect(listDescendants).not.toHaveBeenCalled()
     // The main agent's turn and queued inbox work are cancelled together.
     expect(cancel).toHaveBeenCalledTimes(1)
     expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
     expect(kill).toHaveBeenCalledWith('job-1', agent, 'session-archived')
-    // Only the continuable descendant is interruptible; one-shot and
-    // diagnostic rows are skipped.
+    expect(kill).toHaveBeenCalledWith('child-job-1', childAgent, 'session-archived')
+    // The core primitive turns a non-continuable id into a no-op, so the
+    // archive path need not read descriptors just to classify this child.
     expect(interrupt).toHaveBeenCalledTimes(1)
-    expect(interrupt).toHaveBeenCalledWith(childId, { kind: 'user', parentSessionId: sessionId })
+    expect(interrupt).toHaveBeenCalledWith(childId, { kind: 'user', parentSessionId: intermediateId })
   })
 
   it('deletes an archived session that this host still has open by closing it first', async () => {

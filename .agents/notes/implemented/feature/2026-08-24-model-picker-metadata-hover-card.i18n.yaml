@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-model-picker-metadata-hover-card.md
+2026-08-24-model-picker-metadata-hover-card.md: 6c2ddc699ba34fe42f3bc19474a1edc68ef41f26
+2026-08-24-model-picker-metadata-hover-card.zh.md: ce6b145b90a301f4404bf8eb446f9aa2eaf69c85

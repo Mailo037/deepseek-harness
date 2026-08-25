@@ -972,6 +972,15 @@ Requires: `llm`
 export interface Config {
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary. Each is resolved through the same seams as
+   * {@link apiKeyEnv}; a backup with no stored value fails the request that
+   * reaches it rather than being silently skipped.
+   */
+  backupApiKeys?: string[]
+  /** How long a quota-failed key stays retired before it is tried again (default one hour). */
+  apiKeyCooldownMs?: number
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
@@ -1037,7 +1046,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:106`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:117`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -1060,6 +1069,15 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary. Each is resolved through the same seams as
+   * {@link apiKeyEnv}; a backup with no stored value fails the request that
+   * reaches it rather than being silently skipped.
+   */
+  backupApiKeys?: string[]
+  /** How long a quota-failed key stays retired before it is tried again (default one hour). */
+  apiKeyCooldownMs?: number
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -1291,7 +1309,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:213`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:226`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -2576,6 +2594,28 @@ export type TokenMeterConfig = Record<string, never>
 
 Source: [`packages/llm/token-meter/src/types.ts:12`](../packages/llm/token-meter/src/types.ts)
 
+<a id="deepseek-aidsh-tool-ast-query"></a>
+
+## `@deepseek-ai/dsh-tool-ast-query`
+
+Requires: `tools` · `fs` · `systemPrompt`
+
+```ts config-catalog
+/** Deployment-owned source and result bounds. */
+export interface Config {
+  /** Maximum matching syntax nodes retained by one call. Defaults to 100. */
+  maxMatches?: number
+  /** Maximum UTF-8 bytes read from one source file. Defaults to 1000000. */
+  maxSourceBytes?: number
+  /** Maximum UTF-16 characters retained from one matched syntax node. Defaults to 1000. */
+  maxMatchCharacters?: number
+  /** Maximum UTF-16 characters in one model-visible rendered result. Defaults to 16000. */
+  maxResultCharacters?: number
+}
+```
+
+Source: [`packages/fs/tool-ast-query/src/index.ts:45`](../packages/fs/tool-ast-query/src/index.ts)
+
 <a id="deepseek-aidsh-tool-bash"></a>
 
 ## `@deepseek-ai/dsh-tool-bash`
@@ -2814,10 +2854,16 @@ export interface Config {
   maxSearchResults?: number
   /** Cooperative full-text search deadline in milliseconds. Defaults to 30000. */
   searchTimeoutMs?: number
+  /** Maximum UTF-8 bytes in one complete redacted tool result. Defaults to 65536. */
+  maxResultBytes?: number
+  /** Maximum evidence entries in one repeated Session-summary section. Defaults to 12. */
+  summaryMaxItems?: number
+  /** Maximum characters from one Session-summary evidence record. Defaults to 400. */
+  summaryMaxEvidenceCharacters?: number
 }
 ```
 
-Source: [`packages/session-query/tool-session-query/src/index.ts:29`](../packages/session-query/tool-session-query/src/index.ts)
+Source: [`packages/session-query/tool-session-query/src/index.ts:37`](../packages/session-query/tool-session-query/src/index.ts)
 
 <a id="deepseek-aidsh-tool-skill"></a>
 
@@ -3360,6 +3406,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-tool` ([`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-trajectory` ([`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-user-questions` ([`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-voice-input` ([`packages/client/ui-voice-input/src/index.ts`](../packages/client/ui-voice-input/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workflow-run` ([`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workspace` ([`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts))
 - `@deepseek-ai/dsh-command-compact` — requires `commands` · `compaction` ([`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts))

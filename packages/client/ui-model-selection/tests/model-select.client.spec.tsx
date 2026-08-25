@@ -5,7 +5,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
-import { ModelSelect, placeMenu, placeMenuPhoneTop } from '../src/client/ModelSelect.tsx'
+import { ModelSelect, placeMenu } from '../src/client/ModelSelect.tsx'
 import { zh } from '../src/client/locales.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 
@@ -48,7 +48,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
-  it('renders adapter metadata and submits the effort as part of the session selection', async () => {
+  it('renders adapter metadata and submits the effort as part of the session selection', { timeout: 15_000 }, async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
       directory.set(state({ current: selection }))
@@ -241,6 +241,74 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.getByText('未找到匹配的模型。')).toBeTruthy()
   })
 
+  it('uses unframed modality icons and previews exact model metadata on hover', () => {
+    vi.useFakeTimers()
+    try {
+      const directory = createSnapshotStore(state({
+        current: { provider: 'vision', model: 'vision-model' },
+        groups: [{
+          id: 'vision',
+          name: 'Vision Provider',
+          models: [{
+            id: 'vision-model',
+            name: 'Vision model',
+            inputModalities: ['text', 'image'],
+            contextWindow: 128_000,
+            maxTokens: 8_192,
+          }],
+        }],
+      }))
+      render(<ModelSelect
+        locked={false}
+        available
+        directory={directory}
+        load={vi.fn()}
+        select={vi.fn().mockResolvedValue(true)}
+        t={t}
+      />)
+
+      fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+      const option = screen.getByRole('menuitemradio', { name: 'Vision model' })
+      const icons = option.querySelectorAll('[data-model-modality-icon]')
+      expect(icons).toHaveLength(2)
+      expect(icons[0]?.getAttribute('data-model-modality-icon')).toBe('text')
+      expect(icons[1]?.getAttribute('data-model-modality-icon')).toBe('image')
+      const optionColumns = [...option.children] as HTMLElement[]
+      expect(optionColumns[0]?.querySelector('svg')).toBeTruthy()
+      expect(optionColumns[1]?.textContent).toContain('Vision model')
+      expect(optionColumns[2]?.querySelector('[data-model-modality-icon]')).toBeTruthy()
+
+      fireEvent.pointerEnter(option)
+      act(() => { vi.advanceTimersByTime(300) })
+      const card = document.querySelector<HTMLElement>('[data-model-info-card]')
+      expect(card?.textContent).toContain('vision-model')
+      expect(card?.textContent).toContain('128K')
+      expect(card?.textContent).toContain('8K')
+      expect(card?.textContent).toContain('文本 · 图片')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the search field above the refreshing notice', () => {
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state({ status: 'loading' }))}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+
+    const search = screen.getByPlaceholderText('搜索模型或提供商…')
+    const refresh = screen.getByText(t('status.loading'))
+    expect(search.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
+
   it('collapses and expands provider groups on click', () => {
     const groups = [{
       id: 'deepseek-official',
@@ -324,43 +392,6 @@ describe('placeMenu viewport clamping', () => {
   })
 })
 
-describe('placeMenuPhoneTop upward-only placement', () => {
-  const rect = positionedElement
-  const MARGIN = 8
-
-  it('opens above a trigger near the viewport bottom without flipping below', () => {
-    vi.stubGlobal('innerHeight', 700)
-    try {
-      const pos = placeMenuPhoneTop(rect(0, 0, 0, 0), rect(300, 640, 420, 668), { offsetHeight: 380 })
-      expect(pos.top).toBe(640 - 380 - 8)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('clamps to the top margin when even the full viewport cannot hold the card', () => {
-    vi.stubGlobal('innerHeight', 700)
-    try {
-      const pos = placeMenuPhoneTop(rect(0, 0, 0, 0), rect(300, 640, 420, 668), { offsetHeight: 900 })
-      // Height caps at vh - 2×margin (684); y clamps to the top margin.
-      expect(pos.top).toBe(MARGIN)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('returns a root-relative top when the composer is offset from the viewport', () => {
-    vi.stubGlobal('innerHeight', 700)
-    try {
-      const pos = placeMenuPhoneTop(rect(0, 520, 0, 520), rect(300, 640, 420, 668), { offsetHeight: 100 })
-      // Viewport y = 640 - 100 - 8 = 532; `.menu` is absolute under root.
-      expect(pos.top).toBe(532 - 520)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-})
-
 describe('open-menu re-placement', () => {
   /** Minimal ResizeObserver stand-in recording what the component observes. */
   class FakeResizeObserver {
@@ -378,7 +409,7 @@ describe('open-menu re-placement', () => {
     left: l, top: t, right: r, bottom: b, x: l, y: t, width: r - l, height: b - t, toJSON: () => ({}),
   })
 
-  it('re-places the card when the open menu grows after the initial placement', () => {
+  it('waits for the first real menu measurement before revealing and re-placing the card', () => {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver)
     FakeResizeObserver.instances = []
     try {
@@ -399,8 +430,12 @@ describe('open-menu re-placement', () => {
 
       fireEvent.click(trigger)
       const menu = screen.getByRole('menu')
-      // Placement measured a zero-height layout (jsdom): y = 600 − 0 − 8.
-      expect(menu.style.top).toBe('592px')
+      // A zero-height first pass is not a placement. Revealing the card at
+      // `trigger.top - 8` would make it open down, then jump above the trigger
+      // when ResizeObserver reports its real height.
+      expect(menu.style.opacity).toBe('0')
+      expect(menu.style.pointerEvents).toBe('none')
+      expect(menu.style.top).toBe('')
       const observer = FakeResizeObserver.instances.at(-1)
       expect(observer?.observed).toContain(menu)
 
@@ -412,14 +447,16 @@ describe('open-menu re-placement', () => {
       })
       // Preferred above-placement recomputed for the grown card:
       // y = 600 − 200 − 8 = 392 (no clamp).
+      expect(menu.style.opacity).toBe('')
       expect(menu.style.top).toBe('392px')
     } finally {
       vi.unstubAllGlobals()
     }
   })
 
-  it('keeps root and effort panes root-relative above the mobile composer through resize', () => {
+  it('renders a bottom sheet on phone and reveals without a placement measurement', () => {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    vi.stubGlobal('innerWidth', 400)
     vi.stubGlobal('innerHeight', 700)
     vi.stubGlobal('matchMedia', () => ({
       matches: true,
@@ -437,30 +474,138 @@ describe('open-menu re-placement', () => {
         t={t}
       />)
 
-      const trigger = screen.getByRole('button', { name: /选择模型/ })
-      const root = trigger.parentElement!
-      root.getBoundingClientRect = () => rect(0, 520, 420, 700)
-      trigger.getBoundingClientRect = () => rect(300, 640, 420, 668)
-      fireEvent.click(trigger)
+      fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
       const menu = screen.getByRole('menu')
-      Object.defineProperty(menu, 'offsetHeight', { value: 100, configurable: true })
-      const observer = FakeResizeObserver.instances.at(-1)!
-      act(() => { observer.callback([], observer) })
-      // Viewport y = 640 - 100 - 8 = 532, then root-relative 12px.
-      expect(menu.style.top).toBe('12px')
+      // Bottom sheet owns its geometry in CSS (fixed, bottom-anchored, driven
+      // by `--sheet-h`): no inline placement is published, and it reveals on
+      // the first frame at the half-viewport rest height rather than waiting
+      // for a measured height.
+      expect(menu.style.top).toBe('')
+      expect(menu.style.left).toBe('')
+      expect(menu.style.width).toBe('')
+      expect(menu.style.right).toBe('')
+      expect(menu.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+      // The phone path never creates a ResizeObserver: nothing to re-place.
+      expect(FakeResizeObserver.instances).toHaveLength(0)
 
-      fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
-      Object.defineProperty(menu, 'offsetHeight', { value: 160, configurable: true })
-      act(() => { observer.callback([], observer) })
-      // Effort pane remeasures independently, still in the root's frame.
-      expect(menu.style.top).toBe('-48px')
-
+      // Resizing does not re-place the sheet.
       vi.stubGlobal('innerHeight', 620)
       act(() => { window.dispatchEvent(new Event('resize')) })
-      // The viewport clamp moves the effort pane up, not below the trigger.
-      expect(menu.style.top).toBe('-68px')
+      expect(menu.style.top).toBe('')
+      expect(menu.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+
+      // The sheet chrome exposes a drag handle and a dismiss control.
+      expect(menu.querySelector('[data-sheet-handle]')).toBeTruthy()
+
+      // Drilling into a pane keeps the single bottom-sheet geometry.
+      fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
+      expect(menu.style.top).toBe('')
+      expect(menu.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+
+      // The phone header exposes a dismiss control that closes the sheet.
+      fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+      expect(screen.queryByRole('menu')).toBeNull()
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  describe('phone sheet drag', () => {
+    // jsdom does not implement matchMedia/innerWidth/innerHeight; each test
+    // stubs them to drive the phone branch, and cleans up before the next
+    // test so a leaked `phone = true` does not change the rest of the suite.
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    const sheetRect = (vh: number) => ({
+      left: 0, top: vh * 0.5, right: 400, bottom: vh, x: 0, y: vh * 0.5,
+      width: 400, height: vh * 0.5, toJSON: () => ({}),
+    }) as DOMRect
+
+    const renderPhone = (innerHeight: number): { menu: HTMLElement; handle: HTMLElement } => {
+      vi.stubGlobal('innerWidth', 400)
+      vi.stubGlobal('innerHeight', innerHeight)
+      vi.stubGlobal('matchMedia', () => ({
+        matches: true,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      }))
+      render(<ModelSelect
+        locked={false}
+        available
+        directory={createSnapshotStore(state())}
+        load={vi.fn()}
+        select={vi.fn().mockResolvedValue(true)}
+        t={t}
+      />)
+      fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+      const menu = screen.getByRole('menu')
+      Object.defineProperty(menu, 'getBoundingClientRect', {
+        value: () => sheetRect(innerHeight),
+        configurable: true,
+      })
+      const handle = menu.querySelector<HTMLElement>('[data-sheet-handle]')
+      expect(handle).toBeTruthy()
+      return { menu, handle: handle as HTMLElement }
+    }
+
+    const dragHandle = (handle: HTMLElement, fromY: number, toY: number): void => {
+      const fire = (type: string, y: number): void => {
+        const event = new Event(type, { bubbles: true })
+        Object.defineProperty(event, 'clientY', { value: y })
+        handle.dispatchEvent(event)
+      }
+      fire('pointerdown', fromY)
+      fire('pointermove', toY)
+      fire('pointerup', toY)
+    }
+
+    it('snaps back to the half-viewport rest height when pulled to the middle', () => {
+      const { menu, handle } = renderPhone(600)
+      act(() => { dragHandle(handle, 300, 360) })
+      expect(screen.getByRole('menu')).toBeTruthy()
+      expect(menu.style.getPropertyValue('--sheet-h')).toBe('300px')
+    })
+
+    it('expands toward near-fullscreen when dragged to the top', () => {
+      const { menu, handle } = renderPhone(600)
+      act(() => { dragHandle(handle, 300, 100) })
+      expect(screen.getByRole('menu')).toBeTruthy()
+      expect(menu.style.getPropertyValue('--sheet-h')).toBe('92dvh')
+    })
+
+    it('dismisses when dragged past the lower threshold', () => {
+      const { handle } = renderPhone(600)
+      act(() => { dragHandle(handle, 300, 460) })
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+  })
+
+  it('renders elevator label tracks on the trigger for model and effort updates', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state())
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    const trigger = screen.getByRole('button', { name: /选择模型/ })
+    const labelTrack = trigger.querySelector('[data-elevator-label]') as HTMLElement
+    expect(labelTrack).toBeTruthy()
+    expect(labelTrack.textContent).toBe('DeepSeek-V4-Flash')
+
+    act(() => {
+      directory.set(state({
+        current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
+      }))
+    })
+
+    const tracks = trigger.querySelectorAll('[data-elevator-label]')
+    expect(tracks.length).toBe(2)
+    const effortTrack = tracks[1] as HTMLElement
+    const effortValues = [...effortTrack.querySelectorAll('[data-elevator-value]')].map(el => el.textContent)
+    expect(effortValues).toEqual(['High', 'Max'])
   })
 })

@@ -6,17 +6,19 @@ import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile, rowHalfOf,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
 import {
   DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
 } from '../src/client/DeepSeekModelsEditor.tsx'
+import { catalogCandidates } from '../src/client/ModelListEditor.tsx'
 import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import type { ProviderRow } from '../src/client/store.ts'
+import { MODELS_SETTINGS_NAMESPACE } from '../src/provider-order.ts'
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
@@ -85,7 +87,13 @@ const DEFAULT_DEEPSEEK_MODELS = [
   { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
 ]
 
-function wireNamespaces(): SettingsNamespaceView[] {
+function wireNamespaces(backupApiKeys: readonly string[] = []): SettingsNamespaceView[] {
+  const openai = {
+    apiKeyEnv: 'OPENAI_API_KEY',
+    baseURL: 'https://proxy',
+    headers: { 'X-Team': 'a' },
+    ...backupApiKeys.length > 0 ? { backupApiKeys: [...backupApiKeys] } : {},
+  }
   return [
     {
       ns: 'llm-deepseek',
@@ -116,8 +124,8 @@ function wireNamespaces(): SettingsNamespaceView[] {
     {
       ns: 'llm-pi-ai',
       schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as unknown,
-      value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
-      user: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
+      value: { providers: { openai, zombie: {} } },
+      user: { providers: { openai, zombie: {} } },
       applies: 'live',
       secrets: [],
       revision: 0,
@@ -142,10 +150,14 @@ function scriptedFace(overrides: {
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
   unset?: ReturnType<typeof vi.fn>
+  /** Derived backup refs added to the shared openai profile. */
+  backupApiKeys?: readonly string[]
+  /** Per-ref credential state overrides for the describe answer. */
+  credentialStates?: Record<string, { configured?: boolean; writable?: boolean }>
 } = {}) {
-  const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
-  const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
-  const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
+  const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(wireNamespaces(overrides.backupApiKeys)[2])))
+  const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(wireNamespaces(overrides.backupApiKeys)[2])))
+  const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(wireNamespaces(overrides.backupApiKeys)[2])))
   const set = overrides.set ?? vi.fn(() => Promise.resolve(ok({})))
   const unset = overrides.unset ?? vi.fn(() => Promise.resolve(ok({})))
   const face = {
@@ -163,14 +175,14 @@ function scriptedFace(overrides: {
       models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: wireNamespaces() }))),
+      describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: wireNamespaces(overrides.backupApiKeys) }))),
       update,
       replace,
       mutate,
     },
     credentials: {
       describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
-        credentials: Object.fromEntries(payload.refs.map(ref => [ref, {
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, overrides.credentialStates?.[ref] ?? {
           configured: ref === 'OPENAI_API_KEY',
           ...ref === 'OPENAI_API_KEY' ? { source: 'file' } : {},
           writable: true,
@@ -314,6 +326,7 @@ describe('ModelsSection', () => {
       configured: true,
       removable: false,
       apiKeyEnv: 'X',
+      backupApiKeys: [],
       credential,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
@@ -513,6 +526,22 @@ describe('ModelsSection', () => {
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
   })
+
+  it('trims a prefixed id into catalog-match candidates, most specific first', () => {
+    // An id with no prefix is still its own first candidate; trailing tokens
+    // are kept so the exact id always wins a catalog lookup.
+    expect(catalogCandidates('ox-alpha')).toEqual(['ox-alpha', 'alpha'])
+    // A leading `-` token is dropped one at a time; the trimmed forms stay
+    // ordered most specific first.
+    expect(catalogCandidates('stealth-ox-alpha')).toEqual(['stealth-ox-alpha', 'ox-alpha', 'alpha'])
+    // A `/`-separated path keeps its last segment before any dash trimming.
+    expect(catalogCandidates('providers/v1/stealth-ox-alpha'))
+      .toEqual(['providers/v1/stealth-ox-alpha', 'stealth-ox-alpha', 'ox-alpha', 'alpha'])
+    // Whitespace is a paste artifact the catalog would never match.
+    expect(catalogCandidates('')).toEqual([])
+    expect(catalogCandidates('   ')).toEqual([])
+  })
+
 
   it('reads context windows written as counts, thousands, or millions', () => {
     expect(parseCapacity('')).toBeUndefined()
@@ -1300,7 +1329,7 @@ describe('ModelsSection', () => {
     await removeProviderProfile(
       face as unknown as Parameters<typeof removeProviderProfile>[0],
       controller,
-      { settingsNs: 'llm-plain', settingsPath: ['ghost-profile'] },
+      { settingsNs: 'llm-plain', settingsPath: ['ghost-profile'], credentialRefs: [] },
     )
     expect(mutate.mock.calls[0]?.[0]).toEqual({
       ns: 'llm-plain',
@@ -1317,7 +1346,7 @@ describe('ModelsSection', () => {
     const failure = await removeProviderProfile(
       face as unknown as Parameters<typeof removeProviderProfile>[0],
       controller,
-      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], credentialRefs: [] },
     )
     expect(failure).toBe('read-only')
     expect(controller.store.getSnapshot().rows).toBe(before)
@@ -1360,6 +1389,25 @@ describe('ModelsSection', () => {
     })
   })
 
+  it('deletes page-managed derived backup refs together with the primary', async () => {
+    // A provider whose profile names derived backup refs should have those
+    // refs included in the delete flow so the stored credentials are cleaned up.
+    const { mutate, unset } = await mountSection({
+      backupApiKeys: ['OPENAI_API_KEY_2'],
+      credentialStates: { OPENAI_API_KEY_2: { configured: true, writable: true } },
+    })
+    // The openai row's targetOf includes both the derived primary and the
+    // derived backup (OPENAI_API_KEY_2 matches the derived pattern).
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.removeProvider) }))
+    const dialog = screen.getByRole('dialog', { name: openaiCopy(en.deleteTitle) })
+    expect(dialog.textContent).toContain(openaiCopy(en.deleteDescriptionWithCredential))
+    const confirm = within(dialog).getByRole('button', { name: openaiCopy(en.deleteConfirm) })
+    fireEvent.click(confirm)
+    await waitFor(() => { expect(unset).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY' }) })
+    await waitFor(() => { expect(unset).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY_2' }) })
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+  })
+
   it('does not remove provider settings when its managed credential removal is refused', async () => {
     const { face, controller, mutate } = await mountSection({
       unset: vi.fn(() => Promise.resolve(fail('credential is read-only', 'credential-rejected'))),
@@ -1370,7 +1418,7 @@ describe('ModelsSection', () => {
       {
         settingsNs: 'llm-pi-ai',
         settingsPath: ['providers', 'openai'],
-        credentialRef: 'OPENAI_API_KEY',
+        credentialRefs: ['OPENAI_API_KEY'],
       },
     )
     expect(failure).toBe('credential is read-only')
@@ -1384,9 +1432,212 @@ describe('ModelsSection', () => {
     const failure = await removeProviderProfile(
       face as unknown as Parameters<typeof removeProviderProfile>[0],
       controller,
-      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], credentialRefs: [] },
     )
     expect(failure).toBe('connection lost')
+  })
+})
+
+describe('ModelsSection provider reorder', () => {
+  const transfer = (): DataTransfer => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' }) as never
+
+  /** The three configured row cards of the shared fixture, in directory order. */
+  const BASE_PROVIDERS = [
+    { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+    { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
+    { provider: 'zombie', displayName: 'zombie', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zombie'], active: false },
+  ]
+
+  /**
+   * Mount the section against a providers face that echoes the stored
+   * preference the way the host api-proxy does, so a reorder round-trips into
+   * the visible row order.
+   */
+  async function mountReorderable(stored: { current: string[] | undefined }) {
+    const update = vi.fn((request: { ns: string; patch: { providerOrder: string[] } }) => {
+      stored.current = request.patch.providerOrder
+      return Promise.resolve(ok(wireNamespaces()[2]))
+    })
+    const scripted = scriptedFace({ update })
+    scripted.face.llm.providers = vi.fn(() => Promise.resolve(ok({
+      providers: stored.current === undefined
+        ? BASE_PROVIDERS
+        : [...BASE_PROVIDERS].sort((a, b) => {
+          const order = stored.current ?? []
+          const ia = order.indexOf(a.provider)
+          const ib = order.indexOf(b.provider)
+          if (ia === -1 && ib === -1) return 0
+          if (ia === -1) return 1
+          if (ib === -1) return -1
+          return ia - ib
+        }),
+    })))
+    const controller = new ModelsSettingsStore(
+      scripted.face as unknown as WireFace,
+      settingsSchema,
+      new SettingsDescribeMirror(scripted.face as never),
+    )
+    await controller.load()
+    const view = render(<ModelsSection
+      controller={controller}
+      useSnapshot={bindSnapshotSelector(controller.store)}
+      api={scripted.face as never}
+      schema={settingsSchema}
+      t={t}
+    />)
+    return { view, update }
+  }
+
+  const handle = (name: string): HTMLElement => screen.getByRole('button', { name })
+
+  it('persists a keyboard reorder and reloads the rows in the stored order', async () => {
+    const stored = { current: undefined as string[] | undefined }
+    const { update } = await mountReorderable(stored)
+    // Directory order: DeepSeek first.
+    expect(screen.getAllByRole('listitem').some(li => li.textContent?.includes('DeepSeek'))).toBe(true)
+
+    fireEvent.keyDown(handle(deepSeekCopy(en.reorderProvider)), { key: 'ArrowDown' })
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith({
+        ns: MODELS_SETTINGS_NAMESPACE,
+        patch: { providerOrder: ['openai', 'deepseek-official', 'zombie'] },
+      })
+    })
+    // The write round-tripped through the reload into the visible row order.
+    await waitFor(() => {
+      const names = screen.getAllByRole('listitem').map(li => li.textContent)
+      expect(names[0]).toContain('openai')
+      expect(names[1]).toContain('DeepSeek')
+    })
+
+    // ArrowUp moves the same row back, and the wire carries the whole list.
+    // After the reload DeepSeek sits at index 1, so its handle is the source.
+    fireEvent.keyDown(handle(deepSeekCopy(en.reorderProvider)), { key: 'ArrowUp' })
+    await waitFor(() => {
+      expect(update).toHaveBeenLastCalledWith({
+        ns: MODELS_SETTINGS_NAMESPACE,
+        patch: { providerOrder: ['deepseek-official', 'openai', 'zombie'] },
+      })
+    })
+  })
+
+  it('marks the insert line below the target for the bottom half of the row', async () => {
+    const stored = { current: undefined as string[] | undefined }
+    const { update } = await mountReorderable(stored)
+    const rows = screen.getAllByRole('listitem')
+    const target = rows[2] as HTMLElement
+    // jsdom drag events cannot carry a clientY, so the half falls through to
+    // the measured-rect rule; the bottom-half path is pinned separately on
+    // rowHalfOf below.
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: -100, height: 100, bottom: 0, left: 0, right: 200, width: 200, x: 0, y: -100,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.dragStart(handle(deepSeekCopy(en.reorderProvider)), { dataTransfer: transfer() })
+    fireEvent.dragOver(target, { dataTransfer: transfer() })
+    expect(target.className).toContain('rowCardDropAfter')
+    expect(target.className).not.toContain('rowCardDropBefore')
+    fireEvent.drop(target)
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith({
+        ns: MODELS_SETTINGS_NAMESPACE,
+        patch: { providerOrder: ['openai', 'zombie', 'deepseek-official'] },
+      })
+    })
+    // The gesture ends with the drop: no lingering indicator.
+    await waitFor(() => {
+      expect(target.className).not.toContain('rowCardDropAfter')
+    })
+  })
+
+  it('resolves the insert half from the pointer position against the row rect', () => {
+    const rect = (top: number, height: number) => ({
+      top, height, bottom: top + height, left: 0, right: 100, width: 100, x: 0, y: top,
+      toJSON: () => ({}),
+    }) as DOMRect
+    const row = (clientY: number, top: number, height: number) => ({
+      clientY,
+      currentTarget: { getBoundingClientRect: () => rect(top, height) },
+    })
+    expect(rowHalfOf(row(0, 100, 100) as never)).toBe('before')
+    expect(rowHalfOf(row(200, 100, 100) as never)).toBe('after')
+    expect(rowHalfOf(row(149, 100, 100) as never)).toBe('before')
+    // The midpoint belongs to the bottom half.
+    expect(rowHalfOf(row(150, 100, 100) as never)).toBe('after')
+  })
+
+  it('writes nothing when the drop anchor is the dragged row itself', async () => {
+    const stored = { current: undefined as string[] | undefined }
+    const { update } = await mountReorderable(stored)
+    const rows = screen.getAllByRole('listitem')
+
+    // Dropping openai "after" DeepSeek anchors on openai itself (its own
+    // successor), which resolves to no insert position at all.
+    fireEvent.dragStart(handle(openaiCopy(en.reorderProvider)), { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[0]!, { dataTransfer: transfer() })
+    fireEvent.drop(rows[0]!)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('ignores a drop on the source row and a drag cancelled before the drop', async () => {
+    const stored = { current: undefined as string[] | undefined }
+    const { update } = await mountReorderable(stored)
+    const rows = screen.getAllByRole('listitem')
+
+    fireEvent.dragStart(handle(deepSeekCopy(en.reorderProvider)), { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[0]!, { dataTransfer: transfer() })
+    fireEvent.drop(rows[0]!)
+    expect(update).not.toHaveBeenCalled()
+
+    fireEvent.dragStart(handle(deepSeekCopy(en.reorderProvider)), { dataTransfer: transfer() })
+    fireEvent.dragOver(rows[1]!, { dataTransfer: transfer() })
+    fireEvent.dragEnd(handle(deepSeekCopy(en.reorderProvider)))
+    fireEvent.drop(rows[1]!)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failed reorder write and keeps the rows in place', async () => {
+    const update = vi.fn(() => Promise.reject(new Error('connection lost')))
+    const scripted = scriptedFace({ update })
+    const controller = new ModelsSettingsStore(
+      scripted.face as unknown as WireFace,
+      settingsSchema,
+      new SettingsDescribeMirror(scripted.face as never),
+    )
+    await controller.load()
+    render(<ModelsSection
+      controller={controller}
+      useSnapshot={bindSnapshotSelector(controller.store)}
+      api={scripted.face as never}
+      schema={settingsSchema}
+      t={t}
+    />)
+    fireEvent.keyDown(handle(deepSeekCopy(en.reorderProvider)), { key: 'ArrowDown' })
+    await screen.findByRole('alert')
+    expect(screen.getByRole('alert').textContent).toBe('connection lost')
+  })
+
+  it('disables the handles while the settings document is read-only', async () => {
+    const { face } = await mountSection()
+    face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: false,
+      hasDocument: false,
+      namespaces: wireNamespaces(),
+    })))
+    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face as never))
+    await controller.load()
+    cleanup()
+    render(<ModelsSection
+      controller={controller}
+      useSnapshot={bindSnapshotSelector(controller.store)}
+      api={face as never}
+      schema={settingsSchema}
+      t={t}
+    />)
+    const handles = screen.getAllByRole('button', { name: new RegExp(en.reorderProvider.replace('{provider}', '.*')) })
+    expect(handles.length).toBeGreaterThan(0)
+    expect(handles.every(button => (button as HTMLButtonElement).disabled)).toBe(true)
   })
 })
 

@@ -28,6 +28,7 @@ try {
     status: 'idle',
     send: () => {},
     followup: () => {},
+    prepend: () => {},
     steer: () => {},
     inject: () => { throw new Error('dsh-badge snapshot must receive the catalog at the step boundary') },
     cancel: () => {},

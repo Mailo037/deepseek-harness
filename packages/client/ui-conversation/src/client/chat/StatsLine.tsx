@@ -236,6 +236,16 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
     }
     if (speeds.length > 0) groups.push(speeds.join(' · '))
   }
+  // File-edit totals ride the durable sessionStats projection (whole-log), so
+  // they survive paging and compaction and never depend on loaded history;
+  // they are skipped only when no projection is served.
+  if (projected !== undefined && projected.filesEdited > 0) {
+    groups.push(t('stats.edits', {
+      files: projected.filesEdited,
+      linesAdded: projected.linesAdded,
+      linesRemoved: projected.linesRemoved,
+    }))
+  }
   // Context occupancy deliberately lives on the composer's ContextMeter ring,
   // not here — one home per fact.
   // Billing rides the durable projection, so these survive paging and
