@@ -131,10 +131,11 @@
   min-height: 34px;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 0 13px;
-  border: 1px solid var(--dsw-alias-border-default, rgb(127 127 127 / 30%));
+  border: 1px solid var(--dsw-alias-border-l2, rgb(127 127 127 / 30%));
   border-radius: 8px;
-  background: var(--dsw-alias-bg-elevated, #fff);
+  background: var(--dsw-alias-button-elevated-fill, rgb(67 69 74));
   color: var(--dsw-alias-label-primary, #0f1115);
   font-size: 12px;
   font-weight: 500;
@@ -142,12 +143,17 @@
 }
 
 .issueButton:hover {
-  background: var(--dsw-alias-bg-hover, rgb(127 127 127 / 10%));
+  background: var(--dsw-alias-button-floating-hover, rgb(53 54 56));
 }
 
 .issueButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary, #2563eb);
   outline-offset: 2px;
+}
+
+.issueButtonIcon {
+  flex: 0 0 auto;
+  color: currentColor;
 }
 
 @keyframes log-enter {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { IconGithubMark16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: imports the layout-owned `shell.overlay` slot declaration.
@@ -247,6 +248,7 @@ export function ApplyingUpdateOverlay({ connection, snapshot, t }: ApplyingUpdat
         {issueDraft !== null && (
           <div className={css.issueActions}>
             <a className={css.issueButton} href={issueDraft} target="_blank" rel="noreferrer">
+              <IconGithubMark16 className={css.issueButtonIcon} />
               {t('update.issue')}
             </a>
             <span>{t('update.issue.review')}</span>

@@ -14,7 +14,7 @@ import { VoiceInput } from '../src/client/VoiceInput.tsx'
 const sid = (key: string): SessionId => key as SessionId
 
 /** The seat's key domain is the `voice` dictionary; the stub mirrors the real lookup chain. */
-const t: VoiceInputProps['t'] = (key) => (zh as Record<string, string>)[key] ?? key
+const t: VoiceInputProps['t'] = key => (zh as Record<string, string>)[key] ?? key
 
 function inputState(draft = ''): InputState {
   return { draft, attachmentIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [] }
@@ -42,7 +42,7 @@ class FakeRecognizer implements SpeechRecognizer {
 
   /** Fire one result event carrying the cumulative segment list. */
   emit(segments: readonly Segment[]): void {
-    const results = segments.map((segment) => ({
+    const results = segments.map(segment => ({
       isFinal: segment.isFinal,
       0: { transcript: segment.transcript, confidence: 1 },
       length: 1,
@@ -89,7 +89,7 @@ function harness(initial = inputState()) {
     pruneAttachments: vi.fn(),
     submit: vi.fn(),
   }
-  const useInput: VoiceInputProps['useInput'] = (selector) =>
+  const useInput: VoiceInputProps['useInput'] = selector =>
     useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
   const props = (overrides: Partial<VoiceInputProps> = {}): VoiceInputProps => ({
     sessionId: sid('s1'),

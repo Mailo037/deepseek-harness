@@ -846,56 +846,56 @@ function SessionTree({
                   ? group.sessions
                   : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT)
                 ).map((node) => {
-              // Session drag never leaves its group. Ungrouped writes only the
-              // browser-local account; real Workspaces may also write Host order.
-                const sameGroupDrag = drag !== null && drag.accountKey === group.key
-                const dragProps = {
-                  start: () => {
-                    sessionDropCommitted.current = false
-                    setDrag({ accountKey: group.key, sessionId: node.id, over: null })
-                  },
-                  active: sameGroupDrag,
-                  marker: sameGroupDrag && drag.over?.id === node.id ? drag.over.half : null,
-                  hover: (half: 'before' | 'after') => {
-                  /* v8 ignore next -- narrowing guard: Rows gates hover on `active`, which is false while the drag state is null. */
-                    setDrag(d => (d === null ? d : { ...d, over: { id: node.id, half } }))
-                  },
-                  drop: (half: 'before' | 'after') => {
-                  /* v8 ignore next -- narrowing guard: Rows gates drop on `active`, which is false while the drag state is null. */
-                    if (drag === null) return
-                    commitSessionDrag(drag, { id: node.id, half })
-                  },
-                  end: () => {
-                    if (drag?.over !== null && drag?.over !== undefined) commitSessionDrag(drag, drag.over)
-                    else setDrag(null)
-                    sessionDropCommitted.current = false
-                  },
-                }
-                // Touch-drag target sharing the same start/hover/end closures.
-                touchDrag.registry.set(`s:${node.id as string}`, {
-                  id: `s:${node.id as string}`,
-                  start: dragProps.start,
-                  hover: dragProps.hover,
-                  end: dragProps.end,
-                } satisfies TouchDragRow)
-                return (
-                  <SessionNodeItem
-                    key={node.id}
-                    node={node}
-                    currentId={current}
-                    now={now}
-                    onOpen={open}
-                    onRename={onSessionRename}
-                    onFork={forkSession}
-                    onMove={onMoveSessionRequest}
-                    onArchive={onSessionArchive}
-                    onInlineRename={renameSession}
-                    pinned={false}
-                    onSetPinned={onSetSessionPinned}
-                    drag={dragProps}
-                    t={t}
-                  />
-                )
+                  // Session drag never leaves its group. Ungrouped writes only the
+                  // browser-local account; real Workspaces may also write Host order.
+                  const sameGroupDrag = drag !== null && drag.accountKey === group.key
+                  const dragProps = {
+                    start: () => {
+                      sessionDropCommitted.current = false
+                      setDrag({ accountKey: group.key, sessionId: node.id, over: null })
+                    },
+                    active: sameGroupDrag,
+                    marker: sameGroupDrag && drag.over?.id === node.id ? drag.over.half : null,
+                    hover: (half: 'before' | 'after') => {
+                      /* v8 ignore next -- narrowing guard: Rows gates hover on `active`, which is false while the drag state is null. */
+                      setDrag(d => (d === null ? d : { ...d, over: { id: node.id, half } }))
+                    },
+                    drop: (half: 'before' | 'after') => {
+                      /* v8 ignore next -- narrowing guard: Rows gates drop on `active`, which is false while the drag state is null. */
+                      if (drag === null) return
+                      commitSessionDrag(drag, { id: node.id, half })
+                    },
+                    end: () => {
+                      if (drag?.over !== null && drag?.over !== undefined) commitSessionDrag(drag, drag.over)
+                      else setDrag(null)
+                      sessionDropCommitted.current = false
+                    },
+                  }
+                  // Touch-drag target sharing the same start/hover/end closures.
+                  touchDrag.registry.set(`s:${node.id as string}`, {
+                    id: `s:${node.id as string}`,
+                    start: dragProps.start,
+                    hover: dragProps.hover,
+                    end: dragProps.end,
+                  } satisfies TouchDragRow)
+                  return (
+                    <SessionNodeItem
+                      key={node.id}
+                      node={node}
+                      currentId={current}
+                      now={now}
+                      onOpen={open}
+                      onRename={onSessionRename}
+                      onFork={forkSession}
+                      onMove={onMoveSessionRequest}
+                      onArchive={onSessionArchive}
+                      onInlineRename={renameSession}
+                      pinned={false}
+                      onSetPinned={onSetSessionPinned}
+                      drag={dragProps}
+                      t={t}
+                    />
+                  )
                 })}
                 {group.sessions.length > COLLAPSED_SESSION_LIMIT && (
                   <button
@@ -1456,7 +1456,7 @@ export function WorkspaceBrowser({
   }
   const dismissArchiveNotification = (id: number) => {
     setArchiveNotifications(current => current.filter(notice => notice.id !== id))
-    setPendingArchiveNotificationIds(current => {
+    setPendingArchiveNotificationIds((current) => {
       if (!current.has(id)) return current
       const next = new Set(current)
       next.delete(id)
@@ -1464,7 +1464,7 @@ export function WorkspaceBrowser({
     })
   }
   const setArchiveNotificationPending = (id: number, pending: boolean) => {
-    setPendingArchiveNotificationIds(current => {
+    setPendingArchiveNotificationIds((current) => {
       if (current.has(id) === pending) return current
       const next = new Set(current)
       if (pending) next.add(id)
@@ -1910,7 +1910,7 @@ export function WorkspaceBrowser({
         pendingIds={pendingArchiveNotificationIds}
         onDismiss={dismissArchiveNotification}
         onUndo={undoArchive}
-        onRetryArchive={notification => { retryArchive(notification.sessionId, notification.id) }}
+        onRetryArchive={(notification) => { retryArchive(notification.sessionId, notification.id) }}
         onRetryRestore={undoArchive}
         t={t}
       />}

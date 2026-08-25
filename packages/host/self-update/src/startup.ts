@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { appendFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
-import { isAbsolute, resolve } from 'node:path'
+import { extname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const UPDATE_STATUS_PATH = '/__dsh_update/status'
@@ -79,6 +79,25 @@ function isGitHubIssueUrl(value: string): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolveDelay => setTimeout(resolveDelay, ms))
+}
+
+interface PnpmLaunch {
+  executable: string
+  prefix: string[]
+}
+
+/**
+ * Resolve how to run the pnpm CLI captured by `npm_execpath`. A standalone pnpm
+ * install can be a native executable (`pnpm.exe`, `.cmd`, `.bat`) that Node
+ * cannot load as a module, so such a CLI must be spawned directly rather than
+ * via `node <cli>`. A `.cjs`/`.js` pnpm shim is a Node script and keeps running
+ * under `node <cli>`.
+ */
+function pnpmLaunch(plan: UpdatePlan): PnpmLaunch {
+  const ext = extname(plan.pnpmCli).toLowerCase()
+  return ext === '.exe' || ext === '.cmd' || ext === '.bat'
+    ? { executable: plan.pnpmCli, prefix: [] }
+    : { executable: plan.node, prefix: [plan.pnpmCli] }
 }
 
 function parentAlive(pid: number): boolean {
@@ -214,13 +233,15 @@ export async function runUpdate(encoded: string | undefined): Promise<void> {
     progress = { ...progress, phase: 'building', status: 'Building the updated app…' }
     appendLog('system', '$ pnpm run build')
     await writeLog('pnpm run build')
-    await command(plan.node, [plan.pnpmCli, 'run', 'build'], plan.root, appendLog)
+    const build = pnpmLaunch(plan)
+    await command(build.executable, [...build.prefix, 'run', 'build'], plan.root, appendLog)
     progress = { ...progress, phase: 'starting', status: 'Starting the updated app…' }
     appendLog('system', '$ pnpm dsh web --no-open')
     await writeLog('starting updated web host')
     await delay(250)
     await close(server)
-    const child = spawn(plan.node, plan.restartArgs, {
+    const relaunch = pnpmLaunch(plan)
+    const child = spawn(relaunch.executable, [...relaunch.prefix, ...plan.restartArgs.slice(1)], {
       cwd: plan.root,
       env: process.env,
       detached: true,
