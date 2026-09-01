@@ -38,8 +38,8 @@ jobs:
       - name: Generate native project
         working-directory: apps/android
         run: |
+          pnpm exec vite build
           pnpm cap add android
-          pnpm cap sync android
 
       - name: Restore checked-in native sources
         working-directory: apps/android
@@ -48,8 +48,6 @@ jobs:
       - name: Build debug APK
         working-directory: apps/android
         run: |
-          pnpm exec vite build
-          pnpm cap:sync
           cd android && ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
