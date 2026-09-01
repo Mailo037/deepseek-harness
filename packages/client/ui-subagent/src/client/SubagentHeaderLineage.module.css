@@ -335,3 +335,15 @@
 .refresh:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
+
+/* Phone bottom-sheet body: a small inset so the tree never hugs the sheet
+   edges; the sheet supplies the surface, so the tree drops the popover's own
+   fixed width/border/background/absolute anchoring. */
+.sheetBody {
+  padding: 0 12px 12px;
+}
+
+.sheetTree {
+  display: flex;
+  flex-direction: column;
+}

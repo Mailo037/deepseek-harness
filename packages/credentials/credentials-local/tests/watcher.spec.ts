@@ -80,7 +80,7 @@ async function tempDir(): Promise<string> {
 
 async function boot(config: ConstructorParameters<typeof LocalCredentialProvider>[1]): Promise<Context> {
   const ctx = new Context()
-  const fiber = ctx.plugin(LocalCredentialProvider, config)
+  const fiber = ctx.plugin(LocalCredentialProvider, { protection: 'plain', ...config })
   cleanups.push(async () => {
     await fiber.dispose()
   })
@@ -174,7 +174,7 @@ describe('watcher pipeline', () => {
     const path = join(dir, '.credentials.yaml')
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_PIPE: initial\n')
     const ctx = new Context()
-    const fiber = ctx.plugin(LocalCredentialProvider, { path, debounceMs: 5 })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path, debounceMs: 5, protection: 'plain' })
     await fiber
     let disposed = false
     let postDisposeCommits = 0

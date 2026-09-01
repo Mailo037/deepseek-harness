@@ -29,7 +29,7 @@ const VARIANT_ICONS: Record<ToolRowVariant, ReactNode> = {
 }
 
 /** Card props: the owner payload plus the render site's locale seat (plain prop). */
-export interface GenericToolCardProps extends ToolCallOwnerProps {
+export interface GenericToolCardProps extends Omit<ToolCallOwnerProps, 'renderMessageImages'> {
   t: ToolTreeProps['t']
 }
 

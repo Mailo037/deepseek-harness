@@ -7,6 +7,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider, resolveSpec } from '../src/index.ts'
+import { resolveCredentialProtection } from '../src/protection.ts'
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
 function writeCredentials(file: string, text: string): Promise<void> {
@@ -31,7 +32,7 @@ async function tempDir(): Promise<string> {
 
 async function boot(config: ConstructorParameters<typeof LocalCredentialProvider>[1]): Promise<Context> {
   const ctx = new Context()
-  const fiber = ctx.plugin(LocalCredentialProvider, config)
+  const fiber = ctx.plugin(LocalCredentialProvider, { protection: 'plain', ...config })
   cleanups.push(async () => {
     await fiber.dispose()
   })
@@ -50,12 +51,22 @@ function updates(ctx: Context): CredentialRef[] {
 describe('resolveSpec', () => {
   it('defaults to .credentials.yaml under the harness home with watching on', () => {
     const spec = resolveSpec({ dshHome: '/custom/home' })
-    expect(spec).toEqual({ filename: resolve('/custom/home/.credentials.yaml'), watch: true, debounceMs: 100 })
+    expect(spec).toEqual({
+      filename: resolve('/custom/home/.credentials.yaml'),
+      watch: true,
+      debounceMs: 100,
+      protection: resolveCredentialProtection(undefined),
+    })
   })
 
   it('lets an explicit path win over the home', () => {
     const spec = resolveSpec({ path: '/etc/dsh/creds.yaml', dshHome: '/ignored', watch: false, debounceMs: 5 })
-    expect(spec).toEqual({ filename: resolve('/etc/dsh/creds.yaml'), watch: false, debounceMs: 5 })
+    expect(spec).toEqual({
+      filename: resolve('/etc/dsh/creds.yaml'),
+      watch: false,
+      debounceMs: 5,
+      protection: resolveCredentialProtection(undefined),
+    })
   })
 })
 
@@ -110,7 +121,7 @@ describe('layering and reads', () => {
     const path = join(dir, 'occupied')
     await mkdir(path)
     const ctx = new Context()
-    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false })).rejects.toThrow()
+    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false, protection: 'plain' })).rejects.toThrow()
   })
 })
 
@@ -123,7 +134,7 @@ describe('layer ladder', () => {
   ): Promise<Context> {
     const ctx = new Context()
     ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot(layers))
-    const fiber = ctx.plugin(LocalCredentialProvider, { path, watch: false })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path, watch: false, protection: 'plain' })
     cleanups.push(async () => { await fiber.dispose() })
     await fiber
     return ctx
@@ -183,7 +194,7 @@ describe('layer ladder', () => {
     const ctx = new Context()
     // Before the contents are read at all: serving secrets out of a
     // world-readable file would make the 0600 the provider writes meaningless.
-    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false }))
+    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false, protection: 'plain' }))
       .rejects.toThrow(/readable beyond its owner \(mode 644\)/)
   })
 
@@ -195,14 +206,14 @@ describe('layer ladder', () => {
     // reached at all is a misconfiguration: the parent is a file, so the
     // check fails with ENOTDIR rather than concluding "no credentials yet".
     const ctx = new Context()
-    await expect(ctx.plugin(LocalCredentialProvider, { path: join(notADirectory, '.credentials.yaml'), watch: false }))
+    await expect(ctx.plugin(LocalCredentialProvider, { path: join(notADirectory, '.credentials.yaml'), watch: false, protection: 'plain' }))
       .rejects.toThrow(/ENOTDIR/)
   })
 
   it('propagates a permission check rejected before the OS lookup', async () => {
     const dir = await tempDir()
     const ctx = new Context()
-    await expect(ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials\0.yaml'), watch: false }))
+    await expect(ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials\0.yaml'), watch: false, protection: 'plain' }))
       .rejects.toMatchObject({ code: 'ERR_INVALID_ARG_VALUE' })
   })
 
@@ -214,7 +225,7 @@ describe('layer ladder', () => {
     // rather than silently serve nothing.
     await mkdir(path, { mode: 0o700 })
     const ctx = new Context()
-    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false })).rejects.toThrow(/EISDIR/)
+    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false, protection: 'plain' })).rejects.toThrow(/EISDIR/)
   })
 
   it('lets only the inherited environment shadow the store, read-only', async () => {
@@ -286,7 +297,7 @@ describe('document validation', () => {
     const path = join(dir, '.credentials.yaml')
     await writeCredentials(path, text)
     const ctx = new Context()
-    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false })).rejects.toThrow(message)
+    await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false, protection: 'plain' })).rejects.toThrow(message)
   })
 
   it('never puts a credential value in a diagnostic', async () => {
@@ -433,7 +444,7 @@ describe('document writes', () => {
   it('refuses writes after disposal', async () => {
     const dir = await tempDir()
     const ctx = new Context()
-    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false, protection: 'plain' })
     await fiber
     // Capture the handle first: disposal also removes the ctx.credentials service.
     const service = ctx.credentials

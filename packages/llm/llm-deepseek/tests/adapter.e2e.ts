@@ -194,7 +194,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       const ctx = new Context()
       contexts.push(ctx)
       await ctx.plugin(LlmRuntime)
-      await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+      await ctx.plugin(LocalCredentialProvider, {
+        path: join(dir, '.credentials.yaml'),
+        watch: false,
+        protection: 'plain',
+      })
       await ctx.plugin(LlmDeepSeek, {})
 
       const result = await assemble(ctx, {

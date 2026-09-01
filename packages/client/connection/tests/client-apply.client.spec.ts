@@ -11,7 +11,10 @@ import { FixtureApiClient } from '../src/client/fixture.ts'
 import { WebApiClient } from '../src/client/web-api-client.ts'
 
 type Win = { location?: { hostname: string; search: string; origin?: string } }
+type BrowserWindow = EventTarget & { parent: { postMessage: ReturnType<typeof vi.fn> } }
+type BrowserGlobal = { window?: BrowserWindow }
 type WebSocketGlobal = { WebSocket?: typeof WebSocket }
+type RequestAuthGlobal = { __DSH_REQUEST_AUTH__?: { query: Record<string, string> } }
 
 const originalWebSocket = globalThis.WebSocket
 const sockets: FakeWebSocket[] = []
@@ -49,6 +52,8 @@ class FakeWebSocket extends EventTarget {
 
 afterEach(() => {
   delete (globalThis as Win).location
+  delete (globalThis as unknown as BrowserGlobal).window
+  delete (globalThis as RequestAuthGlobal).__DSH_REQUEST_AUTH__
   sockets.length = 0
   if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
   else globalThis.WebSocket = originalWebSocket
@@ -82,6 +87,81 @@ describe('connection client apply', () => {
   it('reports non-loopback page authority through the connection handle', async () => {
     ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
     expect((await mount()).isLoopback).toBe(false)
+  })
+
+  it('publishes a validated Android shell announcement without treating arbitrary messages as context', async () => {
+    ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
+    const postMessage = vi.fn()
+    const browserWindow = Object.assign(new EventTarget(), { parent: { postMessage } })
+    ;(globalThis as unknown as BrowserGlobal).window = browserWindow
+    const handle = await mount()
+    const snapshots: unknown[] = []
+    const stop = handle.shell.subscribe(() => { snapshots.push(handle.shell.getSnapshot()) })
+    try {
+      browserWindow.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'dsh/client-shell-context', version: 2, shell: 'android' },
+      }))
+      browserWindow.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'dsh/client-shell-context', version: 1, shell: 'browser' },
+      }))
+      expect(handle.shell.getSnapshot()).toBeUndefined()
+
+      browserWindow.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'dsh/client-shell-context', version: 1, shell: 'android' },
+      }))
+      expect(handle.shell.getSnapshot()).toEqual({ kind: 'android', protocolVersion: 1 })
+      expect(postMessage).toHaveBeenCalledWith({
+        type: 'dsh/client-connection-state',
+        version: 1,
+        state: 'connected',
+      }, '*')
+
+      browserWindow.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'dsh/client-shell-context', version: 1, shell: 'android' },
+      }))
+      expect(snapshots).toEqual([{ kind: 'android', protocolVersion: 1 }])
+      expect(postMessage).toHaveBeenCalledTimes(1)
+    } finally {
+      stop()
+    }
+  })
+
+  it('announces live connection transitions to an Android parent shell', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
+    const postMessage = vi.fn()
+    const browserWindow = Object.assign(new EventTarget(), { parent: { postMessage } })
+    ;(globalThis as unknown as BrowserGlobal).window = browserWindow
+    const handle = await mount()
+    browserWindow.dispatchEvent(new MessageEvent('message', {
+      data: { type: 'dsh/client-shell-context', version: 1, shell: 'android' },
+    }))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const loop = handle.start({}, { backoffBaseMs: 10, backoffFactor: 1, backoffMaxMs: 10, streamOpenTimeoutMs: 500 })
+    try {
+      const timing = (globalThis as Record<string, unknown>).__fxTiming as
+        | { breakStreams(): void }
+        | undefined
+      if (timing === undefined) throw new Error('fixture timing hooks missing')
+      timing.breakStreams()
+
+      await vi.waitFor(() => {
+        expect(postMessage).toHaveBeenCalledWith({
+          type: 'dsh/client-connection-state',
+          version: 1,
+          state: 'reconnecting',
+        }, '*')
+      })
+      await vi.waitFor(() => {
+        expect(postMessage).toHaveBeenLastCalledWith({
+          type: 'dsh/client-connection-state',
+          version: 1,
+          state: 'connected',
+        }, '*')
+      })
+    } finally {
+      loop.stop()
+      warnSpy.mockRestore()
+    }
   })
 
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {
@@ -200,6 +280,9 @@ describe('connection client apply', () => {
 
   it('WebApiClient keeps unary calls and respond on globalThis.fetch', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '' }
+    ;(globalThis as RequestAuthGlobal).__DSH_REQUEST_AUTH__ = {
+      query: { dsh_token: 'access token/+' },
+    }
     const handle = await mount()
     const original = globalThis.fetch
     const seen: string[] = []
@@ -218,8 +301,8 @@ describe('connection client apply', () => {
     } finally {
       globalThis.fetch = original
     }
-    expect(seen.some(u => u.includes('/api/host.describe'))).toBe(true)
-    expect(seen.some(u => u.includes('/api/respond'))).toBe(true)
+    expect(seen.some(u => u.includes('/api/host.describe?dsh_token=access+token%2F%2B'))).toBe(true)
+    expect(seen.some(u => u.includes('/api/respond?dsh_token=access+token%2F%2B'))).toBe(true)
   })
 
   it('opens one WebSocket per downlink, parses frames, and aborts both without using fetch', async () => {
@@ -227,6 +310,9 @@ describe('connection client apply', () => {
       hostname: 'localhost', search: '', origin: 'http://localhost:3080',
     }
     ;(globalThis as WebSocketGlobal).WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    ;(globalThis as RequestAuthGlobal).__DSH_REQUEST_AUTH__ = {
+      query: { dsh_token: 'android-token' },
+    }
     const fetch = vi.spyOn(globalThis, 'fetch')
     const client = (await mount()).api as WebApiClient
     const envelopes: RpcMessage[][] = []
@@ -240,8 +326,8 @@ describe('connection client apply', () => {
     const hostFrame = host.next()
     await vi.waitFor(() => { expect(sockets).toHaveLength(2) })
     expect(sockets.map(socket => socket.url)).toEqual([
-      'ws://localhost:3080/api/events.mux',
-      'ws://localhost:3080/api/events.host',
+      'ws://localhost:3080/api/events.mux?dsh_token=android-token',
+      'ws://localhost:3080/api/events.host?dsh_token=android-token',
     ])
     await vi.waitFor(() => { expect(opened).toEqual(['mux', 'host']) })
 
@@ -311,6 +397,9 @@ describe('connection client apply', () => {
 
   it('carries RPC calls without requiring secure-context randomUUID', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '' }
+    ;(globalThis as RequestAuthGlobal).__DSH_REQUEST_AUTH__ = {
+      query: { dsh_token: 'android-token' },
+    }
     vi.stubGlobal('crypto', {
       getRandomValues(bytes: Uint8Array) {
         return bytes.fill(0)
@@ -338,7 +427,7 @@ describe('connection client apply', () => {
       vi.unstubAllGlobals()
     }
     expect(seen).toHaveLength(1)
-    expect(seen[0]?.url).toBe('http://dsh.internal/api/goals/create')
+    expect(seen[0]?.url).toBe('http://dsh.internal/api/goals/create?dsh_token=android-token')
     expect(seen[0]?.body).toMatchObject({
       type: 'client-request',
       rpcId: '00000000-0000-4000-8000-000000000000',

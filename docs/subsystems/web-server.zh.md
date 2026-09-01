@@ -111,13 +111,15 @@ pull(): Promise<PullOutcome>
 /**
  * Build the detached Web update handoff. The helper starts before host
  * shutdown, waits for this process to release the listening port, serves
- * bounded status and command logs there, fast-forwards and builds, then starts this exact Web
- * invocation with the resolved port and `--no-open` forced.
+ * bounded status and command logs there, optionally fast-forwards, builds,
+ * then starts this exact Web invocation with the resolved port and
+ * `--no-open` forced.
  * @param address - authoritative address of the active Web server.
+ * @param options - selects rebuild-only (`pull: false`) over update.
  * @returns the no-shell process request for the launcher.
  * @throws {GitError} when the checkout was not launched through pnpm.
  */
-createWebUpdateHandoff(address: UpdateWebAddress): UpdateHandoff
+createWebUpdateHandoff(address: UpdateWebAddress, options: UpdateHandoffOptions = {}): UpdateHandoff
 ```
 
 Source: [`packages/host/self-update/src/index.ts`](../../packages/host/self-update/src/index.ts)
@@ -190,6 +192,28 @@ renderIndex(html: string): string
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
+
+<a id="connection-events"></a>
+
+### `connection/*` events
+
+<a id="connectionauthenticate--waterfall"></a>
+
+#### `connection/authenticate` — waterfall
+
+Waterfall: whether a browser request to the web surface is authorized.
+
+```ts cordis-catalog
+/**
+ * Waterfall: whether a browser request to the web surface is authorized.
+ * @mode waterfall
+ * @param request - HTTP request whose origin and presented token are checked.
+ * @param next - Delegate to the next authentication listener.
+ */
+'connection/authenticate'(this: Context, request: IncomingMessage, next: () => boolean): boolean
+```
+
+Source: [`packages/host/remote/src/index.ts`](../../packages/host/remote/src/index.ts)
 
 <a id="webserver-events"></a>
 

@@ -10,7 +10,7 @@ Sounds are synthesized (oscillator + gain envelopes), so no audio assets ship wi
 
 ## Model Experience
 
-None. The feature reads client-side list summaries and writes one Host user-settings section; nothing here reaches a model request.
+None, as the feature reads client-side list summaries and writes one Host user-settings section without adding anything to a model request.
 
 #### KV Cache effect
 

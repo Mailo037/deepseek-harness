@@ -109,10 +109,15 @@ export function AppFrame({
   t,
 }: AppFrameProps) {
   const connectionState = useSyncExternalStore(
-    connection === undefined ? (() => () => {}) : connection.state.subscribe,
-    connection === undefined ? (() => 'connected') : connection.state.getSnapshot,
+    connection === undefined ? (() => () => {}) : listener => connection.state.subscribe(listener),
+    connection === undefined ? (() => 'connected') : () => connection.state.getSnapshot(),
   )
   const reconnecting = connectionState === 'reconnecting'
+  const shellContext = useSyncExternalStore(
+    connection === undefined ? (() => () => {}) : listener => connection.shell.subscribe(listener),
+    connection === undefined ? (() => undefined) : () => connection.shell.getSnapshot(),
+  )
+  const androidShell = shellContext?.kind === 'android'
   const panels = useStore(s => s)
   const detailsSession = useSessions((s) => {
     const current = s.current
@@ -283,7 +288,7 @@ export function AppFrame({
           the drawer is a phone overlay, not a resizable column. */}
       {!sidebarCollapsed && !drawerMode && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
-      <ConnectionLostOverlay reconnecting={reconnecting} />
+      {!androidShell && <ConnectionLostOverlay reconnecting={reconnecting} />}
     </div>
   )
 }

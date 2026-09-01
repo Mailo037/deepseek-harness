@@ -16,21 +16,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.title {
-  margin: 0;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
-}
-
-.intro {
-  margin: 0;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 .notice {
   margin: 0;
   font-size: 12px;
@@ -111,12 +96,16 @@
    positioned so it neither resembles a row border nor changes layout — the
    same marker the sidebar session rows draw while a drag hovers them. */
 .rowCardDropBefore,
-.rowCardDropAfter {
+.rowCardDropAfter,
+.modelEntryDropBefore,
+.modelEntryDropAfter {
   position: relative;
 }
 
 .rowCardDropBefore::before,
-.rowCardDropAfter::after {
+.rowCardDropAfter::after,
+.modelEntryDropBefore::before,
+.modelEntryDropAfter::after {
   content: '';
   position: absolute;
   z-index: 1;
@@ -142,11 +131,13 @@
   pointer-events: none;
 }
 
-.rowCardDropBefore::before {
+.rowCardDropBefore::before,
+.modelEntryDropBefore::before {
   top: -7px;
 }
 
-.rowCardDropAfter::after {
+.rowCardDropAfter::after,
+.modelEntryDropAfter::after {
   bottom: -7px;
 }
 
@@ -200,6 +191,27 @@
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+/* A provider remains configured when this is off; it only leaves model-picker catalogs. */
+.modelSelectVisibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.modelSelectVisibility input {
+  margin: 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+.modelSelectVisibility:has(input:disabled) {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* `box-sizing` on every control here: the app has no global border-box reset,
@@ -335,6 +347,14 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Two related fields on one responsive row (API protocol with the route-wide
+   reasoning default); each keeps its own label and stacks when narrow. */
+.fieldRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
 }
 
 .fieldLabel {
@@ -540,7 +560,7 @@
 
 .modelRow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px;
 }
@@ -617,6 +637,7 @@
 }
 
 .modalityHint {
+  margin: 0;
   font-size: 11px;
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
@@ -819,4 +840,40 @@
   font-family: var(--ds-font-family-code);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+/* The modality-override dialog mirrors the fetch dialog's list styling: the
+   warning sits above a checkbox list of the choices, and the hint under it
+   says what an empty selection means for this provider's field. */
+.modalityDialog {
+  width: min(480px, 100%);
+}
+
+.modalityWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.modalityChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.modalityChoice {
+  border-radius: 6px;
+}
+
+.modalityChoiceLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
 }

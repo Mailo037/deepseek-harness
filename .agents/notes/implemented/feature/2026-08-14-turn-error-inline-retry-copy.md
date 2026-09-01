@@ -12,7 +12,7 @@ A terminal turn failure rendered as a static status row ("This turn failed" plus
 
 The `turn-error` chat node renders an inline action strip under its status row: a **Retry** button and the shared copy IconActions for the error message.
 
-- Retry sends one queued user turn whose prompt is the localized continue message (`message.turnError.retryMessage`: "An unexpected error occurred, please continue what you were doing." / "发生意外错误，请继续你之前的工作。"). It rides the ordinary send path — `conversation.send` on the session scope — so the sent prompt is a durable, visible user message and every later turn sees it ([model-visible ⟺ logged](../../../docs/architecture.md)).
+- Retry sends one queued user turn whose prompt is the localized continue message (`message.turnError.retryMessage`: "An unexpected error occurred, please continue what you were doing." / "发生意外错误，请继续你之前的工作。"). It rides the ordinary send path — `conversation.send` on the session scope — so the sent prompt is a durable, visible user message and every later turn sees it ([model-visible ⟺ logged](../../../../docs/architecture.md)).
 - Copy reuses `MessageIconActions` with the error's display-safe message as copy text; it inherits the established copied/check-swap chrome.
 - The callback reaches the renderer through the slot system, not a service import: `ChatNodeOwnerProps` gains `sendMessage(text)`, supplied by the chat view entry's inject from `scopedConversation(...).send(...)`. A rejected admission lands in the snapshot's `promptError`; the inject swallows the rejection because nothing on the caller side can recover it.
 - The buttons sit outside the `role="status"` element, so screen readers still announce exactly the failure text.

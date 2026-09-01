@@ -32,22 +32,11 @@ async function bench(opts: BenchOptions = {}) {
   const remoteRun = {
     run: async (sessionId: SessionId, command: string, _signal: AbortSignal) => {
       runCalls.push({ sessionId, command })
-      try {
-        const value = await (opts.run ?? (() => Promise.resolve({
-          commandId: 'sh-fake-1' as ShellCommandExecution['commandId'],
-          result: { kind: 'success' as const },
-        })))({ sessionId, command })
-        return { ok: true as const, value }
-      } catch (error) {
-        return {
-          ok: false as const,
-          error: {
-            code: 'internal',
-            message: error instanceof Error ? error.message : String(error),
-            details: {},
-          },
-        }
-      }
+      const value = await (opts.run ?? (() => Promise.resolve({
+        commandId: 'sh-fake-1' as ShellCommandExecution['commandId'],
+        result: { kind: 'success' as const },
+      })))({ sessionId, command })
+      return { ok: true as const, value }
     },
   }
   ctx.provide('remote', { shellCommand: remoteRun })
@@ -124,24 +113,20 @@ describe('ShellCommandSource', () => {
 
     const outcome = await source.matchEnter!(proj('s1'), '!', new AbortController().signal, { images: 0 })
 
-    expect(outcome).toBeNull()
+    expect(outcome).toBeUndefined()
     expect(runCalls).toEqual([])
     expect(consumes.size).toBe(0)
   })
 
-  it('refuses lines with attached images and emits a notice', async () => {
-    const { source, mint, runCalls, notices } = await bench()
+  it('refuses lines with attached images by rejecting the adjudication', async () => {
+    const { source, mint, runCalls, consumes } = await bench()
     mint('s1')
 
-    const outcome = await source.matchEnter!(proj('s1'), '!echo hi', new AbortController().signal, { images: 1 })
-
-    expect(outcome).toBe('refused')
+    await expect(
+      source.matchEnter!(proj('s1'), '!echo hi', new AbortController().signal, { images: 1 }),
+    ).rejects.toThrow('shellCommand:notice.imagesUnsupported')
     expect(runCalls).toEqual([])
-    expect(notices).toEqual([{
-      scope: sid('s1'),
-      level: 'error',
-      text: 'shellCommand:notice.imagesUnsupported',
-    }])
+    expect(consumes.size).toBe(0)
   })
 
   it('routes transport failures to the session notice stream and handles the gesture', async () => {

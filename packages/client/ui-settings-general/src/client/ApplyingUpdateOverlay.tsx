@@ -152,6 +152,10 @@ export function updateRefreshUrl(href: string, updateId: string): string {
 
 /** Remove the one-shot marker after the refreshed page has loaded. */
 export function clearUpdateRefreshMarker(): void {
+  // `apply` calls this during plugin load, which can run where the browser
+  // `location` global is absent (test/invariant hosts); a marker is only worth
+  // clearing in a real document, so no-op without it.
+  if (typeof location === 'undefined') return
   const url = new URL(location.href)
   if (!url.searchParams.has(UPDATE_REFRESH_PARAM)) return
   url.searchParams.delete(UPDATE_REFRESH_PARAM)

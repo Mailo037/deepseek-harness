@@ -12,8 +12,8 @@
       "@deepseek-ai/dsh-typert-protocol": ["./typert-protocol.d.ts"],
       "@fixture/domain": ["./packages/domain/src/index.ts"],
       "@fixture/domain/*": ["./packages/domain/src/*"],
-      "@fixture/remote": ["./packages/remote/src/index.ts"],
-      "@fixture/remote/*": ["./packages/remote/src/*"]
+      "@fixture/remote": ["./packages/remote-fixture/src/index.ts"],
+      "@fixture/remote/*": ["./packages/remote-fixture/src/*"]
     },
     "skipLibCheck": true
   }

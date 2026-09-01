@@ -21,6 +21,9 @@
       "path": "../fs-local"
     },
     {
+      "path": "../../settings/settings"
+    },
+    {
       "path": "../../sandbox/sandbox"
     },
     {

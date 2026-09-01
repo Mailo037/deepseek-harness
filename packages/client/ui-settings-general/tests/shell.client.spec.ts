@@ -24,6 +24,10 @@ async function bench() {
     hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
   } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
+  // The shell constructs HarnessSyncStore, which only stores these refs at
+  // load (its methods run on user gesture), so minimal stubs satisfy the fiber.
+  ctx.provide('sessions', { binding: () => undefined, open: () => {} } as never)
+  ctx.provide('workspaces', { connectWorkspace: async () => 'ws-1' } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
@@ -51,8 +55,8 @@ const CHILD_SPECS = {
 } as const
 
 describe('ui-settings apply', () => {
-  it('declares only the slot registry (a pure composition face, no locale)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope'])
+  it('declares the services the shell consumes', () => {
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope', 'sessions', 'workspaces'])
   })
 
   it('registers the shell and declares every child slot, before or after the declaration', async () => {

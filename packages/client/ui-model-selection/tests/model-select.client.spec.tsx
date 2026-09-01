@@ -475,37 +475,39 @@ describe('open-menu re-placement', () => {
       />)
 
       fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
-      const menu = screen.getByRole('menu')
-      // Bottom sheet owns its geometry in CSS (fixed, bottom-anchored, driven
-      // by `--sheet-h`): no inline placement is published, and it reveals on
-      // the first frame at the half-viewport rest height rather than waiting
-      // for a measured height.
-      expect(menu.style.top).toBe('')
-      expect(menu.style.left).toBe('')
-      expect(menu.style.width).toBe('')
-      expect(menu.style.right).toBe('')
-      expect(menu.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+      const dialog = screen.getByRole('dialog', { name: '模型与推理等级' })
+      // The shared bottom sheet owns its geometry (fixed, bottom-anchored,
+      // driven by `--sheet-h`): no inline placement is published, and it
+      // reveals at the half-viewport rest height.
+      expect(dialog.style.getPropertyValue('--sheet-h')).toBe('50dvh')
       // The phone path never creates a ResizeObserver: nothing to re-place.
       expect(FakeResizeObserver.instances).toHaveLength(0)
 
       // Resizing does not re-place the sheet.
       vi.stubGlobal('innerHeight', 620)
       act(() => { window.dispatchEvent(new Event('resize')) })
-      expect(menu.style.top).toBe('')
-      expect(menu.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+      expect(dialog.style.getPropertyValue('--sheet-h')).toBe('50dvh')
 
       // The sheet chrome exposes a drag handle and a dismiss control.
-      expect(menu.querySelector('[data-sheet-handle]')).toBeTruthy()
+      expect(dialog.querySelector('[data-sheet-handle]')).toBeTruthy()
 
-      // Drilling into a pane keeps the single bottom-sheet geometry.
+      // Drilling into a pane keeps the single bottom-sheet geometry — the
+      // sheet must NOT close (the outside-pointer/blur listeners are disabled
+      // on phone), and the sub-pane renders inside it.
       fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
-      expect(menu.style.top).toBe('')
-      expect(menu.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+      expect(screen.getByRole('dialog', { name: '模型与推理等级' })).toBeTruthy()
+      expect(dialog.style.getPropertyValue('--sheet-h')).toBe('50dvh')
+      // The effort pane shows its level options inside the still-open sheet.
+      expect(screen.getByRole('menuitemradio', { name: /High/ })).toBeTruthy()
 
-      // The phone header exposes a dismiss control that closes the sheet.
+      // The sheet's dismiss control closes it (through the slide-down).
+      vi.useFakeTimers()
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-      expect(screen.queryByRole('menu')).toBeNull()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      vi.useRealTimers()
     } finally {
+      vi.useRealTimers()
       vi.unstubAllGlobals()
     }
   })
@@ -514,14 +516,14 @@ describe('open-menu re-placement', () => {
     // jsdom does not implement matchMedia/innerWidth/innerHeight; each test
     // stubs them to drive the phone branch, and cleans up before the next
     // test so a leaked `phone = true` does not change the rest of the suite.
-    afterEach(() => { vi.unstubAllGlobals() })
+    afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
     const sheetRect = (vh: number) => ({
       left: 0, top: vh * 0.5, right: 400, bottom: vh, x: 0, y: vh * 0.5,
       width: 400, height: vh * 0.5, toJSON: () => ({}),
     }) as DOMRect
 
-    const renderPhone = (innerHeight: number): { menu: HTMLElement; handle: HTMLElement } => {
+    const renderPhone = (innerHeight: number): { dialog: HTMLElement; handle: HTMLElement } => {
       vi.stubGlobal('innerWidth', 400)
       vi.stubGlobal('innerHeight', innerHeight)
       vi.stubGlobal('matchMedia', () => ({
@@ -529,6 +531,7 @@ describe('open-menu re-placement', () => {
         addEventListener: () => undefined,
         removeEventListener: () => undefined,
       }))
+      vi.useFakeTimers()
       render(<ModelSelect
         locked={false}
         available
@@ -538,14 +541,14 @@ describe('open-menu re-placement', () => {
         t={t}
       />)
       fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
-      const menu = screen.getByRole('menu')
-      Object.defineProperty(menu, 'getBoundingClientRect', {
+      const dialog = screen.getByRole('dialog', { name: '模型与推理等级' })
+      Object.defineProperty(dialog, 'getBoundingClientRect', {
         value: () => sheetRect(innerHeight),
         configurable: true,
       })
-      const handle = menu.querySelector<HTMLElement>('[data-sheet-handle]')
+      const handle = dialog.querySelector<HTMLElement>('[data-sheet-handle]')
       expect(handle).toBeTruthy()
-      return { menu, handle: handle as HTMLElement }
+      return { dialog, handle: handle as HTMLElement }
     }
 
     const dragHandle = (handle: HTMLElement, fromY: number, toY: number): void => {
@@ -560,23 +563,24 @@ describe('open-menu re-placement', () => {
     }
 
     it('snaps back to the half-viewport rest height when pulled to the middle', () => {
-      const { menu, handle } = renderPhone(600)
+      const { dialog, handle } = renderPhone(600)
       act(() => { dragHandle(handle, 300, 360) })
-      expect(screen.getByRole('menu')).toBeTruthy()
-      expect(menu.style.getPropertyValue('--sheet-h')).toBe('300px')
+      expect(screen.getByRole('dialog', { name: '模型与推理等级' })).toBeTruthy()
+      expect(dialog.style.getPropertyValue('--sheet-h')).toBe('300px')
     })
 
     it('expands toward near-fullscreen when dragged to the top', () => {
-      const { menu, handle } = renderPhone(600)
+      const { dialog, handle } = renderPhone(600)
       act(() => { dragHandle(handle, 300, 100) })
-      expect(screen.getByRole('menu')).toBeTruthy()
-      expect(menu.style.getPropertyValue('--sheet-h')).toBe('92dvh')
+      expect(screen.getByRole('dialog', { name: '模型与推理等级' })).toBeTruthy()
+      expect(dialog.style.getPropertyValue('--sheet-h')).toBe('92dvh')
     })
 
     it('dismisses when dragged past the lower threshold', () => {
       const { handle } = renderPhone(600)
       act(() => { dragHandle(handle, 300, 460) })
-      expect(screen.queryByRole('menu')).toBeNull()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
     })
   })
 

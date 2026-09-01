@@ -1,4 +1,5 @@
 /** Host HTTP bridge for browser-client RPC. */
+import type { IncomingMessage } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
@@ -22,6 +23,24 @@ export type {
 export { HostConnectionService } from './rpc-host.ts'
 
 export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Waterfall: whether a browser request to the /api surface and its
+     * WebSocket downlinks is authorized beyond the host-trust fence. The
+     * default (no listener, or every listener delegating via `next()`) is
+     * `true`; a listener returning `false` without calling `next()` blocks
+     * the request with 403. A deployment adds real authentication here
+     * (e.g. the remote plugin's GUI access token).
+     * @param request - the incoming browser request (route or upgrade).
+     * @param next - delegate to the next listener (or the default).
+     * @returns whether the request is authorized.
+     * @mode waterfall
+     */
+    'connection/authenticate'(this: Context, request: IncomingMessage, next: () => boolean): boolean
+  }
+}
 
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
@@ -168,7 +187,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     kind: 'prefix',
     path: API_PATH,
     handler: async (req, res) => {
-      if (!isTrustedApiRequest(req, trustedHosts)) {
+      if (!isTrustedApiRequest(req, trustedHosts) || !authorized(ctx, req)) {
         res.writeHead(403)
         res.end('forbidden')
         return
@@ -186,8 +205,8 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     ): void => {
       apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
         path,
-        handler: (req, socket, head) => {
-          if (!isTrustedApiRequest(req, trustedHosts)) {
+        handler: async (req, socket, head) => {
+          if (!isTrustedApiRequest(req, trustedHosts) || !authorized(apiCtx, req)) {
             rejectWebSocketUpgrade(socket)
             return
           }
@@ -199,4 +218,9 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     registerDownlink(MUX_EVENTS_PATH, (req, socket, head) => { downlinks.handleMux(req, socket, head) })
     registerDownlink(HOST_EVENTS_PATH, (req, socket, head) => { downlinks.handleHost(req, socket, head) })
   })
+
+  /** Run the auth waterfall; the default (no listener) allows the request. */
+  function authorized(ctx: Context, request: IncomingMessage): boolean {
+    return ctx.waterfall('connection/authenticate', request, () => true)
+  }
 }

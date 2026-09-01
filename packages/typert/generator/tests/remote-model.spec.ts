@@ -52,7 +52,7 @@ describe('Remote model generation', { timeout: 60_000 }, () => {
 
     expect(generator.discover()).toEqual([{
       package: '@fixture/remote',
-      root: 'packages/remote',
+      root: 'packages/remote-fixture',
       faces: ['host'],
     }])
 
@@ -61,7 +61,7 @@ describe('Remote model generation', { timeout: 60_000 }, () => {
     expect(artifact).toMatchObject({
       package: '@fixture/remote',
       face: 'host',
-      packageRoot: 'packages/remote',
+      packageRoot: 'packages/remote-fixture',
     })
 
     const model = remotePackage(fixtureRoot)
@@ -149,7 +149,7 @@ describe('Remote model generation', { timeout: 60_000 }, () => {
 
   it('projects authored optionality and absence onto consumers and codecs', async () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', source => source.replace(
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source.replace(
       '\n}\n\nexport type {',
       `
 
@@ -200,7 +200,7 @@ export type {`,
 
   it('evaluates declaration-merged mapped and conditional boundaries for codecs without widening consumer types', async () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/types.ts', source => `${source}
+    editFile(root, 'packages/remote-fixture/src/types.ts', source => `${source}
 
 /** Recursive JSON fixture used by the concrete codec projection. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
@@ -235,7 +235,7 @@ export type GenericResult = {
   [K in GenericRemoteKey]: { readonly kind: K; readonly value: ResultOf<K> }
 }[GenericRemoteKey]
 `)
-    editFile(root, 'packages/remote/src/index.ts', source => source
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source
       .replace(
         '  RenameGoalResult,\n',
         '  RenameGoalResult,\n  GenericRequest,\n  GenericResult,\n',
@@ -274,7 +274,7 @@ export type GenericResult = {
 
   it('imports public type arguments nested under a named generic boundary', () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/types.ts', source => `${source}
+    editFile(root, 'packages/remote-fixture/src/types.ts', source => `${source}
 
 /** Generic Remote envelope. */
 export interface Box<Value> {
@@ -286,7 +286,7 @@ export interface BoxPayload {
   readonly count: number
 }
 `)
-    editFile(root, 'packages/remote/src/index.ts', source => source
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source
       .replace(
         '  RenameGoalResult,\n',
         '  RenameGoalResult,\n  Box,\n  BoxPayload,\n',
@@ -312,7 +312,7 @@ export interface BoxPayload {
 
   it('quotes aliased methods in generated namespace interfaces', () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', source => source.replace(
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source.replace(
       '  rename(request: RenameGoalRequest): RenameGoalResult {\n    return { renamed: request.title.length > 0 }\n  }\n}',
       `  rename(request: RenameGoalRequest): RenameGoalResult {
     return { renamed: request.title.length > 0 }
@@ -332,7 +332,7 @@ export interface BoxPayload {
 
   it.each(['create#v2', 'create goal', '.', '..'])('rejects untransportable Remote alias %s', (alias) => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', source => source.replace(
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source.replace(
       '  @Remote\n  async create(',
       `  @Remote('${alias}')\n  async create(`,
     ))
@@ -342,10 +342,10 @@ export interface BoxPayload {
 
   it('rejects a Remote export after its last Remote method is removed', () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', source => source
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source
       .replace('  @Remote\n', '')
       .replace("  @RemoteScope('agent')\n", ''))
-    editFile(root, 'packages/remote/src/types.ts', source => `${source}
+    editFile(root, 'packages/remote-fixture/src/types.ts', source => `${source}
 
 /** @typert schema */
 export interface RemainingSchema {
@@ -359,7 +359,7 @@ export interface RemainingSchema {
 
   it('validates Remote artifacts only on the host face of a dual-face package', () => {
     const root = copyFixture()
-    const manifestPath = join(root, 'packages/remote/package.json')
+    const manifestPath = join(root, 'packages/remote-fixture/package.json')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       dsh?: { client?: object }
       exports: Record<string, unknown>
@@ -376,9 +376,9 @@ export interface RemainingSchema {
     writeFileSync(join(root, 'tsconfig.client.json'), `${JSON.stringify({
       extends: './tsconfig.base.json',
       files: [],
-      references: [{ path: './packages/remote' }],
+      references: [{ path: './packages/remote-fixture' }],
     }, null, 2)}\n`)
-    writeFileSync(join(root, 'packages/remote/src/client.ts'), `/** @typert schema */
+    writeFileSync(join(root, 'packages/remote-fixture/src/client.ts'), `/** @typert schema */
 export interface ClientMarker {
   readonly ready: boolean
 }
@@ -512,7 +512,7 @@ export interface ClientMarker {
     },
   ])('rejects $name', ({ edit, message }) => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', edit)
+    editFile(root, 'packages/remote-fixture/src/index.ts', edit)
 
     expect(() => analyzeRemote(root, false)).toThrow(new RegExp(message))
   })
@@ -535,7 +535,7 @@ export interface ClientMarker {
     ['unknown', 'unconstrained unknown'],
   ])('rejects non-JSON Remote boundary type %s', (type, message) => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/types.ts', source => source.replace(
+    editFile(root, 'packages/remote-fixture/src/types.ts', source => source.replace(
       '  readonly title: string\n}',
       `  readonly title: string\n  readonly invalid: ${type}\n}`,
     ))
@@ -545,7 +545,7 @@ export interface ClientMarker {
 
   it('keeps optional JSON object fields valid', () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/types.ts', source => source.replace(
+    editFile(root, 'packages/remote-fixture/src/types.ts', source => source.replace(
       '  readonly title: string\n}',
       '  readonly title: string\n  readonly note?: string\n}',
     ))
@@ -555,7 +555,7 @@ export interface ClientMarker {
 
   it('rejects a Remote Scope without a static Context declaration', () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', source => source.replace("@RemoteScope('agent')", "@RemoteScope('missing')"))
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => source.replace("@RemoteScope('agent')", "@RemoteScope('missing')"))
 
     expect(() => analyzeRemote(root, false)).toThrow(/Remote Scope missing has no TypertContextMap entry/)
   })
@@ -572,7 +572,7 @@ export interface ClientMarker {
 
   it('rejects duplicate endpoints across Remote services', () => {
     const root = copyFixture()
-    editFile(root, 'packages/remote/src/index.ts', source => `${source}
+    editFile(root, 'packages/remote-fixture/src/index.ts', source => `${source}
 export class DuplicateGoalService extends TypertRemoteService {
   constructor() {
     super(undefined, 'duplicate', { namespace: 'goals' })
@@ -626,10 +626,10 @@ function assertRemoteConsumerTypechecks(
   if (dts === undefined) throw new Error('Remote fixture emitted no Host-for-Client declaration')
   if (dtsMap === undefined) throw new Error('Remote fixture emitted no Host-for-Client declaration map')
   const consumerRoot = copyFixture(sourceRoot)
-  const declarationPath = join(consumerRoot, 'packages/remote/lib/typert.remote-client.d.ts')
+  const declarationPath = join(consumerRoot, 'packages/remote-fixture/lib/typert.remote-client.d.ts')
   const declarationMapPath = `${declarationPath}.map`
   const consumerPath = join(consumerRoot, 'consumer.ts')
-  mkdirSync(join(consumerRoot, 'packages/remote/lib'), { recursive: true })
+  mkdirSync(join(consumerRoot, 'packages/remote-fixture/lib'), { recursive: true })
   writeFileSync(declarationPath, dts, { flush: true })
   writeFileSync(declarationMapPath, dtsMap, { flush: true })
   assertRemoteConsumerWithoutImportHasNoNamespace(consumerRoot)
@@ -671,8 +671,8 @@ void navigated
       paths: {
         '@deepseek-ai/dsh-typert-protocol': ['./typert-protocol.d.ts'],
         '@fixture/domain/types': ['./packages/domain/src/types.ts'],
-        '@fixture/remote/types': ['./packages/remote/src/types.ts'],
-        '@fixture/remote/remote': ['./packages/remote/lib/typert.remote-client.d.ts'],
+        '@fixture/remote/types': ['./packages/remote-fixture/src/types.ts'],
+        '@fixture/remote/remote': ['./packages/remote-fixture/lib/typert.remote-client.d.ts'],
       },
     },
     files: ['./consumer.ts'],
@@ -721,10 +721,10 @@ void navigated
     pos: generatedDefinition.textSpan.start,
   })
   languageService.dispose()
-  if (definition === undefined || !normalizedPath(definition.fileName).endsWith('/packages/remote/src/index.ts')) {
+  if (definition === undefined || !normalizedPath(definition.fileName).endsWith('/packages/remote-fixture/src/index.ts')) {
     throw new Error(`generated Remote definition did not map to its Host source: ${JSON.stringify(definition)}`)
   }
-  const hostSource = readFileSync(join(consumerRoot, 'packages/remote/src/index.ts'), 'utf8')
+  const hostSource = readFileSync(join(consumerRoot, 'packages/remote-fixture/src/index.ts'), 'utf8')
   expect(hostSource.slice(definition.pos, definition.pos + generatedDefinition.textSpan.length)).toBe('create')
 }
 

@@ -238,12 +238,30 @@ describe('SelfUpdateService', () => {
       const plan = JSON.parse(Buffer.from(encoded as string, 'base64url').toString('utf8')) as {
         port: number
         restartArgs: string[]
+        pull: boolean
         issueUrl: string
       }
       expect(plan.port).toBe(4567)
       expect(plan.restartArgs).toContain('4567')
       expect(plan.restartArgs.at(-1)).toBe('--no-open')
+      expect(plan.pull).toBe(true)
       expect(plan.issueUrl).toBe('https://github.com/Mailo037/deepseek-harness/issues/new')
+    } finally {
+      if (previousPnpm === undefined) delete process.env.npm_execpath
+      else process.env.npm_execpath = previousPnpm
+    }
+  })
+
+  it('encodes a pull-free rebuild plan when the handoff opts out of the fast-forward', async () => {
+    const service = serviceOf(repo, identityReplies())
+    const previousPnpm = process.env.npm_execpath
+    process.env.npm_execpath = join(repo, 'pnpm.cjs')
+    try {
+      const handoff = service.createWebUpdateHandoff({ host: '127.0.0.1', port: 4567 }, { pull: false })
+      const encoded = handoff.args.at(-1)
+      expect(encoded).toBeDefined()
+      const plan = JSON.parse(Buffer.from(encoded as string, 'base64url').toString('utf8')) as { pull: boolean }
+      expect(plan.pull).toBe(false)
     } finally {
       if (previousPnpm === undefined) delete process.env.npm_execpath
       else process.env.npm_execpath = previousPnpm

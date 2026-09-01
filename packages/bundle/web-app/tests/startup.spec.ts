@@ -100,20 +100,40 @@ describe('web command-line provider', () => {
       openBrowser: false,
       port: 8080,
       trustedHosts: ['lab.internal', 'lab-2.internal', '10.0.0.9'],
+      printPairingQr: false,
     })
-    expect(observed.readerConfig).toEqual(values)
+    // The reader consumer projects only the fields it reads from webStartup.
+    expect(observed.readerConfig).toEqual({
+      host: '127.0.0.1',
+      openBrowser: false,
+      port: 8080,
+      trustedHosts: ['lab.internal', 'lab-2.internal', '10.0.0.9'],
+    })
     expect(observed.exits).toEqual([])
   })
 
   it('leaves deployment values to each consumer when flags omit them', async () => {
     const { values, observed } = await bootProvider([])
-    expect(values).toEqual({ openBrowser: true, trustedHosts: [] })
+    expect(values).toEqual({ openBrowser: true, trustedHosts: [], printPairingQr: false })
     expect(observed.readerConfig).toEqual({
       host: '127.0.0.1',
       openBrowser: true,
       port: 3080,
       trustedHosts: [],
     })
+  })
+
+  it('publishes --pairing-qr and includes it in help', async () => {
+    const { values, observed } = await bootProvider(['--pairing-qr'])
+    expect(values).toEqual({
+      openBrowser: true,
+      trustedHosts: [],
+      printPairingQr: true,
+    })
+    expect(observed.exits).toEqual([])
+    const help = await bootProvider(['--help'])
+    expect(help.values).toBeUndefined()
+    expect(help.observed.out).toContain('--pairing-qr')
   })
 
   it('prints its own help and leaves the consumer pending', async () => {
@@ -134,11 +154,14 @@ describe('web command-line provider', () => {
     expect(observed.exits).toEqual([1])
   })
 
-  it('rejects the intentionally unsupported all-interfaces host before the consumer activates', async () => {
-    const { values, observed } = await bootProvider(['--host', '0.0.0.0'])
-    expect(observed.out).toContain('--host 0.0.0.0 is intentionally not supported yet for safety: it would expose remote code execution to the network; use 127.0.0.1 instead')
-    expect(values).toBeUndefined()
-    expect(observed.readerConfig).toBeUndefined()
-    expect(observed.exits).toEqual([1])
+  it('accepts the now-all-interfaces host and lets the consumer activate', async () => {
+    const { values } = await bootProvider(['--host', '0.0.0.0'])
+    expect(values).toEqual({
+      host: '0.0.0.0',
+      openBrowser: true,
+      trustedHosts: [],
+      printPairingQr: false,
+    })
+    expect(values).not.toBeUndefined()
   })
 })

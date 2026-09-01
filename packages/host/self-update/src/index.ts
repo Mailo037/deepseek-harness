@@ -111,6 +111,17 @@ export interface UpdateWebAddress {
   port: number
 }
 
+/** Options narrowing what the detached helper does before relaunching the host. */
+export interface UpdateHandoffOptions {
+  /**
+   * Whether the helper fast-forwards the checkout to its upstream before
+   * building. `false` rebuilds the current tree only — the `rebuild_harness`
+   * tool's path, where the checkout already carries the wanted sources.
+   * @default true
+   */
+  pull?: boolean
+}
+
 /** Detached process handoff accepted structurally by `ctx.appLifecycle.restart`. */
 export interface UpdateHandoff {
   /** Current Node executable. */
@@ -319,13 +330,15 @@ export class SelfUpdateService extends Service {
   /**
    * Build the detached Web update handoff. The helper starts before host
    * shutdown, waits for this process to release the listening port, serves
-   * bounded status and command logs there, fast-forwards and builds, then starts this exact Web
-   * invocation with the resolved port and `--no-open` forced.
+   * bounded status and command logs there, optionally fast-forwards, builds,
+   * then starts this exact Web invocation with the resolved port and
+   * `--no-open` forced.
    * @param address - authoritative address of the active Web server.
+   * @param options - selects rebuild-only (`pull: false`) over update.
    * @returns the no-shell process request for the launcher.
    * @throws {GitError} when the checkout was not launched through pnpm.
    */
-  createWebUpdateHandoff(address: UpdateWebAddress): UpdateHandoff {
+  createWebUpdateHandoff(address: UpdateWebAddress, options: UpdateHandoffOptions = {}): UpdateHandoff {
     const place = this.assertAvailable()
     const pnpmCli = process.env.npm_execpath
     if (pnpmCli === undefined || pnpmCli === '') {
@@ -348,6 +361,7 @@ export class SelfUpdateService extends Service {
       node: process.execPath,
       pnpmCli,
       restartArgs,
+      pull: options.pull ?? true,
       logPath: join(tmpdir(), `dsh-update-${String(process.pid)}.log`),
       issueUrl: github === null
         ? DEFAULT_ISSUE_URL

@@ -226,6 +226,7 @@ function modelModalities(model: Model<Api>): ModelModality[] {
   return res
 }
 
+/** Adapter that projects configured pi-ai profiles into Harness LLM routes. */
 export class PiAiAdapter extends LlmAdapter {
   private snapshot: PiAiSnapshot | undefined
 

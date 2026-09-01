@@ -20,11 +20,12 @@
  * project it is launched in. It ranks below the managed store, so a key stored
  * through the Models page is never displaced by one a checkout happens to carry.
  *
- * The file is the provider-managed writable source: every write re-reads the
- * document under a cross-process writer lock before patching only its own key
- * — comments and the formatting of every untouched entry survive — external
- * edits hot-publish through the seam, and each reload replaces the snapshot
- * wholesale so a deleted entry never lingers in memory.
+ * The provider-managed writable source is current-user DPAPI-protected on
+ * Windows and owner-only plaintext elsewhere. Every write re-reads and
+ * decodes it under a cross-process writer lock before patching only its own
+ * key — comments and the formatting of every untouched entry survive —
+ * external edits hot-publish through the seam, and each reload replaces the
+ * snapshot wholesale so a deleted entry never lingers in memory.
  *
  * The document holds nothing but credentials, which is why it is a strict
  * `CredentialRef`-to-string mapping rather than a dotenv file: a store the
@@ -56,11 +57,18 @@ import type {
   ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
 import type { LaunchEnvironmentEntry } from '@deepseek-ai/dsh-launch-environment'
+import {
+  decodeCredentialText,
+  encodeCredentialText,
+  resolveCredentialProtection,
+  type CredentialProtection,
+  type ResolvedCredentialProtection,
+} from './protection.ts'
 
 /** Basename of the credentials document inside the harness home. */
 export const CREDENTIALS_FILENAME = '.credentials.yaml'
 
-/** Plugin config: file location and hot-reload behavior. */
+/** Plugin config: file location, hot-reload behavior, and at-rest protection. */
 export interface Config {
   /** Credentials document path; defaults to `.credentials.yaml` under the harness home. */
   path?: string
@@ -70,6 +78,8 @@ export interface Config {
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
   debounceMs?: number
+  /** At-rest storage policy; `platform` uses user-scoped DPAPI on Windows and owner-only plaintext elsewhere. */
+  protection?: CredentialProtection
 }
 
 /** Fully resolved provider parameters; defaulting happens here, never inline. */
@@ -77,6 +87,7 @@ interface ResolvedSpec {
   filename: string
   watch: boolean
   debounceMs: number
+  protection: ResolvedCredentialProtection
 }
 
 /**
@@ -90,6 +101,7 @@ export function resolveSpec(config: Config): ResolvedSpec {
     filename: resolve(config.path ?? join(resolveDshHome(config.dshHome), CREDENTIALS_FILENAME)),
     watch: config.watch ?? true,
     debounceMs: config.debounceMs ?? 100,
+    protection: resolveCredentialProtection(config.protection),
   }
 }
 
@@ -538,15 +550,18 @@ export class LocalCredentialProvider extends CredentialProvider {
     dshHome: z.string(),
     watch: z.boolean().default(true),
     debounceMs: z.number().min(0).default(100),
+    protection: z.union(['platform', 'plain'] as const).default('platform'),
   })
 
   private readonly spec: ResolvedSpec
   /**
-   * Raw text of the last read or persisted document; `undefined` while the
-   * file is absent. Watcher events whose content equals this cache are no-ops,
-   * which is also the self-write suppression.
+   * Decrypted inner YAML of the last read or persisted document; `undefined`
+   * while the file is absent. Rendering edits against this cache preserves
+   * comments without exposing plaintext on disk under Windows DPAPI.
    */
   private text: string | undefined
+  /** Raw protected or plaintext storage text used for watcher self-write suppression. */
+  private storedText: string | undefined
   /** Parsed reference snapshot; replaced wholesale on every reload. */
   private values = new Map<string, string>()
   /** Parsed record snapshot; replaced wholesale on every reload. */
@@ -714,9 +729,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         if (next.kind === 'grant') assertJsonValue(`record "${key}" payload`, next.payload, new Set())
         else assertStorableApiKey(key, next)
         const nextText = renderRecord(this.text, key, next)
-        // 0600: a document holding secrets is never world-readable.
-        await writeFileAtomic(this.spec.filename, nextText, { mode: 0o600, dirMode: 0o700 })
-        this.text = nextText
+        await this.persist(nextText)
         this.records.set(key, next)
         // After the commit, on the same terms as a reference write.
         this.notifyRecordUpdated(key)
@@ -736,8 +749,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         await this.reconcileFromDisk()
         if (!this.records.has(key)) return
         const nextText = renderRecord(this.text, key, undefined)
-        await writeFileAtomic(this.spec.filename, nextText, { mode: 0o600, dirMode: 0o700 })
-        this.text = nextText
+        await this.persist(nextText)
         this.records.delete(key)
         this.notifyRecordUpdated(key)
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
@@ -793,9 +805,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         const existing = this.values.get(ref)
         if (value === undefined && existing === undefined) return
         const nextText = renderRef(this.text, ref, value)
-        // 0600: a document holding secrets is never world-readable.
-        await writeFileAtomic(this.spec.filename, nextText, { mode: 0o600, dirMode: 0o700 })
-        this.text = nextText
+        await this.persist(nextText)
         if (value === undefined) this.values.delete(ref)
         else this.values.set(ref, value)
         // After the commit: a broken observer must never make the durable
@@ -803,6 +813,15 @@ export class LocalCredentialProvider extends CredentialProvider {
         this.notifyUpdated(ref)
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
     })
+  }
+
+  /** Protect and atomically persist one validated inner document. */
+  private async persist(text: string): Promise<void> {
+    const stored = encodeCredentialText(text, this.spec.protection)
+    // The mode remains owner-only even when DPAPI also protects the contents.
+    await writeFileAtomic(this.spec.filename, stored, { mode: 0o600, dirMode: 0o700 })
+    this.text = text
+    this.storedText = stored
   }
 
   /**
@@ -829,48 +848,61 @@ export class LocalCredentialProvider extends CredentialProvider {
    */
   private async loadInitial(): Promise<void> {
     await assertOwnerOnly(this.spec.filename)
-    let text: string
+    let stored: string
     try {
-      text = await readFile(this.spec.filename, 'utf8')
+      stored = await readFile(this.spec.filename, 'utf8')
     } catch (error) {
       if (!isENOENT(error)) throw error
       return
     }
-    if (renderFlatLayoutMigration(text) !== undefined) text = await this.migrateFlatDocument()
-    const document = parseCredentialsDocument(text, this.spec.filename)
+    const initial = decodeCredentialText(stored, this.spec.protection, this.spec.filename)
+    const flatMigration = renderFlatLayoutMigration(initial.text)
+    const needsProtection = this.spec.protection !== 'plain' && !initial.protected
+    if (flatMigration !== undefined || needsProtection) {
+      const normalized = await this.normalizeInitialDocument()
+      stored = normalized.stored
+      initial.text = normalized.text
+    }
+    const document = parseCredentialsDocument(initial.text, this.spec.filename)
     this.values = document.refs
     this.records = document.records
-    this.text = text
+    this.text = initial.text
+    this.storedText = stored
   }
 
   /**
-   * One-shot upgrade of the recognized pre-release flat layout, before the
-   * watcher exists. The rewrite runs under the document's writer lock and
-   * re-reads first — a concurrent boot may have migrated already — and
-   * whatever the re-read finds that is not the flat layout is returned
-   * untouched for the ordinary parse. Values are carried verbatim; only the
-   * enclosing layout changes. Remove with the pre-release stance at the
-   * first tagged release.
-   * @returns the document text this boot should parse.
+   * Normalize recognized pre-release plaintext under the writer lock. The
+   * inner layout migration runs before at-rest protection so existing values
+   * survive both transitions, and another boot that won the lock first is
+   * simply re-read.
    */
-  private async migrateFlatDocument(): Promise<string> {
+  private async normalizeInitialDocument(): Promise<{ stored: string; text: string }> {
     return withFileLock(this.spec.filename, async () => {
-      const current = await readFile(this.spec.filename, 'utf8')
-      const migrated = renderFlatLayoutMigration(current)
-      /* v8 ignore next 2 -- the losing side of the cross-process migration race:
-         another boot rewrote the document between the unlocked recognize and
-         this lock. That interleaving cannot be scheduled deterministically
-         through a whole boot (migration.spec drives it best-effort); the
-         decision itself is the recognizer's covered versioned-document decline. */
-      if (migrated === undefined) return current
-      // 0600: a document holding secrets is never world-readable.
-      await writeFileAtomic(this.spec.filename, migrated, { mode: 0o600, dirMode: 0o700 })
-      this.ctx.logger.info(
-        'credentials-local: migrated %s to the version %d layout; values are unchanged',
-        this.spec.filename,
-        DOCUMENT_VERSION,
-      )
-      return migrated
+      const currentStored = await readFile(this.spec.filename, 'utf8')
+      const current = decodeCredentialText(currentStored, this.spec.protection, this.spec.filename)
+      const migrated = renderFlatLayoutMigration(current.text)
+      const text = migrated ?? current.text
+      // Parse before replacing a plaintext file: encryption must not turn an
+      // invalid document into an opaque failure that hides the repair text.
+      parseCredentialsDocument(text, this.spec.filename)
+      const needsProtection = this.spec.protection !== 'plain' && !current.protected
+      if (migrated === undefined && !needsProtection) return { stored: currentStored, text }
+      const nextStored = encodeCredentialText(text, this.spec.protection)
+      await writeFileAtomic(this.spec.filename, nextStored, { mode: 0o600, dirMode: 0o700 })
+      if (migrated !== undefined) {
+        this.ctx.logger.info(
+          'credentials-local: migrated %s to the version %d layout; values are unchanged',
+          this.spec.filename,
+          DOCUMENT_VERSION,
+        )
+      }
+      if (needsProtection) {
+        this.ctx.logger.info(
+          'credentials-local: protected %s for the current Windows user with DPAPI',
+          this.spec.filename,
+        )
+      }
+      return { stored: nextStored, text }
     }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
   }
 
@@ -906,20 +938,31 @@ export class LocalCredentialProvider extends CredentialProvider {
     // Re-checked on every reload and before every write: an external editor or
     // a restored backup can loosen the mode after boot.
     await assertOwnerOnly(this.spec.filename)
-    let text: string | undefined
+    let stored: string | undefined
     try {
-      text = await readFile(this.spec.filename, 'utf8')
+      stored = await readFile(this.spec.filename, 'utf8')
     } catch (error) {
       if (!isENOENT(error)) throw error
-      text = undefined
+      stored = undefined
     }
-    if (text === this.text || this.isClosed()) return
+    if (stored === this.storedText || this.isClosed()) return
+    let text: string | undefined
+    if (stored !== undefined) {
+      const decoded = decodeCredentialText(stored, this.spec.protection, this.spec.filename)
+      if (this.spec.protection !== 'plain' && !decoded.protected) {
+        throw new Error(
+          `credentials-local: plaintext replacement at ${this.spec.filename} is refused while running; restart to migrate it`,
+        )
+      }
+      text = decoded.text
+    }
     const next = text === undefined
       ? { refs: new Map<string, string>(), records: new Map<string, CredentialRecord>() }
       : parseCredentialsDocument(text, this.spec.filename)
     const changedRefs = this.changedRefs(this.values, next.refs)
     const changedRecords = this.changedRecords(this.records, next.records)
     this.text = text
+    this.storedText = stored
     this.values = next.refs
     this.records = next.records
     for (const ref of changedRefs) this.notifyUpdated(ref)

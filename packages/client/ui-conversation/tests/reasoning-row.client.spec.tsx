@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
@@ -119,5 +119,40 @@ describe('ReasoningRow', () => {
     expect(view.queryByText('IN')).toBeNull()
     expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
     expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
+  })
+
+  it('opens the reasoning text in a bottom sheet on a phone viewport', () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    vi.useFakeTimers()
+    try {
+      const view = render(
+        <AssistantMarkdown
+          t={t}
+          blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
+          streaming={false}
+          renderMessageImages={renderMessageImages}
+        />,
+      )
+      const row = view.getByRole('button', { name: /Inspect the session/ })
+      fireEvent.click(row)
+      // The reasoning text stays out of the row (no inline body) and lands in
+      // the bottom-sheet dialog instead.
+      expect(view.container.querySelector('[class*="thinkBody"]')).toBeNull()
+      const dialog = screen.getByRole('dialog', { name: 'Think' })
+      expect(within(dialog).getByText(/Check persistence/)).toBeTruthy()
+      // The sheet's close button slides it down, then it unmounts.
+      fireEvent.click(within(dialog).getByRole('button', { name: zh['sheet.close'] }))
+      expect(screen.getByRole('dialog', { name: 'Think' })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 })

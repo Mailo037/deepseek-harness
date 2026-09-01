@@ -1,13 +1,19 @@
 /* Motion’s iOS-style card deck: the newest archive result remains in front,
-   and clicking the stacked deck fans earlier cards upward for direct access. */
+   and clicking the stacked deck fans earlier cards upward for direct access.
+   The frame matches the session-list column: 8px of side room plus the list's
+   reserved scrollbar inset, so leftover space is even around the rows. Cards
+   hug their content and center inside this frame. The stack stays
+   transform-free so Motion owns each card's transform. Isolation tests omit
+   the workspace tokens, so the right inset falls back to the sidebar padding,
+   then 12px. */
 .stack {
   position: absolute;
   z-index: 4;
-  left: 50%;
+  left: 8px;
+  right: calc(8px + var(--dsh-session-list-edge-inset, var(--dsh-sidebar-inline-padding, 12px)));
   bottom: 8px;
-  width: calc(100% - 32px);
+  width: auto;
   height: 48px;
-  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -20,9 +26,12 @@
   right: 0;
   bottom: 0;
   left: 0;
+  width: max-content;
+  max-width: 100%;
+  margin-inline: auto;
   min-height: 40px;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto 18px;
+  grid-template-columns: 16px minmax(0, auto) auto 18px;
   align-items: center;
   column-gap: 8px;
   box-sizing: border-box;

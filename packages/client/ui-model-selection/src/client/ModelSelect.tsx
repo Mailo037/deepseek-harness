@@ -13,11 +13,11 @@
  */
 import {
   useEffect, useLayoutEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
-  type CSSProperties, type KeyboardEvent, type FocusEvent, type PointerEvent,
+  type CSSProperties, type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
 import {
-  ElevatorLabel, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
+  BottomSheet, ElevatorLabel, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconCloseFill14, IconImageOutline14, IconSearchOutline16, IconVideoOutline14,
   IconWarningOutline16, HoverCard, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -31,10 +31,6 @@ import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
-
-/** Inline style value that also accepts CSS custom properties (`--sheet-h`),
- * which React's `CSSProperties` omits from its `--` index signature. */
-type SheetStyle = CSSProperties & { [key: `--${string}`]: string }
 
 /** One dynamic effort row; undefined means preserve the provider default. */
 interface EffortChoice {
@@ -118,14 +114,6 @@ const MODALITY_ALIASES: Record<string, readonly string[]> = {
 
 /** Viewport clearance every open menu keeps on each edge (mirrors the Menu primitive's portal margin). */
 const MENU_VIEWPORT_MARGIN = 8
-
-/** Phone bottom-sheet heights, as a fraction of the viewport height. */
-const SHEET_REST_RATIO = 0.5
-const SHEET_EXPAND_RATIO = 0.92
-/** Dragging below this fraction of the viewport height dismisses the sheet. */
-const SHEET_DISMISS_RATIO = 0.25
-/** Drag past the midpoint between rest and expanded snaps the sheet to expanded. */
-const SHEET_SNAP_MID_RATIO = (SHEET_REST_RATIO + SHEET_EXPAND_RATIO) / 2
 
 /**
  * Place the model menu inside the viewport: preferred right-aligned with the
@@ -222,34 +210,9 @@ export function ModelSelect(
     query.addEventListener('change', onChange)
     return () => { query.removeEventListener('change', onChange) }
   }, [])
-  const [menuPos, setMenuPos] = useState<
-    { left: number; top: number; sheet?: undefined }
-    // Phone bottom-sheet: the CSS media query owns the geometry (fixed,
-    // bottom-anchored, `--sheet-h` height); this sentinel only reveals the
-    // sheet, and the inline style carries the rest/expanded snap height so it
-    // never fights the CSS media query placement.
-    | { sheet: true }
-    | null
-  >(null)
-  // Phone bottom-sheet state. `sheetSnap` is the committed rest/expanded
-  // height the sheet settles on after a drag; `dragging` toggles the
-  // `sheetDragging` class that disables the height transition so the sheet
-  // tracks the finger. While a drag is in progress the `--sheet-h` custom
-  // property is written straight to the DOM (no re-render per move).
-  const [sheetSnap, setSheetSnap] = useState<'rest' | 'expanded'>('rest')
-  const [dragging, setDragging] = useState(false)
-  const dragStartRef = useRef<{ y: number; h: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
   useLayoutEffect(() => {
-    if (!open) { setMenuPos(null); return }
-    if (phone) {
-      // Bottom sheet: the CSS media query fixes it to the viewport's bottom
-      // edge and the `--sheet-h` custom property sizes it to half the viewport
-      // by default, so it needs no measurement, clamps to nothing, and never
-      // extends the page — reveal it immediately rather than waiting for a
-      // real height.
-      setMenuPos({ sheet: true })
-      return
-    }
+    if (!open || phone) { setMenuPos(null); return }
     const place = (): void => {
       if (rootRef.current === null || triggerRef.current === null || menuRef.current === null) return
       // Keep the CSS upward placement transparent and non-interactive until a
@@ -366,20 +329,21 @@ export function ModelSelect(
   }, [available, load])
 
   useEffect(() => {
-    if (!open) return
+    // On phone the portaled bottom sheet sits outside `rootRef`, so an outside
+    // pointer would immediately close it; the sheet's mask owns dismissal there.
+    if (!open || phone) return
     const closeOutside = (event: MouseEvent): void => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', closeOutside)
     return () => { document.removeEventListener('mousedown', closeOutside) }
-  }, [open])
+  }, [open, phone])
 
   if (!available) return null
 
   const show = (): void => {
     setPane('root')
     setMenuPos(null)
-    setSheetSnap('rest')
     setOpen(true)
     reload()
   }
@@ -387,7 +351,6 @@ export function ModelSelect(
   const close = (restoreFocus = false): void => {
     setOpen(false)
     setPane('root')
-    setDragging(false)
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
@@ -415,50 +378,11 @@ export function ModelSelect(
   }
 
   const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    // On phone the portaled bottom sheet takes focus, so a root blur is not a
+    // dismissal signal; only the desktop dropdown closes on focus leaving.
+    if (phone) return
     if (event.relatedTarget instanceof Node && rootRef.current?.contains(event.relatedTarget)) return
     close()
-  }
-
-  // Phone bottom-sheet drag. The sheet's height is driven by the `--sheet-h`
-  // custom property; while dragging it is written straight to the element so
-  // the sheet tracks the finger without a re-render per move, and on release
-  // it snaps to rest or expanded (or dismisses when pulled past the threshold)
-  // through the height transition. `setPointerCapture` is guarded because
-  // jsdom ships a throwing stub.
-  const onSheetDragStart = (event: PointerEvent<HTMLDivElement>): void => {
-    if (menuRef.current === null) return
-    dragStartRef.current = { y: event.clientY, h: menuRef.current.getBoundingClientRect().height }
-    setDragging(true)
-    if (typeof event.currentTarget.setPointerCapture === 'function') {
-      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* jsdom lacks capture */ }
-    }
-  }
-
-  const onSheetDragMove = (event: PointerEvent<HTMLDivElement>): void => {
-    const start = dragStartRef.current
-    if (start === null || menuRef.current === null) return
-    const vh = window.innerHeight
-    const h = Math.max(0, Math.min(start.h - (event.clientY - start.y), vh * SHEET_EXPAND_RATIO))
-    menuRef.current.style.setProperty('--sheet-h', `${h}px`)
-  }
-
-  const onSheetDragEnd = (event: PointerEvent<HTMLDivElement>): void => {
-    const start = dragStartRef.current
-    const sheet = menuRef.current
-    dragStartRef.current = null
-    if (start === null || sheet === null) return
-    const vh = window.innerHeight
-    const h = Math.max(0, start.h - (event.clientY - start.y))
-    setDragging(false)
-    if (h <= vh * SHEET_DISMISS_RATIO) {
-      close(true)
-      return
-    }
-    const snap: 'rest' | 'expanded' = h >= vh * SHEET_SNAP_MID_RATIO ? 'expanded' : 'rest'
-    sheet.style.setProperty('--sheet-h', snap === 'expanded'
-      ? `${vh * SHEET_EXPAND_RATIO}px`
-      : `${vh * SHEET_REST_RATIO}px`)
-    setSheetSnap(snap)
   }
 
   const settleSelection = (accepted: boolean): void => {
@@ -511,17 +435,190 @@ export function ModelSelect(
     return (node: HTMLButtonElement | null) => { itemRefs.current[at] = node }
   }
 
-  // Menu geometry. `null` keeps the CSS default while the card stays invisible
-  // (pre-paint, before placement). On phone the bottom sheet is fixed by the
-  // CSS media query; the inline style only carries the rest/expanded snap
-  // height so the sheet opens at the right spot. On desktop the placed
-  // left/top override the upward CSS default, and the explicit right/bottom
-  // auto stop the CSS default from stretching the card between the two.
-  const menuStyle: SheetStyle = menuPos === null
+  // Menu geometry on desktop: `null` keeps the CSS default while the card stays
+  // invisible (pre-paint, before placement); a placed left/top override the
+  // upward CSS default, and the explicit right/bottom auto stop the CSS default
+  // from stretching the card between the two. On phone the shared BottomSheet
+  // owns the surface, so no inline geometry is needed here.
+  const menuStyle: CSSProperties = menuPos === null
     ? { opacity: 0, pointerEvents: 'none' }
-    : menuPos.sheet === true
-      ? { '--sheet-h': `${Math.round((sheetSnap === 'expanded' ? SHEET_EXPAND_RATIO : SHEET_REST_RATIO) * 100)}dvh` }
-      : { left: menuPos.left, top: menuPos.top, right: 'auto', bottom: 'auto' }
+    : { left: menuPos.left, top: menuPos.top, right: 'auto', bottom: 'auto' }
+
+  // The two-level menu body, shared by the desktop dropdown card and the phone
+  // bottom sheet so the second-level panes behave identically on both.
+  const paneContent = (
+    <>
+      {pane === 'root' && (
+        <>
+          <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
+            <span className={css.cellLabel}>{t('menu.model')}</span>
+            <span className={css.cellValue}>{modelLabel}</span>
+            <IconChevronRightOutline14 className={css.cellChevron} />
+          </button>
+          {reasoning !== undefined && (
+            <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
+              <span className={css.cellLabel}>{t('menu.effort')}</span>
+              <span className={css.cellValue}>{effortLabel}</span>
+              <IconChevronRightOutline14 className={css.cellChevron} />
+            </button>
+          )}
+        </>
+      )}
+
+      {pane === 'model' && (
+        <>
+          <div className={css.searchBox}>
+            <IconSearchOutline16 size={14} className={css.searchIcon} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              className={css.searchInput}
+              value={searchQuery}
+              placeholder={t('search.placeholder')}
+              aria-label={t('search.placeholder')}
+              onChange={(e) => { setSearchQuery(e.target.value) }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  moveFocus(1)
+                } else if (e.key === 'Escape' && searchQuery) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setSearchQuery('')
+                }
+              }}
+            />
+            {searchQuery.length > 0 && (
+              <button
+                type="button"
+                className={css.searchClear}
+                onClick={() => {
+                  setSearchQuery('')
+                  searchInputRef.current?.focus()
+                }}
+                aria-label="Clear search"
+              >
+                <IconCloseFill14 size={12} />
+              </button>
+            )}
+          </div>
+          {state.status === 'loading' && (
+            <div className={css.status}>{t('status.loading')}</div>
+          )}
+          {state.error !== null && lastActionRef.current === 'load' && (
+            <div className={css.error}>
+              <span>{t('error.action', { message: state.error })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+            </div>
+          )}
+          {state.failures.map(failure => (
+            <div className={css.warning} key={failure.id}>
+              <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+            </div>
+          ))}
+          <div className={clsx(css.groups, 'scrollable')}>
+            {filteredGroups.map((group) => {
+              const headingId = `${id}-${group.id}`
+              const isCollapsed = normalizedQuery ? false : collapsedGroups.has(group.id)
+              return (
+                <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
+                  <div className={css.groupHeaderRow}>
+                    <button
+                      type="button"
+                      className={css.groupHeader}
+                      onClick={() => { toggleGroup(group.id) }}
+                      aria-expanded={!isCollapsed}
+                      title={group.name}
+                    >
+                      <span className={css.groupTitle} id={headingId}>{group.name}</span>
+                      <span className={css.groupCount}>{group.models.length}</span>
+                      <IconChevronDownOutline14 className={clsx(css.groupChevron, isCollapsed && css.groupChevronCollapsed)} />
+                    </button>
+                  </div>
+                  {!isCollapsed && group.models.map((model) => {
+                    const selected = state.current?.provider === group.id && state.current.model === model.id
+                    return (
+                      <HoverCard
+                        key={model.id}
+                        openDelayMs={300}
+                        anchor={(
+                          <button
+                            ref={itemRef()}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            className={clsx(css.option, selected && css.selected)}
+                            title={model.name}
+                            disabled={busy}
+                            onClick={() => { choose({ provider: group.id, model: model.id }) }}
+                          >
+                            <span className={css.check}>
+                              {selected ? <IconCheckOutline16 /> : null}
+                            </span>
+                            <span className={css.optionCopy}>
+                              <span className={css.modelName}>{model.name}</span>
+                              {model.description !== undefined && (
+                                <span className={css.description}>{model.description}</span>
+                              )}
+                            </span>
+                            <span className={css.modalityBadges}>
+                              {model.inputModalities?.map(mod => (
+                                <ModalityBadge key={mod} modality={mod} />
+                              ))}
+                            </span>
+                          </button>
+                        )}
+                        content={<ModelInfoCard model={model} t={t} />}
+                      />
+                    )
+                  })}
+                </section>
+              )
+            })}
+          </div>
+          {state.status === 'ready' && filteredGroups.length === 0 && (
+            <div className={css.empty}>{normalizedQuery ? t('empty.search') : t('empty.models')}</div>
+          )}
+        </>
+      )}
+
+      {pane === 'effort' && (
+        <>
+          {state.error !== null && lastActionRef.current === 'load' && (
+            <div className={css.error}>
+              <span>{t('error.action', { message: state.error })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+            </div>
+          )}
+          {effortChoices.length === 0
+            ? <div className={css.empty}>{t('empty.efforts')}</div>
+            : effortChoices.map(level => (
+              <button
+                ref={itemRef()}
+                type="button"
+                role="menuitemradio"
+                aria-checked={effectiveEffort === level.effort}
+                className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
+                key={level.key}
+                disabled={busy}
+                onClick={() => { chooseEffort(level.effort) }}
+              >
+                <span className={css.optionCopy}>
+                  <span className={css.modelName}>{level.label}</span>
+                  {level.description !== undefined && (
+                    <span className={css.description}>{level.description}</span>
+                  )}
+                </span>
+                <span className={css.check}>
+                  {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
+                </span>
+              </button>
+            ))}
+        </>
+      )}
+    </>
+  )
 
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onRootKeyDown} onBlur={onBlur}>
@@ -548,214 +645,29 @@ export function ModelSelect(
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 
-      {open && (
+      {phone ? (
+        <BottomSheet
+          open={open}
+          onClose={() => { close(true) }}
+          title={t('menu.aria')}
+          closeLabel={t('menu.close')}
+          bodyClassName={css.sheetBody}
+        >
+          {paneContent}
+        </BottomSheet>
+      ) : open ? (
         <div
           ref={menuRef}
           id={`${id}-menu`}
-          className={clsx(css.menu, dragging && css.sheetDragging)}
+          className={css.menu}
           role="menu"
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
           style={menuStyle}
         >
-          {phone && (
-            <div
-              className={css.sheetHandle}
-              role="presentation"
-              data-sheet-handle=""
-              onPointerDown={onSheetDragStart}
-              onPointerMove={onSheetDragMove}
-              onPointerUp={onSheetDragEnd}
-              onPointerCancel={onSheetDragEnd}
-            >
-              <span className={css.sheetHandleBar} />
-            </div>
-          )}
-          {phone && (
-            <div className={css.menuHeader}>
-              <span className={css.menuTitle}>{t('menu.aria')}</span>
-              <button
-                type="button"
-                className={css.menuClose}
-                aria-label={t('menu.close')}
-                title={t('menu.close')}
-                onClick={() => { close(true) }}
-              >
-                <IconCloseFill14 size={16} />
-              </button>
-            </div>
-          )}
-          {pane === 'root' && (
-            <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
-                <span className={css.cellLabel}>{t('menu.model')}</span>
-                <span className={css.cellValue}>{modelLabel}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
-              </button>
-              {reasoning !== undefined && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
-                  <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
-                </button>
-              )}
-            </>
-          )}
-
-          {pane === 'model' && (
-            <>
-              <div className={css.searchBox}>
-                <IconSearchOutline16 size={14} className={css.searchIcon} />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  className={css.searchInput}
-                  value={searchQuery}
-                  placeholder={t('search.placeholder')}
-                  aria-label={t('search.placeholder')}
-                  onChange={(e) => { setSearchQuery(e.target.value) }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      moveFocus(1)
-                    } else if (e.key === 'Escape' && searchQuery) {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setSearchQuery('')
-                    }
-                  }}
-                />
-                {searchQuery.length > 0 && (
-                  <button
-                    type="button"
-                    className={css.searchClear}
-                    onClick={() => {
-                      setSearchQuery('')
-                      searchInputRef.current?.focus()
-                    }}
-                    aria-label="Clear search"
-                  >
-                    <IconCloseFill14 size={12} />
-                  </button>
-                )}
-              </div>
-              {state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
-              )}
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              )}
-              {state.failures.map(failure => (
-                <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              ))}
-              <div className={clsx(css.groups, 'scrollable')}>
-                {filteredGroups.map((group) => {
-                  const headingId = `${id}-${group.id}`
-                  const isCollapsed = normalizedQuery ? false : collapsedGroups.has(group.id)
-                  return (
-                    <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupHeaderRow}>
-                        <button
-                          type="button"
-                          className={css.groupHeader}
-                          onClick={() => { toggleGroup(group.id) }}
-                          aria-expanded={!isCollapsed}
-                          title={group.name}
-                        >
-                          <span className={css.groupTitle} id={headingId}>{group.name}</span>
-                          <span className={css.groupCount}>{group.models.length}</span>
-                          <IconChevronDownOutline14 className={clsx(css.groupChevron, isCollapsed && css.groupChevronCollapsed)} />
-                        </button>
-                      </div>
-                      {!isCollapsed && group.models.map((model) => {
-                        const selected = state.current?.provider === group.id && state.current.model === model.id
-                        return (
-                          <HoverCard
-                            key={model.id}
-                            openDelayMs={300}
-                            anchor={(
-                              <button
-                                ref={itemRef()}
-                                type="button"
-                                role="menuitemradio"
-                                aria-checked={selected}
-                                className={clsx(css.option, selected && css.selected)}
-                                title={model.name}
-                                disabled={busy}
-                                onClick={() => { choose({ provider: group.id, model: model.id }) }}
-                              >
-                                <span className={css.check}>
-                                  {selected ? <IconCheckOutline16 /> : null}
-                                </span>
-                                <span className={css.optionCopy}>
-                                  <span className={css.modelName}>{model.name}</span>
-                                  {model.description !== undefined && (
-                                    <span className={css.description}>{model.description}</span>
-                                  )}
-                                </span>
-                                <span className={css.modalityBadges}>
-                                  {model.inputModalities?.map(mod => (
-                                    <ModalityBadge key={mod} modality={mod} />
-                                  ))}
-                                </span>
-                              </button>
-                            )}
-                            content={<ModelInfoCard model={model} t={t} />}
-                          />
-                        )
-                      })}
-                    </section>
-                  )
-                })}
-              </div>
-              {state.status === 'ready' && filteredGroups.length === 0 && (
-                <div className={css.empty}>{normalizedQuery ? t('empty.search') : t('empty.models')}</div>
-              )}
-            </>
-          )}
-
-          {pane === 'effort' && (
-            <>
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
-                </div>
-              )}
-              {effortChoices.length === 0
-                ? <div className={css.empty}>{t('empty.efforts')}</div>
-                : effortChoices.map(level => (
-                  <button
-                    ref={itemRef()}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={effectiveEffort === level.effort}
-                    className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
-                    key={level.key}
-                    disabled={busy}
-                    onClick={() => { chooseEffort(level.effort) }}
-                  >
-                    <span className={css.optionCopy}>
-                      <span className={css.modelName}>{level.label}</span>
-                      {level.description !== undefined && (
-                        <span className={css.description}>{level.description}</span>
-                      )}
-                    </span>
-                    <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
-                    </span>
-                  </button>
-                ))}
-            </>
-          )}
+          {paneContent}
         </div>
-      )}
+      ) : null}
       {toast !== null && (
         <Toast
           key={toast.seq}

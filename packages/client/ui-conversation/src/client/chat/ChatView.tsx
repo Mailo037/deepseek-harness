@@ -396,8 +396,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  sendMessage, fileMentions, t,
+  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, reloadHistory, loadImage, inspectCall,
+  chatScroll, forkAt, sendMessage, fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -733,6 +733,7 @@ export function ChatView({
               icon={header.icon}
               label={header.label}
               active={runIsActive(run.nodes)}
+              closeLabel={t('sheet.close')}
             >
               {run.children}
             </ToolCallGroup>
@@ -862,7 +863,8 @@ export function ChatView({
           {openState === 'loading' && <HistoryLoadingPreview t={t} />}
           {openState === 'error' && openError !== null && (
             <div className={css.openError}>
-              {t('chat.loadError', { message: openError.message, code: openError.code })}
+              <p>{t('chat.loadError', { message: openError.message, code: openError.code })}</p>
+              <button type="button" onClick={reloadHistory}>{t('chat.retryHistory')}</button>
             </div>
           )}
           {hasMore && (

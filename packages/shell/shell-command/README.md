@@ -29,9 +29,7 @@ The shipped `dsh web` bundle mounts this service (host plane) and the `ui-shell-
 
 #### What the model sees
 
-Nothing in `direct` mode. `!` lines are intercepted by the client's input-trigger source and executed in the shell command plane; neither the command text nor its output is submitted as a user message or otherwise reaches a model request at execution time — the settled command is reported as a user message afterwards. The `shell/run`/`shell/done` events are log-only and never surface to the model directly.
-
-In `tool` mode the model sees, per `!` line, a user message naming the running background job (`job_output`/`job_kill` are available to inspect or stop it). The full command output reaches the model only if/when it reads the job.
+Nothing in `direct` mode. `!` lines are intercepted by the client's input-trigger source and executed in the shell command plane; neither the command text nor its output is submitted as a user message or otherwise reaches a model request at execution time — the settled command is reported as a user message afterwards. The `shell/run`/`shell/done` events are log-only and never surface to the model directly. In `tool` mode the model sees, per `!` line, a user message naming the running background job (`job_output`/`job_kill` are available to inspect or stop it). The full command output reaches the model only if/when it reads the job.
 
 #### Token effect
 

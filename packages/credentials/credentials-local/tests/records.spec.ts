@@ -34,7 +34,7 @@ async function tempDir(): Promise<string> {
 
 async function boot(config: ConstructorParameters<typeof LocalCredentialProvider>[1]): Promise<Context> {
   const ctx = new Context()
-  const fiber = ctx.plugin(LocalCredentialProvider, config)
+  const fiber = ctx.plugin(LocalCredentialProvider, { protection: 'plain', ...config })
   cleanups.push(async () => { await fiber.dispose() })
   await fiber
   return ctx
@@ -337,7 +337,7 @@ describe('record mutation', () => {
   it('refuses record writes once disposed', async () => {
     const dir = await tempDir()
     const ctx = new Context()
-    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false, protection: 'plain' })
     await fiber
     const credentials = ctx.credentials
     await fiber.dispose()

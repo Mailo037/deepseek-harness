@@ -8,13 +8,11 @@ A recognizer error restores the pre-recording draft and announces through the bu
 
 The contribution needs nothing beyond the session standard kit (`useInput` / `inputActions`) and the browser API: no Host request, no Session event, no projection — the transcript is plain draft text exactly as if typed.
 
-The `/client` exports are the plugin body (`apply`/`inject`).
+The `/client` exports are the plugin body (`apply`/`inject`). The recognition language follows `navigator.language` (the browser/OS default — Windows transcription follows the system language), with continuous listening and interim results enabled so final segments commit progressively.
 
 ## Model Experience
 
-Indirectly: the transcribed text lands in the composer draft exactly like typed text, so the model sees it only when the user sends. The feature adds no prompt content of its own, and nothing is sent while recording.
-
-The recognition language follows `navigator.language` (the browser/OS default — Windows transcription follows the system language), with continuous listening and interim results enabled so final segments commit progressively.
+Indirectly, through the composer draft, transcribed text reaches the model only when the user sends it; the feature adds no prompt content of its own, and nothing is sent while recording.
 
 #### KV Cache effect
 

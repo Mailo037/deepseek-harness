@@ -1,0 +1,24 @@
+/* One heading treatment for every settings pane: the section title over its
+ * description. Consistent across tabs so navigation never changes the block's
+ * rhythm. Tokens only; no literal colors. */
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
+}

@@ -211,8 +211,14 @@
   }
 }
 
-/* Touch layouts keep every verb but collapse the row into one menu. */
+/* Touch layouts keep every verb but collapse the row into one menu, and the
+   strip body itself toggles the read view (tap-to-toggle; the cursor matters
+   on narrow fine-pointer windows where this query also applies). */
 @media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .bar {
+    cursor: pointer;
+  }
+
   .bar .actions {
     display: none;
   }

@@ -17,10 +17,10 @@
 // independent); an error row's collapsed summary is the failure's first line in
 // the error color.
 
-import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
+  BottomSheet, CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WebBlockProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -31,6 +31,11 @@ import { terminalBlockLabels, type TerminalCardModel } from '../models/terminal-
 import { webBlockLabels } from '../models/web-card-model.ts'
 import type { ToolRowState, ToolRowVariant } from '../models/tool-call-model.ts'
 import css from './ToolRow.module.css'
+
+/** Phone breakpoint: the same capped-width gate the composer uses for its
+ *  phone folds, so tool rows switch to the bottom-sheet reading surface in the
+ *  same viewport band. */
+const MOBILE_QUERY = '(max-width: 639px)'
 
 export interface ToolRowProps {
   /** The render site's conversation locale seat (terminal/code body copy). */
@@ -148,6 +153,17 @@ export function ToolRow({
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_QUERY).matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(MOBILE_QUERY)
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
   const terminalBody = terminal ?? null
   const diffBody = diff ?? null
   const readBody = read ?? null
@@ -159,7 +175,9 @@ export function ToolRow({
   // makes the row expandable.
   const card = terminalBody ?? diffBody ?? readBody ?? searchBody ?? webBody
   const expandable = body !== null || outputText !== null || card !== null
-  const open = expanded && expandable
+  // On phone the body never expands inline — the row is the tap target for the
+  // bottom sheet, so it stays one line and the `open` flag stays false.
+  const open = phone ? false : expanded && expandable
   // The run-state label AT needs: the StateDot and the running sweep are both
   // aria-hidden / colour-only, so a stopped or running row is otherwise silent.
   const status = stateStatus(state, t)
@@ -176,6 +194,10 @@ export function ToolRow({
   // gray at rest, the +/- colors on row hover (see .diffStats).
   const diffStats = diffBody !== null ? diffBody.stats : null
   const toggleExpand = () => {
+    if (phone) {
+      if (expandable) setSheetOpen(true)
+      return
+    }
     setExpanded(v => !v)
   }
   const openFile = (event: MouseEvent<HTMLButtonElement>) => {
@@ -195,6 +217,85 @@ export function ToolRow({
   // The state substitution rides the idle icon slot, so an expandable error
   // row keeps DisclosureRow's icon→chevron hover preview (its default) instead
   // of losing it with the icon.
+  // The expanded body is a single element reused by both the inline disclosure
+  // (desktop) and the phone bottom sheet, so a streaming call stays current in
+  // whichever surface is open — the body re-renders with the row's live props.
+  const bodyContent = (
+    <div className={css.bodyWrap}>
+      {terminalBody !== null
+        ? (
+          <TerminalBlock
+            {...terminalBody.card}
+            maxLines={Infinity}
+            labels={terminalBlockLabels(t)}
+            className={css.terminalBody}
+          />
+        )
+        : diffBody !== null
+          ? <DiffBlock {...diffBody.card} maxLines={CHAT_DIFF_MAX_LINES} labels={diffBlockLabels(t)} className={css.diffBody} />
+          : readBody !== null
+            ? <ReadBlock {...readBody} maxLines={CHAT_READ_MAX_LINES} labels={readBlockLabels(t)} className={css.readBody} />
+            : searchBody !== null
+              ? (
+                <>
+                  <SearchBlock
+                    {...searchBody.card}
+                    maxLines={CHAT_SEARCH_MAX_LINES}
+                    labels={searchBlockLabels(t)}
+                    className={css.searchBody}
+                  />
+                  {/* A capped search's recovery locator lives only in the result
+                      text; show it below the card so the dropped rows survive. */}
+                  {searchBody.recovery !== undefined && (
+                    <div className={css.searchRecovery}>{searchBody.recovery}</div>
+                  )}
+                </>
+              )
+              : webBody !== null
+                ? <WebBlock {...webBody} labels={webBlockLabels(t)} className={css.webBody} />
+                : (
+                  <>
+                    {variant === 'code' && body !== null && (
+                      <div className={css.bodyScroll}>
+                        <CodeBlock code={body} lang="typescript" copyLabel={t('copy')} copiedLabel={t('copied')} className={css.codeBody} />
+                      </div>
+                    )}
+                    {(cardBody !== null || outputText !== null) && (
+                      <div className={css.ioCard}>
+                        {cardBody !== null && (
+                          <div className={css.ioSection}>
+                            <span className={css.ioLabel}>IN</span>
+                            <span className={css.ioText}>{cardBody}</span>
+                          </div>
+                        )}
+                        {cardBody !== null && outputText !== null && (
+                          <span className={css.ioDivider} aria-hidden />
+                        )}
+                        {outputText !== null && (
+                          <div className={css.ioSection}>
+                            <span className={css.ioLabel}>OUT</span>
+                            <span className={css.ioText} data-error={state === 'error' || undefined}>
+                              {outputText}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+      {inspect !== undefined && (
+        <button
+          type="button"
+          className={css.inspectButton}
+          onClick={inspect}
+        >
+          <IconInspectOutline12 />
+          Inspect
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <div className={css.root} data-variant={variant} data-tool={toolName} data-state={state}>
       {status !== null && <span className={css.visuallyHidden}>{status}</span>}
@@ -241,82 +342,19 @@ export function ToolRow({
           </>
         )}
       >
-        {/* The wrapper (sibling of the header row, so clicks inside never
-            toggle it) carries the expanded body and the Inspect pill below. */}
-        <div className={css.bodyWrap}>
-          {terminalBody !== null
-            ? (
-              <TerminalBlock
-                {...terminalBody.card}
-                maxLines={Infinity}
-                labels={terminalBlockLabels(t)}
-                className={css.terminalBody}
-              />
-            )
-            : diffBody !== null
-              ? <DiffBlock {...diffBody.card} maxLines={CHAT_DIFF_MAX_LINES} labels={diffBlockLabels(t)} className={css.diffBody} />
-              : readBody !== null
-                ? <ReadBlock {...readBody} maxLines={CHAT_READ_MAX_LINES} labels={readBlockLabels(t)} className={css.readBody} />
-                : searchBody !== null
-                  ? (
-                    <>
-                      <SearchBlock
-                        {...searchBody.card}
-                        maxLines={CHAT_SEARCH_MAX_LINES}
-                        labels={searchBlockLabels(t)}
-                        className={css.searchBody}
-                      />
-                      {/* A capped search's recovery locator lives only in the result
-                          text; show it below the card so the dropped rows survive. */}
-                      {searchBody.recovery !== undefined && (
-                        <div className={css.searchRecovery}>{searchBody.recovery}</div>
-                      )}
-                    </>
-                  )
-                  : webBody !== null
-                    ? <WebBlock {...webBody} labels={webBlockLabels(t)} className={css.webBody} />
-                    : (
-                      <>
-                        {variant === 'code' && body !== null && (
-                          <div className={css.bodyScroll}>
-                            <CodeBlock code={body} lang="typescript" copyLabel={t('copy')} copiedLabel={t('copied')} className={css.codeBody} />
-                          </div>
-                        )}
-                        {(cardBody !== null || outputText !== null) && (
-                          <div className={css.ioCard}>
-                            {cardBody !== null && (
-                              <div className={css.ioSection}>
-                                <span className={css.ioLabel}>IN</span>
-                                <span className={css.ioText}>{cardBody}</span>
-                              </div>
-                            )}
-                            {cardBody !== null && outputText !== null && (
-                              <span className={css.ioDivider} aria-hidden />
-                            )}
-                            {outputText !== null && (
-                              <div className={css.ioSection}>
-                                <span className={css.ioLabel}>OUT</span>
-                                <span className={css.ioText} data-error={state === 'error' || undefined}>
-                                  {outputText}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-          {inspect !== undefined && (
-            <button
-              type="button"
-              className={css.inspectButton}
-              onClick={inspect}
-            >
-              <IconInspectOutline12 />
-              Inspect
-            </button>
-          )}
-        </div>
+        {bodyContent}
       </DisclosureRow>
+      {phone && expandable && (
+        <BottomSheet
+          open={sheetOpen}
+          onClose={() => { setSheetOpen(false) }}
+          title={title}
+          closeLabel={t('sheet.close')}
+          bodyClassName={css.sheetBody}
+        >
+          {bodyContent}
+        </BottomSheet>
+      )}
     </div>
   )
 }

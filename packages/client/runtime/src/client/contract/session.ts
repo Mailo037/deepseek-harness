@@ -87,6 +87,14 @@ export interface ISession {
    */
   loadOlder(): Promise<void>
   /**
+   * Re-run the history open after a failed open (the snapshot's error state
+   * with `openError`): the recovery verb behind the conversation's
+   * history-load retry control. An in-flight open shares its promise and a
+   * completed open is a no-op, so this is safe from any state.
+   * @returns completion of the open flow; failures land in snapshot.openError.
+   */
+  reloadHistory(): Promise<void>
+  /**
    * Execute one slash-command line against this session's agent — pure
    * admission semantics (the host executor durably logs the lifecycle).
    * @param line - the full command line, leading slash included.

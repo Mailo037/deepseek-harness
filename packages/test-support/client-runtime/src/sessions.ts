@@ -141,6 +141,14 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
+   * Fail-loud stub; supply `reloadHistory` on the fixture's session face to exercise it.
+   * @returns never — always throws.
+   */
+  reloadHistory(): never {
+    throw new Error(`test session "${this.sessionId}": reloadHistory is not stubbed — supply it on the fixture's session face`)
+  }
+
+  /**
    * Fail-loud stub; supply `rename` on the fixture's session face to exercise it.
    * @returns never — always throws.
    */

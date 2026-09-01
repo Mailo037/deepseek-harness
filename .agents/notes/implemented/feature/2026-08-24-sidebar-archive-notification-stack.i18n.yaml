@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-sidebar-archive-notification-stack.md
-2026-08-24-sidebar-archive-notification-stack.md: 95e6be4bb6f4480e529499efac296f74250ede45
-2026-08-24-sidebar-archive-notification-stack.zh.md: e4fd558be38b26cceb3778a1539c3de1634ff21e
+2026-08-24-sidebar-archive-notification-stack.md: 38ba66d6a5883f5a5d83922de57cd315e83085da
+2026-08-24-sidebar-archive-notification-stack.zh.md: d9f424c03270a5278907a50f6c7220a052e3014b

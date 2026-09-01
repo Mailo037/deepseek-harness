@@ -14,6 +14,7 @@ export const zh = {
   'changes.summaryOne': '已更改 {count} 个文件',
   'changes.summary': '已更改 {count} 个文件',
   'changes.aria': '已更改 {files} 个文件，新增 {added} 行，删除 {removed} 行',
+  'changes.close': '关闭',
 }
 
 /** English dictionary (same key set). */
@@ -27,6 +28,7 @@ export const en: Record<DeliverablesKey, string> = {
   'changes.summaryOne': '{count} file changed',
   'changes.summary': '{count} files changed',
   'changes.aria': '{files} files changed, +{added} lines and -{removed} lines',
+  'changes.close': 'Close',
 }
 
 /** Union of this namespace's dictionary keys. */

@@ -13,7 +13,7 @@ Both chords require the primary modifier exactly: no Alt, and the per-chord Shif
 
 ## Model Experience
 
-None: the chords call client-side actions (`layout.toggleSidebar()`, `workspaces.startSession()`, `layout.openDetails()`, and a DOM focus) that never reach a model request.
+None, as the chords call client-side actions (`layout.toggleSidebar()`, `workspaces.startSession()`, `layout.openDetails()`, and a DOM focus) that never reach a model request.
 
 #### KV Cache effect
 

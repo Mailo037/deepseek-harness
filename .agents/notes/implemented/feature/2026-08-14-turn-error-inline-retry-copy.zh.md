@@ -12,7 +12,7 @@ Status: implemented
 
 `turn-error` 聊天节点在其状态行下方渲染一条内联操作条：一个 **重试** 按钮和共享的复制 IconActions（复制错误消息）。
 
-- 重试会发送一条排队用户轮次，提示为本地化的续跑文案（`message.turnError.retryMessage`：“发生意外错误，请继续你之前的工作。” / "An unexpected error occurred, please continue what you were doing."）。它走普通发送路径 —— 会话作用域的 `conversation.send` —— 因此被发送的提示是一条持久的、可见的用户消息，后续每个轮次都能看到（[model-visible ⟺ logged](../../../docs/architecture.md)）。
+- 重试会发送一条排队用户轮次，提示为本地化的续跑文案（`message.turnError.retryMessage`：“发生意外错误，请继续你之前的工作。” / "An unexpected error occurred, please continue what you were doing."）。它走普通发送路径 —— 会话作用域的 `conversation.send` —— 因此被发送的提示是一条持久的、可见的用户消息，后续每个轮次都能看到（[model-visible ⟺ logged](../../../../docs/architecture.md)）。
 - 复用 `MessageIconActions` 实现复制，以错误的展示安全消息作为复制文本；沿用既有的 copied/check 切换样式。
 - 回调通过槽系统到达渲染器，而不是服务导入：`ChatNodeOwnerProps` 新增 `sendMessage(text)`，由 chat view 条目的 inject 通过 `scopedConversation(...).send(...)` 提供。被拒绝的投递落入快照的 `promptError`；inject 吞掉该 rejection，因为调用方没有任何可恢复手段。
 - 按钮位于 `role="status"` 元素之外，屏幕阅读器播报的仍然恰好是失败文本本身。

@@ -1,5 +1,5 @@
 import {
-  useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent,
+  useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -7,7 +7,7 @@ import {
   type SessionSummary, type SubagentAddress, type SubagentCatalogSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconRefreshOutline14, StateDot,
+  BottomSheet, IconChevronDownOutline14, IconChevronRightOutline14, IconRefreshOutline14, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
@@ -464,6 +464,10 @@ type CatalogDropdownProps = CatalogDropdownSharedProps & (
 
 const MENU_VIEWPORT_MARGIN = 16
 
+/** Phone breakpoint: the same capped-width gate the composer uses for its
+ *  phone folds, so the catalog drops into a bottom sheet in the same band. */
+const MOBILE_QUERY = '(max-width: 639px)'
+
 /** Place a portaled catalog below its trigger without crossing the viewport edge. */
 function catalogMenuPosition(trigger: HTMLButtonElement): CSSProperties {
   const rect = trigger.getBoundingClientRect()
@@ -490,6 +494,16 @@ function CatalogDropdown({
   const [menuPosition, setMenuPosition] = useState<CSSProperties>()
   const [now, setNow] = useState(() => Date.now())
   const [expanded, setExpanded] = useState<ReadonlySet<SessionId>>(() => new Set())
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_QUERY).matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(MOBILE_QUERY)
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -584,6 +598,23 @@ function CatalogDropdown({
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
+  // On phone there is no hover, so the trigger is the tap target for the
+  // bottom sheet; on desktop the click keeps its existing meaning (the
+  // switcher's open-title, or nothing for a plain count trigger, which opens
+  // on hover).
+  const handleTriggerClick = (): void => {
+    if (phone) {
+      if (open) changeOpen(false)
+      else changeOpen(true)
+      return
+    }
+    if (openTitle !== undefined) {
+      cancelHoverOpen()
+      if (open) changeOpen(false)
+      openTitle()
+    }
+  }
+
   const scheduleHoverOpen = (): void => {
     cancelHoverOpen()
     cancelHoverClose()
@@ -628,7 +659,9 @@ function CatalogDropdown({
   }
 
   useEffect(() => {
-    if (!open) return
+    // On phone the bottom sheet's mask owns outside dismissal; this listener
+    // would otherwise fire on the portaled sheet content.
+    if (!open || phone) return
     const closeOutside = (event: PointerEvent): void => {
       if (
         event.target instanceof Node
@@ -640,10 +673,10 @@ function CatalogDropdown({
     }
     document.addEventListener('pointerdown', closeOutside)
     return () => { document.removeEventListener('pointerdown', closeOutside) }
-  }, [open])
+  }, [open, phone])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || phone) return
     const placeMenu = (): void => {
       const trigger = triggerRef.current
       /* v8 ignore next -- native resize or scroll can outlive the trigger */
@@ -720,13 +753,32 @@ function CatalogDropdown({
     }
   }
 
+  /** One catalog tree, reused by the desktop portal and the phone bottom sheet. */
+  const renderTree = (): ReactNode => (
+    <CatalogRows
+      parentSessionId={rootSessionId}
+      currentSessionId={currentSessionId}
+      catalog={presentedCatalog}
+      catalogs={catalogs}
+      summaries={summaries}
+      expanded={expanded}
+      level={1}
+      now={now}
+      openChild={openChild}
+      refresh={refresh}
+      toggleBranch={toggleBranch}
+      closeCatalog={() => { changeOpen(false) }}
+      t={t}
+    />
+  )
+
   return (
     <div
       className={`${css.root} ${variant === 'switcher' ? css.switcherRoot : ''}`}
       ref={rootRef}
       onKeyDown={navigate}
-      onMouseEnter={scheduleHoverOpen}
-      onMouseLeave={scheduleHoverClose}
+      onMouseEnter={phone ? undefined : scheduleHoverOpen}
+      onMouseLeave={phone ? undefined : scheduleHoverClose}
     >
       {separator && <span className={css.separator}>/</span>}
       <button
@@ -743,13 +795,7 @@ function CatalogDropdown({
             descendants.runningCount > 0 ? runningCountKey : totalCountKey,
             { count: descendants.runningCount > 0 ? descendants.runningCount : descendantCount },
           )}
-        onClick={openTitle === undefined
-          ? undefined
-          : () => {
-            cancelHoverOpen()
-            if (open) changeOpen(false)
-            openTitle()
-          }}
+        onClick={handleTriggerClick}
         onKeyDown={(event) => {
           if (event.key !== 'ArrowDown') return
           event.preventDefault()
@@ -773,33 +819,33 @@ function CatalogDropdown({
           ? <SubagentSwitcherIcon />
           : <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />}
       </button>
-      {open && createPortal((
-        <div
-          ref={menuRef}
-          className={css.menu}
-          style={menuPosition}
-          role="tree"
-          aria-label={t('tree.aria')}
-          onMouseEnter={cancelHoverClose}
-          onMouseLeave={scheduleHoverClose}
-        >
-          <CatalogRows
-            parentSessionId={rootSessionId}
-            currentSessionId={currentSessionId}
-            catalog={presentedCatalog}
-            catalogs={catalogs}
-            summaries={summaries}
-            expanded={expanded}
-            level={1}
-            now={now}
-            openChild={openChild}
-            refresh={refresh}
-            toggleBranch={toggleBranch}
-            closeCatalog={() => { changeOpen(false) }}
-            t={t}
-          />
-        </div>
-      ), document.body)}
+      {phone
+        ? (
+          <BottomSheet
+            open={open}
+            onClose={() => { changeOpen(false, true) }}
+            title={t('tree.aria')}
+            closeLabel={t('sheet.close')}
+            bodyClassName={css.sheetBody}
+          >
+            <div className={css.sheetTree} role="tree" aria-label={t('tree.aria')}>
+              {renderTree()}
+            </div>
+          </BottomSheet>
+        )
+        : open && createPortal((
+          <div
+            ref={menuRef}
+            className={css.menu}
+            style={menuPosition}
+            role="tree"
+            aria-label={t('tree.aria')}
+            onMouseEnter={cancelHoverClose}
+            onMouseLeave={scheduleHoverClose}
+          >
+            {renderTree()}
+          </div>
+        ), document.body)}
     </div>
   )
 }

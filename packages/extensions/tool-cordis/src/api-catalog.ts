@@ -1215,9 +1215,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{GitError} propagated from the underlying commands.'],
       },
       {
-        signature: 'createWebUpdateHandoff(address: UpdateWebAddress): UpdateHandoff',
-        description: 'Build the detached Web update handoff. The helper starts before host shutdown, waits for this process to release the listening port, serves bounded status and command logs there, fast-forwards and builds, then starts this exact Web invocation with the resolved port and `--no-open` forced.',
-        parameters: [{ name: 'address', description: 'authoritative address of the active Web server.' }],
+        signature: 'createWebUpdateHandoff(address: UpdateWebAddress, options: UpdateHandoffOptions = {}): UpdateHandoff',
+        description: 'Build the detached Web update handoff. The helper starts before host shutdown, waits for this process to release the listening port, serves bounded status and command logs there, optionally fast-forwards, builds, then starts this exact Web invocation with the resolved port and `--no-open` forced.',
+        parameters: [{ name: 'address', description: 'authoritative address of the active Web server.' }, { name: 'options', description: 'selects rebuild-only (`pull: false`) over update.' }],
         returns: 'the no-shell process request for the launcher.',
         throws: ['{GitError} when the checkout was not launched through pnpm.'],
       },
@@ -2607,6 +2607,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'connection/authenticate',
+    mode: 'waterfall',
+    signature: '\'connection/authenticate\'(this: Context, request: IncomingMessage, next: () => boolean): boolean',
+    summary: 'Waterfall: whether a browser request to the web surface is authorized.',
+    description: 'Waterfall: whether a browser request to the web surface is authorized.',
+    parameters: [{ name: 'request', description: 'HTTP request whose origin and presented token are checked.' }, { name: 'next', description: 'Delegate to the next authentication listener.' }],
+  },
+  {
     name: 'cordis/dynamic-package',
     mode: 'emit',
     signature: '\'cordis/dynamic-package\'(pkg: DynamicCordisPackage): void',
@@ -2781,6 +2789,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Committed change to one registered namespace\'s resolved value.',
     description: 'Committed change to one registered namespace\'s resolved value. Emitted after the provider persisted (for `update`) or published (`provider`) the change; never emitted when the resolved value is deep-equal. Listener failures are contained and logged — a sync throw and an async rejection alike — except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
     parameters: [{ name: 'ns', description: 'the namespace whose resolved value changed.' }, { name: 'next', description: 'the new resolved value.' }, { name: 'prev', description: 'the previous resolved value.' }, { name: 'source', description: 'whether the change entered through `update()` or the provider.' }],
+  },
+  {
+    name: 'shell/authorize',
+    mode: 'waterfall',
+    signature: '\'shell/authorize\'(this: Context, command: string, next: () => boolean): boolean',
+    summary: 'Waterfall: whether a shell command is authorized to run.',
+    description: 'Waterfall: whether a shell command is authorized to run.',
+    parameters: [{ name: 'command', description: 'Shell command proposed for execution.' }, { name: 'next', description: 'Continue authorization through the remaining listeners.' }],
+  },
+  {
+    name: 'shell/authorize',
+    mode: 'waterfall',
+    signature: '\'shell/authorize\'(this: Context, command: string, next: () => boolean): boolean',
+    summary: 'Waterfall: whether a shell command is authorized to run.',
+    description: 'Waterfall: whether a shell command is authorized to run. The default (no listener, or every listener delegating via `next()`) is `true`; a listener returning `false` without calling `next()` blocks the command with a `SHELL_DENIED` error. Plugins implementing deny lists (e.g. the fs-deny policy) register here.',
+    parameters: [{ name: 'command', description: 'the raw command string (e.g. `cat .env`).' }, { name: 'next', description: 'delegate to the next listener (or the default).' }],
   },
   {
     name: 'skills/change',
@@ -2960,7 +2984,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Agent',
-    declaration: 'export interface Agent {\n    readonly id: SessionId;\n    readonly options: AgentOptions;\n    readonly session: Session;\n    readonly inbox: Inbox;\n    readonly status: AgentStatus;\n    readonly ctx: Context;\n    cancel(cause: AgentCancelCause, options?: CancelOptions): void;\n    whenIdle(): Promise<void>;\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n    send(message: UserMessage, target: InboxTarget, wakeup: boolean): void;\n    followup(message: UserMessage): void;\n    steer(message: UserMessage): void;\n    inject(message: UserMessage): void;\n}',
+    declaration: 'export interface Agent {\n    readonly id: SessionId;\n    readonly options: AgentOptions;\n    readonly session: Session;\n    readonly inbox: Inbox;\n    readonly status: AgentStatus;\n    readonly ctx: Context;\n    cancel(cause: AgentCancelCause, options?: CancelOptions): void;\n    whenIdle(): Promise<void>;\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n    send(message: UserMessage, target: InboxTarget, wakeup: boolean): void;\n    followup(message: UserMessage): void;\n    prepend(message: UserMessage): void;\n    steer(message: UserMessage): void;\n    inject(message: UserMessage): void;\n}',
   },
   {
     name: 'AgentCancelCause',
@@ -3728,7 +3752,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmFailure',
-    declaration: 'export interface LlmFailure {\n    readonly message: string;\n    readonly code: string;\n    readonly status?: number;\n    readonly providerRetryAfterMs?: number;\n    readonly requestId?: ProviderRequestId;\n}',
+    declaration: 'export interface LlmFailure {\n    readonly message: string;\n    readonly code: string;\n    readonly status?: number;\n    readonly providerRetryAfterMs?: number;\n    readonly requestId?: ProviderRequestId;\n    readonly apiKeyRef?: string;\n}',
   },
   {
     name: 'LlmModelContext',
@@ -5065,6 +5089,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateHandoff',
     declaration: 'export interface UpdateHandoff {\n    command: string;\n    args: readonly string[];\n    cwd: string;\n}',
+  },
+  {
+    name: 'UpdateHandoffOptions',
+    declaration: 'export interface UpdateHandoffOptions {\n    pull?: boolean;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

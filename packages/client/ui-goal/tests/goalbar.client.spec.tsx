@@ -15,7 +15,10 @@ import { zh } from '../src/client/locales.ts'
 // The framework-injected t seat, stubbed over the zh dictionaries (the default locale).
 const t: Parameters<typeof GoalBar>[0]['t'] = makeTranslate(zh, commonZh)
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 function makeGoal(over: Partial<GoalSnapshot> = {}): GoalSnapshot {
   return {
@@ -26,6 +29,11 @@ function makeGoal(over: Partial<GoalSnapshot> = {}): GoalSnapshot {
     maxGoalRounds: 4,
     ...over,
   }
+}
+
+/** Stub jsdom's missing matchMedia for the GoalBar touch-layout gate. */
+function stubMatchMedia(matches: boolean): void {
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches })))
 }
 
 function makeActions() {
@@ -248,5 +256,36 @@ describe('GoalBar', () => {
     expect(actions.onClear).toHaveBeenCalledTimes(1)
     // Selection closes the menu.
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('touch layout: tapping the strip toggles the expanded read view', () => {
+    stubMatchMedia(true)
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ objective: 'A long objective ' + 'that repeats '.repeat(40) })} {...actions} t={t} />)
+    expect(screen.queryByRole('button', { name: '收起目标' })).toBeNull()
+
+    fireEvent.click(screen.getByText(/A long objective/))
+    const collapse = screen.getByRole('button', { name: '收起目标' })
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(screen.getByText(/A long objective/))
+    expect(screen.queryByRole('button', { name: '收起目标' })).toBeNull()
+  })
+
+  it('touch layout: the kebab seat opens the menu without toggling the strip', () => {
+    stubMatchMedia(true)
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal()} {...actions} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    expect(screen.getByRole('menu')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '收起目标' })).toBeNull()
+  })
+
+  it('fine-pointer desktop: clicking the strip body does not toggle expansion', () => {
+    stubMatchMedia(false)
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ objective: 'A long objective ' + 'that repeats '.repeat(40) })} {...actions} t={t} />)
+    fireEvent.click(screen.getByText(/A long objective/))
+    expect(screen.queryByRole('button', { name: '收起目标' })).toBeNull()
   })
 })

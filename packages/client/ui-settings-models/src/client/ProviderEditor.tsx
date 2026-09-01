@@ -454,6 +454,39 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       },
       onReset: () => { setDraft(current => schema.deletePath(current, ['models'])) },
     }
+    /** The route-wide default reasoning select; its choices follow the family. */
+    const reasoningField = (
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('providerReasoning')}</span>
+        <Select
+          className={styles['selectInput']}
+          value={stringAt(draft, family === 'deepseek' ? 'reasoningEffort' : 'reasoning') ?? ''}
+          aria-label={t('providerReasoning')}
+          disabled={disabled}
+          options={family === 'deepseek'
+            ? [
+              { value: '', label: t('reasoningInherit') },
+              { value: 'off', label: t('reasoningOff') },
+              { value: 'low', label: t('reasoningLow') },
+              { value: 'high', label: t('reasoningHigh') },
+              { value: 'max', label: t('reasoningMax') },
+            ]
+            : [
+              { value: '', label: t('reasoningInherit') },
+              { value: 'off', label: t('reasoningOff') },
+              { value: 'minimal', label: t('reasoningMinimal') },
+              { value: 'low', label: t('reasoningLow') },
+              { value: 'medium', label: t('reasoningMedium') },
+              { value: 'high', label: t('reasoningHigh') },
+              { value: 'xhigh', label: t('reasoningXHigh') },
+              { value: 'max', label: t('reasoningMax') },
+            ]}
+          onChange={(level) => {
+            setField(family === 'deepseek' ? 'reasoningEffort' : 'reasoning', level === '' ? undefined : level)
+          }}
+        />
+      </div>
+    )
     return (
       <>
         <div className={styles['field']}>
@@ -574,72 +607,30 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               />
             </div>
             {/* The protocol sits beside the endpoint it describes, as it does
-                on the create card. */}
+                on the create card, and shares a row with the route-wide
+                reasoning default when both belong to this card. */}
             {ownsIdentity
               ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('customApi')}</span>
-                  <Select
-                    className={styles['selectInput']}
-                    value={probeApi ?? ''}
-                    aria-label={t('customApi')}
-                    disabled={disabled}
-                    placeholder={probeApi === undefined ? t('customApiUnset') : undefined}
-                    options={[
-                      ...(probeApi === undefined ? [{ value: '', label: t('customApiUnset') }] : []),
-                      ...protocols.map(choice => ({ value: choice, label: choice })),
-                    ]}
-                    onChange={(selectedApi) => { setField('api', selectedApi) }}
-                  />
+                <div className={styles['fieldRow']}>
+                  <div className={styles['field']}>
+                    <span className={styles['fieldLabel']}>{t('customApi')}</span>
+                    <Select
+                      className={styles['selectInput']}
+                      value={probeApi ?? ''}
+                      aria-label={t('customApi')}
+                      disabled={disabled}
+                      placeholder={probeApi === undefined ? t('customApiUnset') : undefined}
+                      options={[
+                        ...(probeApi === undefined ? [{ value: '', label: t('customApiUnset') }] : []),
+                        ...protocols.map(choice => ({ value: choice, label: choice })),
+                      ]}
+                      onChange={(selectedApi) => { setField('api', selectedApi) }}
+                    />
+                  </div>
+                  {reasoningField}
                 </div>
               )
-              : null}
-            {family === 'deepseek'
-              ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('providerReasoning')}</span>
-                  <Select
-                    className={styles['selectInput']}
-                    value={stringAt(draft, 'reasoningEffort') ?? ''}
-                    aria-label={t('providerReasoning')}
-                    disabled={disabled}
-                    options={[
-                      { value: '', label: t('reasoningInherit') },
-                      { value: 'off', label: t('reasoningOff') },
-                      { value: 'low', label: t('reasoningLow') },
-                      { value: 'high', label: t('reasoningHigh') },
-                      { value: 'max', label: t('reasoningMax') },
-                    ]}
-                    onChange={(effort) => {
-                      setField('reasoningEffort', effort === '' ? undefined : effort)
-                    }}
-                  />
-                </div>
-              )
-              : (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('providerReasoning')}</span>
-                  <Select
-                    className={styles['selectInput']}
-                    value={stringAt(draft, 'reasoning') ?? ''}
-                    aria-label={t('providerReasoning')}
-                    disabled={disabled}
-                    options={[
-                      { value: '', label: t('reasoningInherit') },
-                      { value: 'off', label: t('reasoningOff') },
-                      { value: 'minimal', label: t('reasoningMinimal') },
-                      { value: 'low', label: t('reasoningLow') },
-                      { value: 'medium', label: t('reasoningMedium') },
-                      { value: 'high', label: t('reasoningHigh') },
-                      { value: 'xhigh', label: t('reasoningXHigh') },
-                      { value: 'max', label: t('reasoningMax') },
-                    ]}
-                    onChange={(reasoning) => {
-                      setField('reasoning', reasoning === '' ? undefined : reasoning)
-                    }}
-                  />
-                </div>
-              )}
+              : reasoningField}
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}

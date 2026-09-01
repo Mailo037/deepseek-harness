@@ -1,8 +1,9 @@
 /**
  * Welcome-notice state derived from the welcome settings scope. The scope is
  * the transport: a loopback browser follows the durable Host section, while a
- * remote browser's memory-mode scope never answers and the acknowledgement
- * stays process-local here.
+ * remote browser's memory-mode scope never answers and the acknowledgement is
+ * held in this origin's localStorage so it survives reloads (see
+ * {@link LOCAL_ACK_KEY}).
  */
 
 import type { SettingsScope, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -16,6 +17,34 @@ export interface WelcomeNoticeState {
   status: 'idle' | 'loading' | 'ready' | 'saving' | 'error'
   acknowledged: boolean
   error: string | null
+}
+
+/**
+ * Browser-local key for a remote browser's acknowledgement. A remote (memory
+ * mode) browser cannot write the Host-only `ui-onboarding` namespace, so its
+ * acknowledgement lives in this origin's localStorage and therefore survives
+ * reloads on the same device — otherwise the welcome notice would return on
+ * every load, including every thin-client GUI connect.
+ */
+const LOCAL_ACK_KEY = 'dsh.ui-onboarding.welcomeNoticeVersion'
+
+/** Read the browser-local acknowledgement (absent/broken storage → false). */
+function readLocalAcknowledgement(): boolean {
+  try {
+    return window.localStorage.getItem(LOCAL_ACK_KEY) === WELCOME_NOTICE_VERSION
+  } catch {
+    return false
+  }
+}
+
+/** Persist the browser-local acknowledgement; a blocked store stays in-memory. */
+function writeLocalAcknowledgement(): void {
+  try {
+    window.localStorage.setItem(LOCAL_ACK_KEY, WELCOME_NOTICE_VERSION)
+  } catch {
+    // localStorage unavailable or at quota: the in-memory flag still holds the
+    // acknowledgement for this process.
+  }
 }
 
 /** The welcome section as the notice reads it. */
@@ -39,20 +68,20 @@ function assertNever(_value: never): never {
   throw new Error('unexpected welcome settings status')
 }
 
-/** Coordinates durable Host acknowledgement or a process-local remote fallback. */
+/** Coordinates durable Host acknowledgement or a browser-local remote fallback. */
 export class WelcomeNoticeStore {
   /** uSES-safe state source shared by the registered welcome step. */
   readonly store: SnapshotStore<WelcomeNoticeState> = createSnapshotStore<WelcomeNoticeState>({
     status: 'idle', acknowledged: false, error: null,
   })
 
-  private localAcknowledged = false
+  private localAcknowledged = readLocalAcknowledgement()
   private saving = false
   private following: (() => void) | undefined
 
   /**
    * @param scope - the welcome settings namespace scope; its memory mode is
-   * what keeps a remote browser process-local.
+   * what keeps a remote browser browser-local.
    */
   constructor(private readonly scope: SettingsScope<WelcomeSection>) {}
 
@@ -75,6 +104,7 @@ export class WelcomeNoticeStore {
   async acknowledge(): Promise<boolean> {
     if (this.scope.getSnapshot().mode === 'memory') {
       this.localAcknowledged = true
+      writeLocalAcknowledgement()
       this.derive()
       return true
     }

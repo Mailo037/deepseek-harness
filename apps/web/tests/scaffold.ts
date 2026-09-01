@@ -294,8 +294,9 @@ export interface LaunchOptions {
   telemetryUrl?: string
   /**
    * Browse through a trusted non-loopback hostname that the browser resolves
-   * to loopback (for example `*.localhost`). The test server stays bound to
-   * 127.0.0.1; a non-resolving authority fails before Host trust is exercised.
+   * to loopback (for example through Playwright host-resolver rules). The test
+   * server stays bound to 127.0.0.1; a non-resolving authority fails before
+   * Host trust is exercised.
    */
   remoteAuthority?: string
   /** Reuse an existing harness home so a second Host can verify user settings across origins. */
@@ -479,7 +480,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       ? []
       : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
     { id: 'settings', config: { dshHome: harnessHome } },
-    { id: 'credentials', config: { dshHome: harnessHome } },
+    // Browser goldens inspect the logical YAML document directly. Keep this
+    // fixture platform-neutral; the published CLI and credentials-local tests
+    // cover the shipped platform-protection default with real Windows DPAPI.
+    { id: 'credentials', config: { dshHome: harnessHome, protection: 'plain' } },
     // The shipped directory-picker row is the -auto chooser, which resolves
     // the interaction from the RUNNING host (display, SSH launch, bind). The
     // lane's goldens are interaction-specific (workspace-management drives

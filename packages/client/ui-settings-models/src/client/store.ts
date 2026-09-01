@@ -13,6 +13,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
+import { HIDDEN_PROVIDERS_FIELD, MODELS_SETTINGS_NAMESPACE } from '../provider-order.ts'
 
 /**
  * Any route key walks a dict schema to the same profile node, so the lookup
@@ -34,6 +35,8 @@ export interface ProviderRow {
   backupApiKeys: readonly string[]
   /** Credential state for {@link apiKeyEnv}, once described. */
   credential: CredentialView | undefined
+  /** Whether the provider stays configured but its catalog group is hidden from model selectors. */
+  hiddenInModelSelect: boolean
 }
 
 /** Page snapshot. */
@@ -121,6 +124,17 @@ function backupApiKeysOf(
     : []
 }
 
+/**
+ * Read the user preference that omits provider groups from model selectors.
+ * @param section - Untrusted models settings payload.
+ * @returns Provider identifiers hidden from model selectors.
+ */
+export function hiddenProviderIdsOf(section: unknown): readonly string[] {
+  if (typeof section !== 'object' || section === null) return []
+  const hidden = (section as { [HIDDEN_PROVIDERS_FIELD]?: unknown })[HIDDEN_PROVIDERS_FIELD]
+  return Array.isArray(hidden) ? hidden.filter((id): id is string => typeof id === 'string') : []
+}
+
 /** The models settings page controller (one per settings surface). */
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
@@ -177,6 +191,7 @@ export class ModelsSettingsStore {
       return
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
+    const hiddenProviders = new Set(hiddenProviderIdsOf(namespaces.get(MODELS_SETTINGS_NAMESPACE)?.value))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
@@ -192,6 +207,7 @@ export class ModelsSettingsStore {
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
         backupApiKeys: backupApiKeysOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
+        hiddenInModelSelect: hiddenProviders.has(entry.provider),
       }
     })
     const refs = [...new Set(rows.flatMap(row => row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]))]

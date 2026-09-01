@@ -4,13 +4,14 @@
  * objective, and icon actions — resume when paused, edit (inline form in the
  * same strip), and clear. Fine-pointer desktops reveal those icons on
  * hover/focus out of flow so hidden actions never reserve text width; touch
- * layouts collapse them into one kebab menu instead. Goal creation lives on
+ * layouts collapse them into one kebab menu instead, and a tap on the strip
+ * body toggles the read view itself. Goal creation lives on
  * the `/goal` command, not here: loading (undefined), no goal (null), and
  * complete goals render nothing. Live state arrives as the projected whole
  * snapshot; the verbs are the injected face.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronUpOutline14, IconCloseOutline16, IconEditOutline16,
@@ -34,6 +35,13 @@ const PHASE_LABELS = {
   paused: 'phase.paused',
   blocked: 'phase.blocked',
 } as const satisfies Record<string, GoalKey>
+
+/**
+ * The touch-layout media query GoalBar.module.css uses for its mobile seats
+ * (max-width 768px, or a coarse/no-hover pointer). Tap-to-toggle mirrors it:
+ * the strip body toggles only where a tap is the primary gesture.
+ */
+const TOUCH_LAYOUT = '(max-width: 768px), (hover: none), (pointer: coarse)'
 
 /** Grow a textarea to fit its content up to the CSS max-height; shrinks after edits shorten. */
 function resizeTextarea(el: HTMLTextAreaElement): void {
@@ -94,6 +102,15 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
     const result = await runAction(onClear)
     if (result?.ok) setClearedGoalId(clearedId)
   }, [onClear, runAction])
+
+  // Touch layouts toggle the read view by tapping the strip itself; taps on
+  // control seats (the kebab, menu rows) never count. The optional matchMedia
+  // keeps jsdom and non-browser lanes off this path.
+  const handleBarTap = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button') !== null) return
+    if (window.matchMedia?.(TOUCH_LAYOUT).matches !== true) return
+    setExpanded(prev => !prev)
+  }, [])
 
   // Mobile overflow menu: same verbs as the inline icons, one seat instead of
   // five. The goal snapshot is non-null wherever the menu renders.
@@ -256,7 +273,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
         /* Expanded (read) layout: the glyph + phase label lead one header row
            with every control at its right end, and the objective gets the full
            card width below instead of competing with them for one line. */
-        <div className={`${css.bar} ${css.barExpanded}`}>
+        <div className={`${css.bar} ${css.barExpanded}`} onClick={handleBarTap}>
           <div className={css.headerRow}>
             <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
             <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
@@ -266,7 +283,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
           <div className={css.objectiveExpanded}>{goal.objective}</div>
         </div>
       ) : (
-        <div className={css.bar} title={title}>
+        <div className={css.bar} title={title} onClick={handleBarTap}>
           <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
           <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
           <span className={css.objective}>{goal.objective}</span>

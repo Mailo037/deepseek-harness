@@ -209,6 +209,7 @@ export class LocalBashExecutor extends ShellExecutor {
   }
 
   async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+    this.authorizeOrThrow(spec)
     return this.runArgv(spec, ['bash', '-c', spec.command])
   }
 

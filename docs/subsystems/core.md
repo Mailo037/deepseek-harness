@@ -52,7 +52,7 @@ interface AgentHandle {
 
 ## The agent handle
 
-`Agent` is the surface every plugin (UI, hooks, orchestrators) programs against; `ctx.agents.get(id)` returns it, and the [initiator scope](#initiating-agent) carries it. The concrete implementation is package-internal to dsh-agent-loop; nothing outside the loop depends on it. The unified `send` method exposes target and wakeup routing directly; `followup`, `steer`, and `inject` are fixed-preset aliases.
+`Agent` is the surface every plugin (UI, hooks, orchestrators) programs against; `ctx.agents.get(id)` returns it, and the [initiator scope](#initiating-agent) carries it. The concrete implementation is package-internal to dsh-agent-loop; nothing outside the loop depends on it. The unified `send` method exposes target and wakeup routing directly; `followup`, `prepend`, `steer`, and `inject` are fixed-preset aliases.
 
 Source: [`packages/core/agent/src/types.ts`](../../packages/core/agent/src/types.ts)
 
@@ -119,6 +119,16 @@ interface Agent {
    * @param message - identified prompt content and the source that supplied it.
    */
   followup(message: UserMessage): void
+
+  /**
+   * Queue an ordinary turn ahead of every already-pending next-turn item and
+   * wake the driver. The item becomes the sole ordinary message of the next
+   * turn; later queued turns follow in their original order. Same wake
+   * classification as {@link followup}: input submitted after active
+   * cancellation still lands in `next-turn`, only at its front.
+   * @param message - identified prompt content and the source that supplied it.
+   */
+  prepend(message: UserMessage): void
 
   /**
    * Submit steering for the nearest step. An idle driver starts a turn;

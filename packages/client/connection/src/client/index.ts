@@ -58,6 +58,22 @@ export interface ConnectionStateSource {
   subscribe(listener: () => void): () => void
 }
 
+/** Informational host-shell context announced by an embedding parent page. */
+export interface ClientShellContext {
+  /** Shell implementation embedding the served GUI. */
+  readonly kind: 'android'
+  /** Version of the parent-to-child message fields. */
+  readonly protocolVersion: 1
+}
+
+/** Observable embedding-shell context; absent for an ordinary browser tab. */
+export interface ClientShellContextSource {
+  /** Latest accepted shell announcement. */
+  getSnapshot(): ClientShellContext | undefined
+  /** Subscribe to shell-context replacement. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Required services (none — this is the wire root). */
 export const inject: string[] = []
 
@@ -99,6 +115,8 @@ export interface ConnectionHandle {
   readonly hostDescription: HostDescriptionSource
   /** Connection state source for observing live connected/reconnecting transitions. */
   readonly state: ConnectionStateSource
+  /** Informational embedding-shell context announced through `postMessage`. */
+  readonly shell: ClientShellContextSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
   /**
@@ -126,8 +144,21 @@ export function apply(ctx: Context): void {
   let started = false
   let description: HostDescription | undefined
   let connectionState: ConnectionState = 'connected'
+  let shellContext: ClientShellContext | undefined
   const descriptionListeners = new Set<() => void>()
   const stateListeners = new Set<() => void>()
+  const shellListeners = new Set<() => void>()
+  const announceParentConnectionState = (): void => {
+    if (shellContext?.kind !== 'android' || typeof window === 'undefined') return
+    // Capacitor may give the parent an opaque/custom origin. This payload has
+    // no authority; the Android parent validates the current child window and
+    // GUI origin before using it.
+    window.parent.postMessage({
+      type: 'dsh/client-connection-state',
+      version: 1,
+      state: connectionState,
+    }, '*')
+  }
   const publishDescription = (next: HostDescription | undefined): void => {
     if (Object.is(description, next)) return
     description = next
@@ -149,6 +180,32 @@ export function apply(ctx: Context): void {
         console.error('[web-runtime] connection-state listener threw:', error)
       }
     }
+    announceParentConnectionState()
+  }
+  const publishShellContext = (next: ClientShellContext): void => {
+    if (shellContext !== undefined) return
+    shellContext = next
+    for (const listener of [...shellListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[web-runtime] shell-context listener threw:', error)
+      }
+    }
+    announceParentConnectionState()
+  }
+  if (typeof window !== 'undefined') {
+    ctx.effect(() => {
+      const onMessage = (event: MessageEvent<unknown>): void => {
+        const value = event.data
+        if (typeof value !== 'object' || value === null) return
+        const message = value as Record<string, unknown>
+        if (message.type !== 'dsh/client-shell-context' || message.version !== 1 || message.shell !== 'android') return
+        publishShellContext({ kind: 'android', protocolVersion: 1 })
+      }
+      window.addEventListener('message', onMessage)
+      return () => { window.removeEventListener('message', onMessage) }
+    }, 'connection: embedding-shell context')
   }
   const handle: ConnectionHandle = {
     api,
@@ -165,6 +222,13 @@ export function apply(ctx: Context): void {
       subscribe: (listener) => {
         stateListeners.add(listener)
         return () => { stateListeners.delete(listener) }
+      },
+    },
+    shell: {
+      getSnapshot: () => shellContext,
+      subscribe: (listener) => {
+        shellListeners.add(listener)
+        return () => { shellListeners.delete(listener) }
       },
     },
     rpc,

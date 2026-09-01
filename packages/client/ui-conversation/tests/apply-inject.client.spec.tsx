@@ -40,6 +40,7 @@ function sessionFakeFor() {
   return {
     open: vi.fn(() => Promise.resolve()),
     loadOlder: vi.fn<ISession['loadOlder']>(() => Promise.resolve()),
+    reloadHistory: vi.fn<ISession['reloadHistory']>(() => Promise.resolve()),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
   } satisfies SessionBehaviorOverrides
@@ -140,6 +141,9 @@ describe('conversation slot inject API', () => {
     const chatView = b.chatViewApi(ROOT)
     chatView.injected.loadOlder()
     expect(b.sessionFake.loadOlder).toHaveBeenCalledTimes(1)
+    // The error-state retry control rides the same scoped conversation service.
+    chatView.injected.reloadHistory()
+    expect(b.sessionFake.reloadHistory).toHaveBeenCalledTimes(1)
     chatView.injected.forkAt(17)
     await vi.waitFor(() => {
       expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [ROOT] })

@@ -253,6 +253,7 @@ export class PwshLocalExecutor extends ShellExecutor {
   }
 
   async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+    this.authorizeOrThrow(spec)
     return this.runArgv(spec, this.argv(spec))
   }
 

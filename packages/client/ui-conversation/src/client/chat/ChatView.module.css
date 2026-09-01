@@ -206,6 +206,34 @@
   gap: 4px;
 }
 
+/* Phone bottom-sheet body: same row column as .toolGroupBody with a small
+   inset so the rows never hug the sheet edges; the sheet body owns scrolling
+   instead of this container. */
+.sheetBody {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px 12px;
+}
+
+/* Timeline connector through the sheet's icon column, mirroring the inline
+   .toolGroup::before: a 1px vertical hairline that the rows' opaque icon discs
+   occlude, so the segment reads between the icons. 20px = 12px body inset +
+   the 8px icon-column centre. */
+.sheetBody::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  /* Spans only the row column, not the body's vertical padding: without this
+     the connector reads as extending up/down into empty space above the first
+     and below the last icon. */
+  top: 4px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--dsw-alias-border-l2);
+}
+
 /* Timeline connector: a vertical 1px hairline through the icon column centre
    (8px = half of the 16px left-aligned tool icon) linking a run's tool calls
    down to the last call. The segment that rises to the header's action icon
@@ -330,6 +358,19 @@
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* Same quiet chip as the older-page control; the error state keeps its own
+   top gap so the control reads as the recovery action, not the message body. */
+.openError button {
+  margin-top: 8px;
+  border: none;
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  cursor: pointer;
 }
 
 .older {

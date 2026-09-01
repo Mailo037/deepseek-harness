@@ -361,6 +361,18 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect(response.rpcId).toMatch(/[0-9a-f-]{36}/)
   })
 
+  it('mints rpcIds without secure-context randomUUID', async () => {
+    const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+    vi.stubGlobal('crypto', { getRandomValues })
+    try {
+      const response = await client().host.describe({})
+      expect(response.rpcId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+      expect(response.result.ok).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('carries the tail-page projections block through the wire schema (Zod must not strip it)', async () => {
     const response = await client().sessions.history({ sessionId: 'with-projections' as never })
     expect(response.result.ok).toBe(true)

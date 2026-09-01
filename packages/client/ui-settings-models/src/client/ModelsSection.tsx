@@ -15,14 +15,18 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, IconGripOutline14, IconPlusOutline16, Modal, Select, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconGripOutline14, IconPlusOutline16, Modal, SectionHeading, Select, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
-import { MODELS_SETTINGS_NAMESPACE, PROVIDER_ORDER_FIELD } from '../provider-order.ts'
+import {
+  HIDDEN_PROVIDERS_FIELD, MODELS_SETTINGS_NAMESPACE, PROVIDER_ORDER_FIELD,
+} from '../provider-order.ts'
+import { hiddenProviderIdsOf } from './store.ts'
+import { insertIndexOf, movedRows, rowHalfOf, type RowHalf } from './reorder.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -180,12 +184,6 @@ export function providerCopy(template: string, target: ProviderIdentity): string
   return template.replace('{provider}', () => providerTargetLabel(target))
 }
 
-/** Pointer-position half of a row card: the insert marker sits above or below. */
-export function rowHalfOf(event: { clientY: number; currentTarget: HTMLElement }): 'before' | 'after' {
-  const rect = event.currentTarget.getBoundingClientRect()
-  return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-}
-
 /**
  * Render the Models section content column.
  * @param props - slot-delivered injected dependencies.
@@ -215,8 +213,10 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // the row-card index plus pointer half the drag currently hovers (the insert
   // marker sits above or below that row). Null while no drag is in flight.
   const [drag, setDrag] = useState<{ provider: string; from: number } | null>(null)
-  const [drop, setDrop] = useState<{ index: number; half: 'before' | 'after' } | null>(null)
+  const [drop, setDrop] = useState<{ index: number; half: RowHalf } | null>(null)
   const [orderError, setOrderError] = useState<string | undefined>(undefined)
+  const [visibilitySaving, setVisibilitySaving] = useState<string | undefined>(undefined)
+  const [visibilityError, setVisibilityError] = useState<{ provider: string; message: string } | undefined>(undefined)
 
   const announceSaved = (target: ProviderIdentity): void => {
     // Announced only once the refreshed directory is in the snapshot the
@@ -284,42 +284,50 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
     }, (error: unknown) => { setOrderError(messageOf(error)) })
   }
 
+  /** Persist one provider's picker visibility without changing its profile or credentials. */
+  const persistPickerVisibility = (row: ProviderRow): void => {
+    const namespace = state.namespaces.get(MODELS_SETTINGS_NAMESPACE)
+    if (namespace === undefined || visibilitySaving !== undefined) return
+    const hidden = hiddenProviderIdsOf(namespace.value)
+    const next = row.hiddenInModelSelect
+      ? hidden.filter(provider => provider !== row.entry.provider)
+      : [...new Set([...hidden, row.entry.provider])]
+    setVisibilitySaving(row.entry.provider)
+    setVisibilityError(undefined)
+    void api.settings.update({
+      ns: MODELS_SETTINGS_NAMESPACE,
+      patch: { [HIDDEN_PROVIDERS_FIELD]: next },
+      expectedRevision: namespace.revision,
+    }).then((response) => {
+      if (!response.result.ok) {
+        setVisibilityError({ provider: row.entry.provider, message: response.result.error.message })
+        return
+      }
+      void controller.load()
+    }, (error: unknown) => { setVisibilityError({ provider: row.entry.provider, message: messageOf(error) }) })
+      .finally(() => { setVisibilitySaving(undefined) })
+  }
+
   /** Move one row-card provider to another index among the visible row cards. */
   const moveRow = (from: number, to: number): void => {
     setDrag(null)
     setDrop(null)
     if (to === from) return
-    const moved = rowCards[from]
     /* v8 ignore next -- drag and keyboard moves always name an existing row */
-    if (moved === undefined) return
-    const next = rowCards.filter(row => row !== moved)
-    next.splice(to, 0, moved)
-    persistOrder(next.map(row => row.entry.provider))
+    if (rowCards[from] === undefined) return
+    persistOrder(movedRows(rowCards, from, to).map(row => row.entry.provider))
   }
 
   /**
-   * Commit a drop on one row card: resolve the insert anchor from the hovered
-   * half (before the row, or after it = before its successor) and move the
-   * dragged row there. Dropping back on the source row or a same-order
-   * position writes nothing.
+   * Commit a drop on one row card: resolve the post-removal insert position
+   * from the hovered half (before the row, or after it = before its
+   * successor) and move the dragged row there. Dropping back on the source
+   * row writes nothing.
    * @param over - the hovered row-card index and pointer half.
    */
-  const commitDrop = (over: { index: number; half: 'before' | 'after' }): void => {
+  const commitDrop = (over: { index: number; half: RowHalf }): void => {
     if (drag === null) return
-    const moved = rowCards[drag.from]
-    setDrag(null)
-    setDrop(null)
-    /* v8 ignore next -- the drag started on a rendered row card */
-    if (moved === undefined) return
-    const anchorIndex = over.half === 'before' ? over.index : over.index + 1
-    const anchorRow = rowCards[anchorIndex]
-    const next = rowCards.filter(row => row !== moved)
-    const insertAt = anchorRow === undefined ? next.length : next.indexOf(anchorRow)
-    // The anchor was the dragged row itself, so the order is unchanged.
-    if (insertAt < 0) return
-    next.splice(insertAt, 0, moved)
-    if (next.every((row, index) => row === rowCards[index])) return
-    persistOrder(next.map(row => row.entry.provider))
+    moveRow(drag.from, insertIndexOf(drag.from, over))
   }
 
   if (state.status === 'idle') void controller.load()
@@ -367,8 +375,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
 
   return (
     <div className={styles['section']}>
-      <h2 className={styles['title']}>{t('title')}</h2>
-      <p className={styles['intro']}>{t('intro')}</p>
+      <SectionHeading title={t('title')} description={t('intro')} />
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
       {savedIdentity === undefined
         ? null
@@ -507,6 +514,15 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                       : null}
                 </span>
                 <span className={styles['rowActions']}>
+                  <label className={styles['modelSelectVisibility']}>
+                    <input
+                      type="checkbox"
+                      checked={!row.hiddenInModelSelect}
+                      disabled={!state.writable || visibilitySaving !== undefined}
+                      onChange={() => { persistPickerVisibility(row) }}
+                    />
+                    {t('showInModelSelect')}
+                  </label>
                   <button
                     type="button"
                     className={styles['secondaryButton']}
@@ -552,6 +568,9 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                   readOnly: !state.writable,
                   onClose: (changed) => { closeEditor(changed, target) },
                 })
+                : null}
+              {visibilityError?.provider === row.entry.provider
+                ? <p className={styles['error']} role="alert">{visibilityError.message}</p>
                 : null}
             </li>
           )

@@ -450,6 +450,14 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(server.requests[0]?.path).toBe('/chat/completions')
       expect(server.requests[0]?.headers.authorization).toBe(`Bearer ${apiKey}`)
       expect(JSON.stringify(server.requests[0]?.body)).not.toContain(apiKey)
+      const storedCredentials = readFileSync(join(home, '.credentials.yaml'), 'utf8')
+      if (process.platform === 'win32') {
+        expect(storedCredentials).toContain('"method": "windows-dpapi-user"')
+        expect(storedCredentials).not.toContain(apiKey)
+        expect(storedCredentials).not.toContain('DEEPSEEK_API_KEY')
+      } else {
+        expect(storedCredentials).toContain(apiKey)
+      }
     } finally {
       await server.close()
       rmSync(home, { recursive: true, force: true })

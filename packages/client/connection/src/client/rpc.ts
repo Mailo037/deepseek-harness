@@ -5,8 +5,9 @@ import {
   serverResponseSchema,
   type ClientRequest,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
+import { randomUuid } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { ClientConnectionRpc } from '../rpc.ts'
-import { randomUuid } from './random-uuid.ts'
+import { withPageRequestAuth } from './request-auth.ts'
 
 const INTERNAL_BASE = 'http://dsh.internal'
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
@@ -33,7 +34,7 @@ export function createWebConnectionRpc(doFetch?: RpcFetch): ClientConnectionRpc 
         payload,
       }
       const response = await send(
-        new URL(`${channel}/${endpoint}`, resolveBase()),
+        withPageRequestAuth(new URL(`${channel}/${endpoint}`, resolveBase())),
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

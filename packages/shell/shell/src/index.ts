@@ -10,6 +10,23 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from './types.ts'
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Waterfall: whether a shell command is authorized to run. The default
+     * (no listener, or every listener delegating via `next()`) is `true`; a
+     * listener returning `false` without calling `next()` blocks the command
+     * with a `SHELL_DENIED` error. Plugins implementing deny lists (e.g. the
+     * fs-deny policy) register here.
+     * @param command - the raw command string (e.g. `cat .env`).
+     * @param next - delegate to the next listener (or the default).
+     * @returns whether the command is authorized.
+     * @mode waterfall
+     */
+    'shell/authorize'(this: Context, command: string, next: () => boolean): boolean
+  }
+}
+
 /**
  * Settings namespace of this capability, owned here rather than by either
  * executor family because it names the capability, not an implementation: a
@@ -98,6 +115,19 @@ export abstract class ShellExecutor extends Service {
    * @returns the live process handle (reads, kill, quiescence promise).
    */
   abstract start(spec: ShellExecSpec): ShellProcess
+
+  /**
+   * Check whether the command in `spec` is authorized by the `shell/authorize`
+   * waterfall. Throws `SHELL_DENIED` when the waterfall returns `false`; call
+   * this at the top of every `run` implementation.
+   * @param spec - the resolved spec whose `command` field is checked.
+   */
+  protected authorizeOrThrow(spec: ShellExecSpec): void {
+    const authorized = this.ctx.waterfall('shell/authorize', spec.command, () => true)
+    if (!authorized) {
+      throw new Error(`[shell-deny] command "${spec.command.slice(0, 120)}" is denied by the shell-deny policy`)
+    }
+  }
 }
 
 export default ShellExecutor

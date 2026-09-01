@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { Context } from '@deepseek-ai/cordis'
 import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
@@ -49,6 +50,8 @@ function buildWelcome(
 }
 
 describe('WelcomeNoticeStore', () => {
+  beforeEach(() => { localStorage.clear() })
+
   it('acknowledges in memory without calling loopback-only settings APIs', async () => {
     const describeCall = vi.fn()
     const mutate = vi.fn()
@@ -62,6 +65,17 @@ describe('WelcomeNoticeStore', () => {
     expect(controller.store.getSnapshot()).toEqual({ status: 'ready', acknowledged: true, error: null })
     expect(describeCall).not.toHaveBeenCalled()
     expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('persists the remote acknowledgement across a reload via localStorage', async () => {
+    const { controller } = buildWelcome({}, 'memory')
+    await controller.load()
+    await controller.acknowledge()
+    // A fresh instance models a reload: the acknowledgement must come back
+    // from this origin's localStorage, not from an in-memory field.
+    const { controller: reloaded } = buildWelcome({}, 'memory')
+    await reloaded.load()
+    expect(reloaded.store.getSnapshot()).toEqual({ status: 'ready', acknowledged: true, error: null })
   })
 
   it('acknowledges only the exact current copy version', async () => {

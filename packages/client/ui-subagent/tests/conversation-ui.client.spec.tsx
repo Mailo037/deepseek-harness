@@ -796,3 +796,30 @@ describe('SubagentReadOnlyComposer', () => {
     expect(screen.getByRole('status').textContent).toContain('一次性任务不支持后续消息')
   })
 })
+
+describe('CatalogDropdown phone sheet', () => {
+  it('opens the catalog tree in an animated bottom sheet on a phone viewport', () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    vi.useFakeTimers()
+    try {
+      render(<SubagentHeaderLineage {...props(catalog())} />)
+      // Tapping the count trigger opens the sheet (there is no hover on touch).
+      fireEvent.click(screen.getByRole('button', { name: /个子代理/ }))
+      const dialog = screen.getByRole('dialog', { name: zh['tree.aria'] })
+      expect(within(dialog).getByRole('tree', { name: zh['tree.aria'] })).toBeTruthy()
+      // The sheet's close button slides the tree down, then it unmounts.
+      fireEvent.click(within(dialog).getByRole('button', { name: zh['sheet.close'] }))
+      expect(screen.getByRole('dialog', { name: zh['tree.aria'] })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+})

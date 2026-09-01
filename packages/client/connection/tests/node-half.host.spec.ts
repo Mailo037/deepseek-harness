@@ -265,6 +265,28 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
+  it('lets a connection/authenticate waterfall listener block /api requests with 403', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    ctx.provide('apiProxy', {} as unknown as ApiProxy)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const route = routes.find(candidate => candidate.path === API_PATH)!
+    const request: ClientRequest = {
+      type: 'client-request',
+      rpcId: RpcId('auth-blocked'),
+      method: 'session.list',
+      payload: {},
+    }
+    // Loopback passes the host fence; the auth waterfall is what blocks here.
+    ctx.on('connection/authenticate', (_req, _next) => false)
+    const response = fakeResponse()
+    await route.handler(fakePost({ host: '127.0.0.1:3080' }, `${API_PATH}/session.list`, request), response.response)
+    expect(response.state.status).toBe(403)
+    await fiber.dispose()
+  })
+
   it('dispatches claimed /api endpoints before the API Proxy fallback and withdraws the claim', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []

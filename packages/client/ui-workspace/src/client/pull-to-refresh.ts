@@ -20,10 +20,14 @@ const PULL_MAX_PX = 96
 /** Height the indicator holds while refreshing. */
 const PULL_REST_PX = 40
 
+/** Current pull-to-refresh gesture phase. */
 export type PullPhase = 'idle' | 'pulling' | 'refreshing'
 
+/** Render state exposed by the pull-to-refresh hook. */
 export interface PullState {
+  /** Current gesture phase. */
   phase: PullPhase
+  /** Current vertical pull distance in pixels. */
   distance: number
 }
 

@@ -12,13 +12,11 @@ Directories are per-session, resolved lazily through `ctx.modelDirectories.direc
 
 Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events. Provider topology, provider catalogs, and the default selection therefore converge without the Host or client runtime deriving a separate model-change alias.
 
-The `/client` exports are the plugin body (`apply`/`inject`), `ModelDirectoryResolver`, `ModelDirectory` with its state fields, and the seat's injected face type.
+The `/client` exports are the plugin body (`apply`/`inject`), `ModelDirectoryResolver`, `ModelDirectory` with its state fields, and the seat's injected face type. The provider-grouped picker leaves modality badges as bare icons. Hovering a model row opens a read-only card with only exact adapter-advertised metadata: provider model id, context window, configured output cap, and accepted input modalities. Missing adapter data is shown as unknown; the client does not infer capacities from a model name.
 
 ## Model Experience
 
 Indirectly, through the `session.selectModel` RPC available to ordinary sessions, both entries submit the complete `ModelSelection` that the Host snapshots at the next prompt-assembly boundary, so the following request uses the selected provider, model, and effort while a running step keeps its assembled selection; the selection becomes durable only when the existing request header records a request that consumes it, and menu interaction adds no prompt content.
-
-The provider-grouped picker leaves modality badges as bare icons. Hovering a model row opens a read-only card with only exact adapter-advertised metadata: provider model id, context window, configured output cap, and accepted input modalities. Missing adapter data is shown as unknown; the client does not infer capacities from a model name.
 
 #### KV Cache effect
 

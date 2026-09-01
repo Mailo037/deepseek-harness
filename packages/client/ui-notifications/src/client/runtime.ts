@@ -78,7 +78,10 @@ export class NotificationRuntime {
     this.publish()
   }
 
-  /** Read the current immutable preference snapshot. */
+  /**
+   * Read the current immutable preference snapshot.
+   * @returns Current notification preferences.
+   */
   getSnapshot(): NotificationSnapshot {
     return this.snapshot
   }

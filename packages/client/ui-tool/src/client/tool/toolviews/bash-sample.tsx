@@ -13,11 +13,11 @@
 // full output (maxLines Infinity — no middle collapse). An error row's
 // collapsed summary is the failure's first line in the error color.
 
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
-  IconApiOutline14, IconChevronDownOutline14, IconInspectOutline12, StateDot, TerminalBlock,
+  BottomSheet, IconApiOutline14, IconChevronDownOutline14, IconInspectOutline12, StateDot, TerminalBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -25,6 +25,9 @@ import { terminalBlockLabels, terminalCardModel, terminalFailed } from '../model
 import { toolRowModel, type ToolRowState } from '../models/tool-call-model.ts'
 import { CONVERSATION_NS as NS } from '../../locale.ts'
 import css from './bash-sample.module.css'
+
+/** Phone breakpoint, matching the ToolRow mobile gate. */
+const MOBILE_QUERY = '(max-width: 639px)'
 
 /** Bash row props: the toolview runtime share plus the standard locale seat. */
 type BashRowProps = ToolCallViewProps & PropsLocale<'conversation'>
@@ -66,6 +69,17 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     : model.state
   const status = stateStatus(state, t)
   const [expanded, setExpanded] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_QUERY).matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(MOBILE_QUERY)
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
   // Execution failures (for example cancellation before the process reports a
   // terminal result) use the generic presenter. Keep their recorded args and
   // full error reachable instead of collapsing the row to the first line.
@@ -73,9 +87,14 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     && model.state === 'error'
     && (model.body !== null || model.output !== null)
   const expandable = terminal !== null || genericError
-  const open = expanded && expandable
+  // On phone the body never expands inline — the row opens a bottom sheet.
+  const open = phone ? false : expanded && expandable
   const failureLine = model.state === 'error' ? model.errorSummary : null
   const toggleExpand = () => {
+    if (phone) {
+      if (expandable) setSheetOpen(true)
+      return
+    }
     setExpanded(v => !v)
   }
   const toggleFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -93,6 +112,49 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
         </>
       )
       : leadingFor(state)
+  // The expanded body is a single element reused by both the inline disclosure
+  // (desktop) and the phone bottom sheet, so a streaming call stays current in
+  // whichever surface is open.
+  const bodyContent = (
+    <div className={css.bodyWrap}>
+      {terminal !== null
+        ? (
+          <TerminalBlock
+            {...terminal.card}
+            maxLines={Infinity}
+            labels={terminalBlockLabels(t)}
+            className={css.terminal}
+          />
+        )
+        : (
+          <div className={css.ioCard}>
+            {model.body !== null && (
+              <div className={css.ioSection}>
+                <span className={css.ioLabel}>IN</span>
+                <span className={css.ioText}>{model.body}</span>
+              </div>
+            )}
+            {model.body !== null && model.output !== null && (
+              <span className={css.ioDivider} aria-hidden />
+            )}
+            {model.output !== null && (
+              <div className={css.ioSection}>
+                <span className={css.ioLabel}>OUT</span>
+                <span className={css.ioText} data-error>
+                  {model.output}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      {inspect !== undefined && (
+        <button type="button" className={css.inspectButton} onClick={inspect}>
+          <IconInspectOutline12 />
+          Inspect
+        </button>
+      )}
+    </div>
+  )
   return (
     <div className={css.card}>
       <div
@@ -117,47 +179,17 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
           {failureLine ?? terminal?.description ?? model.summary}
         </span>
       </div>
-      {open && (
-        /* Same hover-Inspect posture as ToolRow's expanded body, replicated
-           locally per the registrant posture. */
-        <div className={css.bodyWrap}>
-          {terminal !== null
-            ? (
-              <TerminalBlock
-                {...terminal.card}
-                maxLines={Infinity}
-                labels={terminalBlockLabels(t)}
-                className={css.terminal}
-              />
-            )
-            : (
-              <div className={css.ioCard}>
-                {model.body !== null && (
-                  <div className={css.ioSection}>
-                    <span className={css.ioLabel}>IN</span>
-                    <span className={css.ioText}>{model.body}</span>
-                  </div>
-                )}
-                {model.body !== null && model.output !== null && (
-                  <span className={css.ioDivider} aria-hidden />
-                )}
-                {model.output !== null && (
-                  <div className={css.ioSection}>
-                    <span className={css.ioLabel}>OUT</span>
-                    <span className={css.ioText} data-error>
-                      {model.output}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          {inspect !== undefined && (
-            <button type="button" className={css.inspectButton} onClick={inspect}>
-              <IconInspectOutline12 />
-              Inspect
-            </button>
-          )}
-        </div>
+      {open && bodyContent}
+      {phone && expandable && (
+        <BottomSheet
+          open={sheetOpen}
+          onClose={() => { setSheetOpen(false) }}
+          title={model.title}
+          closeLabel={t('sheet.close')}
+          bodyClassName={css.sheetBody}
+        >
+          {bodyContent}
+        </BottomSheet>
       )}
     </div>
   )

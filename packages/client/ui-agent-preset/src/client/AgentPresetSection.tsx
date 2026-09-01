@@ -13,7 +13,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal, Tooltip,
+  Button,
+  IconBrowseOutline16,
+  IconCopyOutline16,
+  IconFolderOpenOutline16,
+  IconPlusOutline16,
+  IconTrashOutline16,
+  Modal,
+  SectionHeading,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -230,8 +238,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
 
   return (
     <div className={css.section}>
-      <h2 className={css.title}>{t('nav')}</h2>
-      <p className={css.intro}>{t('sectionIntro')}</p>
+      <SectionHeading title={t('nav')} description={t('sectionIntro')} />
       {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
       {([['system', t('builtInGroup')], ['user', t('customGroup')]] as const).map(([trust, heading]) => {
         const group = state.rows

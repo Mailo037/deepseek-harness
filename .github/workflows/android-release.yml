@@ -1,0 +1,62 @@
+name: Android APK
+
+on:
+  push:
+    paths:
+      - 'apps/android/**'
+      - '.github/workflows/android-release.yml'
+  pull_request:
+    paths:
+      - 'apps/android/**'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install app dependencies
+        working-directory: apps/android
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate native project
+        working-directory: apps/android
+        run: |
+          pnpm cap add android
+          pnpm cap sync android
+
+      - name: Restore checked-in native sources
+        working-directory: apps/android
+        run: pnpm cap:sync
+
+      - name: Build debug APK
+        working-directory: apps/android
+        run: |
+          pnpm exec vite build
+          pnpm cap:sync
+          cd android && ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-remote-apk
+          path: apps/android/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30

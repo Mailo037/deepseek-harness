@@ -72,6 +72,7 @@ async function loadComposition(
         '  config:',
         `    path: ${JSON.stringify(credentialsPath)}`,
         '    debounceMs: 10',
+        '    protection: plain',
       ]
       : [],
     '- id: llm-deepseek',

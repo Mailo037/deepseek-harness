@@ -8,7 +8,7 @@ Web client half of the `!` shell-command feature: the adjudication-only `!` inpu
 
 `apply` registers three effect-owned contributions:
 
-1. An [`InputTriggerSource`](../../ui-input-trigger/README.md) bound to the `!` trigger named `shell`. The trigger detector never opens a menu for `!`; enter-time adjudication polls the source because the line starts with the trigger. A non-empty `!` line is consumed through the scoped `slash/input-consume-token` bare-token guard (the composer draft clears) and dispatched to the host `shellCommand.run` RPC. A bare `!` falls through to the default sink as an ordinary message; a line carrying image attachments is refused with a notice, keeping draft and images in place.
+1. An [`InputTriggerSource`](../ui-input-trigger/README.md) bound to the `!` trigger named `shell`. The trigger detector never opens a menu for `!`; enter-time adjudication polls the source because the line starts with the trigger. A non-empty `!` line is consumed through the scoped `slash/input-consume-token` bare-token guard (the composer draft clears) and dispatched to the host `shellCommand.run` RPC. A bare `!` falls through to the default sink as an ordinary message; a line carrying image attachments is refused with a notice, keeping draft and images in place.
 2. A `ConversationNodeDefinition` of kind `shell-command` folding the `shell/run`/`shell/done` lifecycle into one chat node.
 3. The keyed `conversation.chat.node` renderer `ShellCommandCard`, which renders the folded lifecycle as a `TerminalBlock` — run-state dot, cwd, ANSI-colored output, and the exit-status pill.
 

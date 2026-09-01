@@ -108,7 +108,11 @@ async function boot(dir: string, config: object): Promise<Harness> {
   await ctx.plugin(StaticAttachmentStore)
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
-  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  await ctx.plugin(LocalCredentialProvider, {
+    path: join(dir, '.credentials.yaml'),
+    watch: false,
+    protection: 'plain',
+  })
   await ctx.plugin(LlmDeepSeek, config)
   return { ctx, settingsFiber }
 }

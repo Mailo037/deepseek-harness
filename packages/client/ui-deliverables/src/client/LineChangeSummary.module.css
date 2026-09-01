@@ -154,6 +154,18 @@
   white-space: nowrap;
 }
 
+/* Phone bottom-sheet body: a small inset so the rows never hug the sheet
+   edges, and the list defers scrolling to the sheet body rather than capping
+   itself inside the desktop panel's max-height. */
+.sheetBody {
+  padding: 0 12px 12px;
+}
+
+.sheetBody .list {
+  max-height: none;
+  overflow-y: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chevron {
     transition: none;

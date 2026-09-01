@@ -489,7 +489,11 @@ describe('web-search-deepseek plugin registration', () => {
     const ctx = new Context()
     try {
       await ctx.plugin(WebRuntime, { searchProvider: DEEPSEEK_PROVIDER_ID })
-      await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+      await ctx.plugin(LocalCredentialProvider, {
+        path: join(dir, '.credentials.yaml'),
+        watch: false,
+        protection: 'plain',
+      })
       await ctx.plugin(deepseekPlugin, { baseURL: 'https://api.deepseek.test/anthropic/v1' })
 
       await expect(ctx.web.search({ query: 'missing' }))

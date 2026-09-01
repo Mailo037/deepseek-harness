@@ -61,6 +61,12 @@ export interface IConversation {
    */
   loadOlder(): Promise<void>
   /**
+   * Re-run the scoped session's history open after a failed open (the
+   * error-state retry control).
+   * @returns completion of the open flow.
+   */
+  reloadHistory(): Promise<void>
+  /**
    * Resolve a durable image reference for one rendered session.
    * @param sessionId - owning session authorization scope.
    * @param attachment - durable image reference.
@@ -382,6 +388,11 @@ export class ConversationController extends Service implements IConversation {
     await this.scopedSession('loadOlder').loadOlder()
   }
 
+  /** Re-run the scoped Session's history open (the error-state retry control). */
+  async reloadHistory(): Promise<void> {
+    await this.scopedSession('reloadHistory').reloadHistory()
+  }
+
   /** Resolve the caller scope's session face or throw on root contexts. */
   private scopedSession(op: string): SessionFace {
     const id = this.scopeId(op)
@@ -417,7 +428,11 @@ export class ConversationController extends Service implements IConversation {
   }
 }
 
-/** Whether the browser-declared MIME type is one of the fixed wire image types. */
+/**
+ * Whether the browser-declared MIME type is one of the fixed wire image types.
+ * @param value - Browser-declared MIME type.
+ * @returns Whether the value is a supported image media type.
+ */
 export function isImageMediaType(value: string): boolean {
   return value === 'image/png' || value === 'image/jpeg' || value === 'image/webp' || value === 'image/gif'
 }

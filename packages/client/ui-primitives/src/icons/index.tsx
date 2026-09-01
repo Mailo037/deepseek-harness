@@ -1002,3 +1002,31 @@ export const IconGithubMark16 = ({ size = 16, className }: IconProps) => (
     />
   </svg>
 )
+
+/** ic_ds_info_outline_16: info glyph (ring + dot) for About and help surfaces. */
+export const IconInfoOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 1.33c-3.68 0-6.67 2.99-6.67 6.67S4.32 14.67 8 14.67 14.67 11.68 14.67 8 11.68 1.33 8 1.33Zm0 1.34c2.95 0 5.33 2.39 5.33 5.33s-2.38 5.33-5.33 5.33-5.33-2.39-5.33-5.33S5.05 2.67 8 2.67Z"
+      fill="currentColor"
+    />
+    <path
+      d="M8 6.4a.67.67 0 0 0-.67.67v3.6a.67.67 0 1 0 1.34 0V7.07A.67.67 0 0 0 8 6.4Z"
+      fill="currentColor"
+    />
+    <circle cx="8" cy="4.87" r="0.67" fill="currentColor" />
+  </svg>
+)
+
+/** ic_ds_shield_outline_16 (design set 1556): shield glyph for the Access
+    restrictions (fs-deny) settings tab and the permission surfaces. */
+export const IconShieldOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M8.20554 0.899994L14.7901 3.36857V7.01026C14.7901 12 11.0466 14.2103 8.20554 15.3C5.36446 14.2103 1.62012 12 1.62012 7.01026V3.36857L8.20554 0.899994Z"
+      fill="currentColor"
+    />
+  </svg>
+)

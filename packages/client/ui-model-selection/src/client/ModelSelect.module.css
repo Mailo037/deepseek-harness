@@ -547,3 +547,13 @@
   flex: 0 0 auto;
   color: var(--dsw-alias-label-tertiary);
 }
+
+/* Phone bottom-sheet body: the pane content is a flex column that fills the
+   sheet body so the model group list scrolls within it (the search box stays
+   pinned at the top). */
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}

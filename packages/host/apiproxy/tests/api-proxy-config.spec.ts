@@ -263,7 +263,7 @@ function forwardedSettings(ns: string): HostFrame {
     type: 'host/remote-event',
     event: 'settings/document-updated',
     // The revision is the Host's own counter, so the matcher is the assertion.
-    args: [ns, expect.any(Number)], // oxlint-disable-line typescript/no-unsafe-assignment
+    args: [ns, expect.any(Number)],
   }
 }
 
@@ -722,6 +722,25 @@ describe('llm domain', () => {
     expect(providers.providers.map(view => view.provider)).toEqual(['deepseek-official', 'openai'])
     const catalog = expectOk(await api.llm.models(request({})))
     expect(catalog.groups.map(group => group.id)).toEqual(['deepseek-official', 'openai'])
+  })
+
+  it('omits hidden providers from model catalogs without changing provider routing', async () => {
+    const ctx = await harness()
+    ctx.settings.register(settingsNamespace('models'), z.object({
+      providerOrder: z.array(z.string()),
+      hiddenProviders: z.array(z.string()),
+    }))
+    await ctx.settings.update(settingsNamespace('models'), { hiddenProviders: ['openai'] })
+    ctx.llm.registerAdapter(['deepseek-official'], new CatalogAdapter('DeepSeek', ['deepseek-v4-flash']))
+    ctx.llm.registerAdapter(['openai'], new CatalogAdapter('openai', ['gpt-4o']))
+    const api = createApiProxy(ctx, DEFAULTS)
+
+    // `llm.providers` remains the configuration and live-routing directory.
+    const providers = expectOk(await api.llm.providers(request({})))
+    expect(providers.providers.map(view => view.provider)).toEqual(['deepseek-official', 'openai'])
+    // Only advisory model selection stops advertising the opted-out route.
+    const catalog = expectOk(await api.llm.models(request({})))
+    expect(catalog.groups.map(group => group.id)).toEqual(['deepseek-official'])
   })
 
   it('forwards llm/adapters-updated at every topology commit point', async () => {

@@ -119,6 +119,8 @@ function isENOENT(error: unknown): boolean {
  * recovered from an incomplete final Zstandard frame.
  */
 export class JsonlSessionPersistence extends SessionPersistence implements PersistenceBackend<JsonlTornMarker> {
+  /** Resolved backend configuration. */
+  public config: Config
   override readonly supportsRawArtifacts = true
 
   static inject = ['sessions']
@@ -145,8 +147,9 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private coordinator: PersistenceCoordinator<JsonlTornMarker>
   private rootEncodingCheck: Promise<void> | undefined
 
-  constructor(ctx: Context, public config: Config) {
+  constructor(ctx: Context, config: Config) {
     super(ctx)
+    this.config = config
     // Resolve once so later process.cwd() changes cannot split one backend across roots.
     this.root = resolve(config.root)
     // Programmatic wrappers may construct the backend without Schemastery normalization.

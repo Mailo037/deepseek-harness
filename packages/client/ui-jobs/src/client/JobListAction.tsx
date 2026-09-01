@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconChevronDownOutline14, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import { BottomSheet, IconChevronDownOutline14, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -13,6 +13,10 @@ export interface JobListActionInjected {
   killJob?(sessionId: SessionId, jobId: JobId): Promise<void>
   getJobOutput?(sessionId: SessionId, jobId: JobId): Promise<{ text: string; status: JobView['status']; detail?: string }>
 }
+
+/** Phone breakpoint: the same capped-width gate the composer uses for its
+ *  phone folds, so the list drops into a bottom sheet in the same band. */
+const MOBILE_QUERY = '(max-width: 639px)'
 
 /** Full props for the session-header background-job action. */
 export type JobListActionProps =
@@ -98,6 +102,16 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
   const [logText, setLogText] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const [stoppingIds, setStoppingIds] = useState<Set<JobId>>(() => new Set())
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_QUERY).matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(MOBILE_QUERY)
+    const onChange = (): void => { setPhone(query.matches) }
+    query.addEventListener('change', onChange)
+    return () => { query.removeEventListener('change', onChange) }
+  }, [])
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const logContainerRef = useRef<HTMLDivElement>(null)
@@ -105,7 +119,10 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveCount = useMemo(() => jobs.filter(isLive).length, [jobs])
 
-  useDismissOnOutsidePointer(rootRef, open, setOpen)
+  // On phone the bottom sheet's mask owns outside dismissal, so the popover's
+  // outside-pointer listener is disabled (it would otherwise fire on the sheet
+  // content, which is portaled outside the root).
+  useDismissOnOutsidePointer(rootRef, open && !phone, setOpen)
 
   // Clock for duration tickers
   useEffect(() => {
@@ -192,6 +209,66 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
     setTimeout(() => setCopied(false), 2_000)
   }
 
+  /** One list surface, reused by the desktop popover and the phone bottom sheet. */
+  const renderRows = (listClass: string | undefined): ReactNode => (
+    <ul className={listClass} aria-label={t('list.aria')}>
+      {rows.map((job) => {
+        const live = isLive(job)
+        const isStopping = stoppingIds.has(job.id) || job.status === 'stopping'
+        const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
+        const duration = formatDuration(elapsed, t)
+        const status = isStopping ? t('status.stopping') : statusLabel(job.status, t)
+
+        return (
+          <li
+            key={job.id}
+            className={live ? css.row : `${css.row} ${css.rowSettled}`}
+            tabIndex={0}
+            onClick={() => {
+              setActiveLogJob(job)
+              setOpen(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setActiveLogJob(job)
+                setOpen(false)
+              }
+            }}
+          >
+            <StateDot state={dotState(job.status)} className={css.rowDot} />
+            <span className={css.kind}>{job.kind}</span>
+            <span className={css.label} title={job.label}>{job.label}</span>
+            <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
+            <span
+              className={css.duration}
+              title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
+            >
+              {duration}
+            </span>
+
+            <div className={css.actions}>
+              {live && killJob ? (
+                <button
+                  type="button"
+                  className={`${css.actionBtn} ${css.killBtn} ${css.iconOnlyBtn}`}
+                  title={t('actions.kill')}
+                  aria-label={t('actions.kill')}
+                  disabled={isStopping}
+                  onClick={e => void handleKill(job, e)}
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                    <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
       <button
@@ -210,64 +287,21 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
         <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
       </button>
 
-      {open ? (
-        <ul className={css.menu} aria-label={t('list.aria')}>
-          {rows.map((job) => {
-            const live = isLive(job)
-            const isStopping = stoppingIds.has(job.id) || job.status === 'stopping'
-            const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
-            const duration = formatDuration(elapsed, t)
-            const status = isStopping ? t('status.stopping') : statusLabel(job.status, t)
-
-            return (
-              <li
-                key={job.id}
-                className={live ? css.row : `${css.row} ${css.rowSettled}`}
-                tabIndex={0}
-                onClick={() => {
-                  setActiveLogJob(job)
-                  setOpen(false)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setActiveLogJob(job)
-                    setOpen(false)
-                  }
-                }}
-              >
-                <StateDot state={dotState(job.status)} className={css.rowDot} />
-                <span className={css.kind}>{job.kind}</span>
-                <span className={css.label} title={job.label}>{job.label}</span>
-                <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
-                <span
-                  className={css.duration}
-                  title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
-                >
-                  {duration}
-                </span>
-
-                <div className={css.actions}>
-                  {live && killJob ? (
-                    <button
-                      type="button"
-                      className={`${css.actionBtn} ${css.killBtn} ${css.iconOnlyBtn}`}
-                      title={t('actions.kill')}
-                      aria-label={t('actions.kill')}
-                      disabled={isStopping}
-                      onClick={e => void handleKill(job, e)}
-                    >
-                      <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
-                        <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
-                      </svg>
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      ) : null}
+      {phone
+        ? (
+          <BottomSheet
+            open={open}
+            onClose={() => { setOpen(false) }}
+            title={t('list.aria')}
+            closeLabel={t('actions.close')}
+            bodyClassName={css.sheetBody}
+          >
+            {renderRows(css.sheetList)}
+          </BottomSheet>
+        )
+        : open
+          ? renderRows(css.menu)
+          : null}
 
       {/* Subagent-styled Log Modal Dialog with Breadcrumbs and Line Numbers */}
       {activeLogJob ? (

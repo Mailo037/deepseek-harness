@@ -8,7 +8,7 @@
 
 `apply` 注册三个 effect 拥有的贡献：
 
-1. 一个绑定到 `!` 触发符、名为 `shell` 的 [`InputTriggerSource`](../../ui-input-trigger/README.md)。触发检测器不会为 `!` 打开菜单；回车时的裁决会轮询该源，因为行以触发符开头。非空 `!` 行通过作用域 `slash/input-consume-token` bare-token 守卫被消费（composer 草稿清空）并分派到主机 `shellCommand.run` RPC。单独的 `!` 会作为普通消息落入默认 sink；带有图片附件的行会被拒绝并显示提示，草稿和图片保持在原位。
+1. 一个绑定到 `!` 触发符、名为 `shell` 的 [`InputTriggerSource`](../ui-input-trigger/README.md)。触发检测器不会为 `!` 打开菜单；回车时的裁决会轮询该源，因为行以触发符开头。非空 `!` 行通过作用域 `slash/input-consume-token` bare-token 守卫被消费（composer 草稿清空）并分派到主机 `shellCommand.run` RPC。单独的 `!` 会作为普通消息落入默认 sink；带有图片附件的行会被拒绝并显示提示，草稿和图片保持在原位。
 2. 一个 `shell-command` 类型的 `ConversationNodeDefinition`，将 `shell/run`/`shell/done` 生命周期折叠成一个聊天节点。
 3. 键控的 `conversation.chat.node` 渲染器 `ShellCommandCard`，将折叠的生命周期渲染为 `TerminalBlock`——运行状态点、cwd、ANSI 彩色输出和退出状态徽章。
 

@@ -18,6 +18,8 @@ import { FsError, FsTargetKey } from '@deepseek-ai/dsh-fs'
 import type { FsTarget } from '@deepseek-ai/dsh-fs'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
 
 let base: string
@@ -30,6 +32,10 @@ let fiber: Awaited<ReturnType<Context['plugin']>>
 async function boot(mode: SandboxMode): Promise<void> {
   ctx = new Context()
   await ctx.plugin(SandboxPolicyService, { mode, workspaceRoot: workspace })
+  // The fs-deny settings namespace is registered by the sandboxed FS; a
+  // settings provider is needed for the inject even when the deny list is empty.
+  const settingsDir = await mkdtemp(join(tmpdir(), 'dsh-fssbx-settings-'))
+  await ctx.plugin(FileSettingsProvider, { path: join(settingsDir, 'settings.yaml') })
   fiber = await ctx.plugin(SandboxedFileSystem, { cwd: workspace })
   fs = ctx.fs as SandboxedFileSystem
 }
@@ -172,6 +178,8 @@ describe('workspace-write with the filesystem root as the workspace (a root endi
     // It exercises the separator-suffixed-root branch on POSIX and Windows.
     const rootCtx = new Context()
     await rootCtx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: parse(base).root })
+    const settingsDir = await mkdtemp(join(tmpdir(), 'dsh-fssbx-settings-'))
+    await rootCtx.plugin(FileSettingsProvider, { path: join(settingsDir, 'settings.yaml') })
     const rootFiber = await rootCtx.plugin(SandboxedFileSystem, { cwd: workspace })
     const rootFs = rootCtx.fs as SandboxedFileSystem
     try {
@@ -180,6 +188,7 @@ describe('workspace-write with the filesystem root as the workspace (a root endi
       expect(await readFile(path, 'utf8')).toBe('anywhere')
     } finally {
       await rootFiber.dispose()
+      await rm(settingsDir, { recursive: true, force: true }).catch(() => {})
     }
   })
 })
@@ -191,6 +200,73 @@ describe('danger-full-access', () => {
     const path = join(outside, 'free.txt')
     await fs.writeText(await target(path), 'free')
     expect(await readFile(path, 'utf8')).toBe('free')
+  })
+})
+
+describe('fs-deny policy (hard block, independent of the session mode)', () => {
+  beforeEach(() => boot('danger-full-access'))
+
+  it('blocks READING a denied path despite danger-full-access', async () => {
+    const path = join(workspace, '.env')
+    await writeFile(path, 'secret')
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.env'] })
+    await expect(fs.readText(await target(path))).rejects.toMatchObject({ code: 'FS_DENY' })
+  })
+
+  it('blocks WRITING a denied path despite danger-full-access', async () => {
+    const path = join(workspace, '.env')
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.env'] })
+    await expect(fs.writeText(await target(path), 'x')).rejects.toMatchObject({ code: 'FS_DENY' })
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('blocks EDITING a denied path despite danger-full-access', async () => {
+    const path = join(workspace, '.env')
+    await writeFile(path, 'original')
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.env'] })
+    await expect(fs.editText(await target(path), { oldString: 'original', newString: 'changed', replaceAll: false }))
+      .rejects.toMatchObject({ code: 'FS_DENY' })
+    expect(await readFile(path, 'utf8')).toBe('original')
+  })
+
+  it('allows non-denied paths under the same policy', async () => {
+    const path = join(workspace, 'app.js')
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.env'] })
+    await fs.writeText(await target(path), 'ok')
+    expect(await fs.readText(await target(path))).toBe('ok')
+  })
+
+  it('allows everything when the deny list is empty', async () => {
+    const path = join(workspace, '.env')
+    await fs.writeText(await target(path), 'ok')
+    expect(await fs.readText(await target(path))).toBe('ok')
+  })
+})
+
+describe('the shell/authorize guard (deny patterns extend to shell commands)', () => {
+  beforeEach(() => boot('danger-full-access'))
+
+  it('rejects a shell command referencing a denied path', async () => {
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.env'] })
+    const authorized = ctx.waterfall('shell/authorize', 'cat .env', () => true)
+    expect(authorized).toBe(false)
+  })
+
+  it('rejects a shell command referencing a denied directory', async () => {
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.ssh/**'] })
+    const authorized = ctx.waterfall('shell/authorize', 'cat ~/.ssh/config', () => true)
+    expect(authorized).toBe(false)
+  })
+
+  it('allows a shell command that does not reference a denied path', async () => {
+    await ctx.settings.replace(settingsNamespace('fs-deny'), { patterns: ['**/.env'] })
+    const authorized = ctx.waterfall('shell/authorize', 'ls -la', () => true)
+    expect(authorized).toBe(true)
+  })
+
+  it('allows all shell commands when the deny list is empty', async () => {
+    const authorized = ctx.waterfall('shell/authorize', 'cat .env', () => true)
+    expect(authorized).toBe(true)
   })
 })
 

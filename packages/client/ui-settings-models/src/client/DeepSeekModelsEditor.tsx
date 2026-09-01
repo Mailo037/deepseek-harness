@@ -8,9 +8,15 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16,
+  IconChevronDownOutline14, IconChevronRightOutline14, IconEditOutline16, IconGripOutline14,
+  IconPlusOutline16, IconTrashOutline16,
   Select,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ModelModalityDialog, ModalityBadges } from './ModelModalityDialog.tsx'
+import {
+  indexAfterMove, indexAfterRemove, insertIndexOf, movedRows, reindexRowState, rekeyEditingBuffers,
+  rowHalfOf, type RowHalf,
+} from './reorder.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -19,14 +25,16 @@ export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
 type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'reasoningEffort'
+  | 'inputModalities'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
 
-/** Row index encoded in an editing-buffer key. */
-function rowOf(key: string): number {
-  return Number(key.slice(0, key.indexOf(':')))
-}
+/** The modalities the direct DeepSeek adapter accepts, mirroring its MODEL_MODALITIES. */
+const DEEPSEEK_MODALITIES: readonly string[] = ['text', 'image', 'video']
+
+/** The adapter schema's modality default for a row without an override. */
+const DEEPSEEK_DEFAULT_MODALITIES: readonly string[] = ['text']
 
 /** Accepted capacity spellings: a decimal count with an optional K/M suffix. */
 const CAPACITY_PATTERN = /^(\d+(?:\.\d+)?)([km])?$/i
@@ -158,11 +166,17 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
   // editing any other field, and the abandoned one would fall back to
   // rendering its stored NaN as the literal `NaN`.
   //
-  // Keys carry the row index, so the two operations that move indexes maintain
-  // them: `remove` re-keys around the dropped row, and reset clears them all
-  // because the rows they annotated are gone.
+  // Keys carry the row index, so the operations that move indexes maintain
+  // them: `move` and `remove` re-key around the row that moved or dropped, and
+  // reset clears them all because the rows they annotated are gone.
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(() => new Map())
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set())
+  // The open modality-override dialog targets one row index; undefined while closed.
+  const [modalityTarget, setModalityTarget] = useState<number | undefined>(undefined)
+  // Drag reorder: the dragged row while a drag runs, and the hovered row half
+  // that positions the insert marker — the same pair the provider list keeps.
+  const [drag, setDrag] = useState<{ from: number } | null>(null)
+  const [drop, setDrop] = useState<{ index: number; half: RowHalf } | null>(null)
 
   const update = (index: number, key: CatalogField, value: unknown): void => {
     const next = props.models.map((model, at) => {
@@ -176,25 +190,29 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
   }
 
   const remove = (index: number): void => {
-    setEditing((current) => {
-      const next = new Map<string, string>()
-      for (const [key, text] of current) {
-        const at = rowOf(key)
-        if (at === index) continue
-        // Only the row number moves; the field half of the key is untouched.
-        next.set(at > index ? key.replace(/^\d+/, String(at - 1)) : key, text)
-      }
-      return next
-    })
-    setExpanded((current) => {
-      const next = new Set<number>()
-      for (const at of current) {
-        if (at === index) continue
-        next.add(at > index ? at - 1 : at)
-      }
-      return next
-    })
+    const shifted = (at: number): number | undefined => indexAfterRemove(at, index)
+    setEditing(current => rekeyEditingBuffers(current, shifted))
+    setExpanded(current => reindexRowState(current, shifted))
+    setModalityTarget(current => (current === undefined ? undefined : shifted(current)))
     props.onChange(props.models.filter((_model, at) => at !== index).map(model => ({ ...model })))
+  }
+
+  const move = (from: number, to: number): void => {
+    setDrag(null)
+    setDrop(null)
+    if (to === from) return
+    /* v8 ignore next -- drag and keyboard moves always name an existing row */
+    if (props.models[from] === undefined) return
+    const shifted = (at: number): number => indexAfterMove(at, from, to)
+    setEditing(current => rekeyEditingBuffers(current, shifted))
+    setExpanded(current => reindexRowState(current, shifted))
+    setModalityTarget(current => (current === undefined ? undefined : shifted(current)))
+    props.onChange(movedRows(props.models, from, to).map(model => ({ ...model })))
+  }
+
+  const commitDrop = (over: { index: number; half: RowHalf }): void => {
+    if (drag === null) return
+    move(drag.from, insertIndexOf(drag.from, over))
   }
 
   const reset = (): void => {
@@ -209,6 +227,46 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
       if (!next.delete(index)) next.add(index)
       return next
     })
+  }
+
+  /** The modalities a row answers with: its override, else the schema default. */
+  const effectiveModalities = (model: DeepSeekModelDraft): readonly string[] => {
+    const stored = model['inputModalities']
+    if (!Array.isArray(stored)) return DEEPSEEK_DEFAULT_MODALITIES
+    const known = stored.filter((value): value is string =>
+      typeof value === 'string' && DEEPSEEK_MODALITIES.includes(value))
+    // The schema floors the list at one entry, so a cleared override reads as the default again.
+    return known.length > 0 ? known : DEEPSEEK_DEFAULT_MODALITIES
+  }
+
+  /** Insert-marker class for a hovered entry, absent while it is the dragged one. */
+  const dropMarkClass = (index: number): string => {
+    if (drop === null || drop.index !== index) return ''
+    // Reaches only if state ever desyncs: the hover guard never parks a marker
+    // on the dragged row itself.
+    /* v8 ignore next -- the hover guard never parks a marker on the dragged row */
+    if (drag?.from === index) return ''
+    return drop.half === 'before' ? ` ${styles['modelEntryDropBefore']}` : ` ${styles['modelEntryDropAfter']}`
+  }
+
+  /** The open dialog for one row, gone when a move or remove has dropped the row. */
+  const modalityDialogFor = (target: number): ReactNode => {
+    const model = props.models[target]
+    /* v8 ignore next -- move and remove re-map the open dialog onto its row */
+    if (model === undefined) return null
+    return (
+      <ModelModalityDialog
+        choices={DEEPSEEK_MODALITIES}
+        selected={effectiveModalities(model)}
+        allowEmpty={false}
+        t={props.t}
+        onApply={(next) => {
+          update(target, 'inputModalities', [...next])
+          setModalityTarget(undefined)
+        }}
+        onClose={() => { setModalityTarget(undefined) }}
+      />
+    )
   }
 
   /** The field's text: its live keystrokes, else the stored count spelled short. */
@@ -290,8 +348,50 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
         : (
           <div className={styles['modelList']}>
             {props.models.map((model, index) => (
-              <div className={styles['modelEntry']} key={index}>
+              <div
+                key={index}
+                className={`${styles['modelEntry']}${dropMarkClass(index)}`}
+                onDragOver={(event) => {
+                  if (drag === null || drag.from === index) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  setDrop({ index, half: rowHalfOf(event) })
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  commitDrop({ index, half: rowHalfOf(event) })
+                }}
+              >
                 <div className={styles['modelRow']}>
+                  <button
+                    type="button"
+                    className={styles['dragHandle']}
+                    aria-label={`${props.t('reorderModel')} ${String(index + 1)}`}
+                    title={props.t('reorderModel')}
+                    draggable={!props.disabled}
+                    disabled={props.disabled}
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/plain', typeof model['id'] === 'string' ? model['id'] : '')
+                      event.dataTransfer.effectAllowed = 'move'
+                      setDrag({ from: index })
+                    }}
+                    onDragEnd={() => {
+                      setDrag(null)
+                      setDrop(null)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowUp' && index > 0) {
+                        event.preventDefault()
+                        move(index, index - 1)
+                      }
+                      if (event.key === 'ArrowDown' && index < props.models.length - 1) {
+                        event.preventDefault()
+                        move(index, index + 1)
+                      }
+                    }}
+                  >
+                    <IconGripOutline14 />
+                  </button>
                   <input
                     className={styles['input']}
                     type="text"
@@ -342,6 +442,23 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                 {expanded.has(index)
                   ? (
                     <div className={styles['modelAdvanced']}>
+                      <div className={styles['modalitiesRow']}>
+                        <span className={styles['modalitiesLabel']}>{props.t('modelModalities')}</span>
+                        <ModalityBadges info={{ inputModalities: effectiveModalities(model) }} t={props.t} />
+                        {Array.isArray(model['inputModalities'])
+                          ? <span className={styles['rowTag']}>{props.t('modalityCustomTag')}</span>
+                          : null}
+                        <button
+                          type="button"
+                          className={styles['iconButton']}
+                          aria-label={`${props.t('editModelModalities')} ${String(index + 1)}`}
+                          title={props.t('editModelModalities')}
+                          disabled={props.disabled}
+                          onClick={() => { setModalityTarget(index) }}
+                        >
+                          <IconEditOutline16 size={14} />
+                        </button>
+                      </div>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
                       <label className={styles['modelField']}>
@@ -370,6 +487,7 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
             ))}
           </div>
         )}
+      {modalityTarget === undefined ? null : modalityDialogFor(modalityTarget)}
       <button
         type="button"
         className={styles['addModelButton']}

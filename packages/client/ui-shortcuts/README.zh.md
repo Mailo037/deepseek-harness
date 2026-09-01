@@ -13,7 +13,7 @@
 
 ## 模型体验
 
-无：组合键只调用客户端动作（`layout.toggleSidebar()`、`workspaces.startSession()`、`layout.openDetails()` 与一个 DOM 聚焦），不触及任何模型请求。
+无，因为组合键只调用客户端动作（`layout.toggleSidebar()`、`workspaces.startSession()`、`layout.openDetails()` 与一个 DOM 聚焦），不触及任何模型请求。
 
 #### KV Cache 影响
 

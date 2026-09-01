@@ -29,12 +29,26 @@
   90%, 100% { left: 100%; }
 }
 
+/* The phone group sheet keeps the running shimmer, but the band is far subtler
+   there: at full strength it reads as a solid box over the text on the sheet
+   surface, so it is faded to a faint moving sheen instead. */
+:global([data-group-sheet]) .root[data-state='running'] .row::after {
+  opacity: 0.4;
+}
+
 .leading {
   /* Solid base disc so the ToolCallGroup connector line passing through the
      icon column centre does not show through the Think glyph. */
   flex-shrink: 0;
   border-radius: 4px;
   background: var(--dsw-alias-bg-base);
+}
+
+/* In the phone group sheet the disc must match the sheet surface, not the
+   conversation base, so it blends instead of reading as a box behind the icon
+   (it still occludes the connector). */
+:global([data-group-sheet]) .leading {
+  background: var(--dsw-specific-menu);
 }
 
 .chevron {
@@ -81,10 +95,30 @@
   line-height: 24px;
   white-space: pre-wrap;
   word-break: break-word;
+  /* In a group sheet this body sits on the elevated menu surface, so its
+     scrollbar takes the l2 pair instead of the base l1 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* Phone bottom-sheet body: a small inset and no connector indent (the sheet
+   has no ToolCallGroup connector line), and the reasoning text defers
+   scrolling to the sheet body rather than capping itself at the inline height. */
+.sheetBody {
+  padding: 0 12px 12px;
+}
+
+.sheetBody .thinkBody {
+  max-height: none;
+  overflow-y: visible;
+  padding: 4px 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .root[data-state='running'] .row::after {
+    /* No animation: also drop the band, or a static gradient box sits over the
+       text instead of sweeping away. */
     animation: none;
+    background: none;
   }
 }

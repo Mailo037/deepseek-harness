@@ -33,7 +33,7 @@ async function tempDir(): Promise<string> {
 
 async function boot(config: ConstructorParameters<typeof LocalCredentialProvider>[1]): Promise<Context> {
   const ctx = new Context()
-  const fiber = ctx.plugin(LocalCredentialProvider, config)
+  const fiber = ctx.plugin(LocalCredentialProvider, { protection: 'plain', ...config })
   cleanups.push(async () => { await fiber.dispose() })
   await fiber
   return ctx

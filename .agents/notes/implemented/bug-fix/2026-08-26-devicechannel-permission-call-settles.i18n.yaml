@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-26-devicechannel-permission-call-settles.md
+2026-08-26-devicechannel-permission-call-settles.md: be16fb15555f88d0ffd60bcacd0e7b5b5c94903e
+2026-08-26-devicechannel-permission-call-settles.zh.md: 3af07abbd2fd3299009c70975788ad957145e873

@@ -47,6 +47,7 @@ import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import * as ToolAstQuery from '@deepseek-ai/dsh-tool-ast-query'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
@@ -58,6 +59,7 @@ import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
+import * as ToolRebuild from '@deepseek-ai/dsh-tool-rebuild'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
@@ -524,6 +526,21 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
   },
   {
+    pkg: '@deepseek-ai/dsh-tool-rebuild',
+    dir: 'tool-rebuild',
+    source: 'packages/host/tool-rebuild/src/index.ts',
+    requires: ['ctx.tools', 'ctx.appLifecycle.restart', 'ctx.selfUpdate', 'ctx.webServer', 'ctx.jobs (optional)'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      ctx.provide('appLifecycle', { exit: () => {}, restart: () => {} })
+      ctx.provide('webServer', { host: '127.0.0.1', port: 0 } as never)
+      ctx.provide('selfUpdate', {} as never)
+      await ctx.plugin(ToolRebuild)
+    },
+    note:
+      'Host-plane web-only lifecycle control: the call stops the caller\'s running background jobs, records them in the logged result, and arms a post-turn rebuild + restart through the detached self-update helper (`pull: false`). Deployments without the restart capability, `ctx.selfUpdate`, or the web server fail the call, not the load.',
+  },
+  {
     pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
     dir: 'tool-agent-team',
     source: 'packages/experimental/tool-agent-team/src/index.ts',
@@ -605,6 +622,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-ast-query',
+    dir: 'tool-ast-query',
+    source: 'packages/fs/tool-ast-query/src/index.ts',
+    requires: ['ctx.tools', 'ctx.fs', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // The bare provider is sufficient: the structural query reads observed
+      // files and previews rewrites without mutating anything.
+      await ctx.plugin(LocalFileSystem)
+      await ctx.plugin(ToolAstQuery)
+    },
   },
 ]
 

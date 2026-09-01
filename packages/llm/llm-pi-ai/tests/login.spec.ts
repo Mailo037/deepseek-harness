@@ -30,7 +30,11 @@ async function harness(): Promise<Context> {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-login-'))
   dirs.push(dir)
   const ctx = new Context()
-  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  await ctx.plugin(LocalCredentialProvider, {
+    path: join(dir, '.credentials.yaml'),
+    watch: false,
+    protection: 'plain',
+  })
   await ctx.plugin(AuthorizationService)
   registerPiAiFlows(ctx, { credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) })
   return ctx

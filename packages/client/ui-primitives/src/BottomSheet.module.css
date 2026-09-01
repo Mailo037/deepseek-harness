@@ -1,0 +1,155 @@
+/* Full-viewport layer: phone phone sheet over a blurred page mask. The sheet
+   is bottom-anchored and full-width, so a caller mounts it only for a compact
+   (touch) viewport; the mask + sheet chrome are the whole surface. */
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+  transition: opacity 240ms ease;
+}
+
+/* Animated close: the sheet slides back down and the mask fades out before the
+   surface unmounts (BottomSheet.tsx keeps it mounted for the transition). */
+.root.closing .mask {
+  opacity: 0;
+}
+
+/* Sheet card: full-width, rounded top corners, elevated surface, height driven
+   by the `--sheet-h` custom property (default half the viewport). The height
+   transition snaps the sheet after a drag; `dragging` disables it so the sheet
+   tracks the finger without lag. */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: var(--sheet-h, 50dvh);
+  max-height: 100dvh;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  border-top: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 16px 16px 0 0;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  transition: height 220ms ease;
+  animation: dsh-bottom-sheet-up 240ms ease;
+}
+
+.sheet:focus {
+  outline: none;
+}
+
+/* Animated close (see `.root.closing .mask`): the sheet slides back down. */
+.root.closing .sheet {
+  animation: dsh-bottom-sheet-down 240ms ease forwards;
+}
+
+.dragging {
+  transition: none;
+}
+
+/* Grab zone across the sheet's top edge; the rounded bar is the visual handle.
+   `touch-action: none` keeps pointermove on the handle instead of letting the
+   browser scroll, and user-select stops the drag from selecting the copy. */
+.handle {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 8px 0 2px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.handleBar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l3);
+}
+
+/* Header row: title left, dismiss button on the trailing edge. */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 0 12px 4px;
+}
+
+.title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.close:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+/* Body fills the space below the header so long payloads scroll within the
+   sheet rather than growing it past the rest height. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* The body sits on the elevated sheet surface, so its scrollbar takes the l2
+     pair instead of the base l1 pair the indirection defaults to. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* Slide the sheet up from below the viewport on open. It runs once per mount,
+   so a change of content from a live source does not re-animate it. */
+@keyframes dsh-bottom-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Slide the sheet back below the viewport on close. */
+@keyframes dsh-bottom-sheet-down {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}

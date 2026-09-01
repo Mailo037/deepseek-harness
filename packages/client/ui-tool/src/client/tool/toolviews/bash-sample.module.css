@@ -242,3 +242,13 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Phone bottom-sheet body: a small inset so the tool body never hugs the sheet
+   edges, and it clears the connector indent the desktop inline body wraps in. */
+.sheetBody {
+  padding: 0 12px 12px;
+}
+
+.sheetBody .bodyWrap {
+  padding-left: 0;
+}

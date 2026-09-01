@@ -44,7 +44,7 @@ describe('write-drain teardown', () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-credentials-drain-'))
     cleanups.push(() => rm(dir, { recursive: true, force: true }))
     const ctx = new Context()
-    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false, protection: 'plain' })
     await fiber
     const service = ctx.credentials
 
@@ -75,7 +75,7 @@ describe('write-drain teardown', () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-credentials-drain-record-'))
     cleanups.push(() => rm(dir, { recursive: true, force: true }))
     const ctx = new Context()
-    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false, protection: 'plain' })
     await fiber
     const service = ctx.credentials
 

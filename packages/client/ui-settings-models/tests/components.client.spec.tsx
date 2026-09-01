@@ -6,9 +6,10 @@ import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile, rowHalfOf,
+  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
+import { rowHalfOf } from '../src/client/reorder.ts'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
 import {
   DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
@@ -18,7 +19,7 @@ import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import type { ProviderRow } from '../src/client/store.ts'
-import { MODELS_SETTINGS_NAMESPACE } from '../src/provider-order.ts'
+import { HIDDEN_PROVIDERS_FIELD, MODELS_SETTINGS_NAMESPACE } from '../src/provider-order.ts'
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
@@ -87,14 +88,17 @@ const DEFAULT_DEEPSEEK_MODELS = [
   { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
 ]
 
-function wireNamespaces(backupApiKeys: readonly string[] = []): SettingsNamespaceView[] {
+function wireNamespaces(
+  backupApiKeys: readonly string[] = [],
+  hiddenProviders: readonly string[] | undefined = undefined,
+): SettingsNamespaceView[] {
   const openai = {
     apiKeyEnv: 'OPENAI_API_KEY',
     baseURL: 'https://proxy',
     headers: { 'X-Team': 'a' },
     ...backupApiKeys.length > 0 ? { backupApiKeys: [...backupApiKeys] } : {},
   }
-  return [
+  const namespaces: SettingsNamespaceView[] = [
     {
       ns: 'llm-deepseek',
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as unknown,
@@ -131,6 +135,18 @@ function wireNamespaces(backupApiKeys: readonly string[] = []): SettingsNamespac
       revision: 0,
     },
   ]
+  if (hiddenProviders !== undefined) {
+    namespaces.push({
+      ns: MODELS_SETTINGS_NAMESPACE,
+      schema: {},
+      value: { providerOrder: [], [HIDDEN_PROVIDERS_FIELD]: [...hiddenProviders] },
+      user: {},
+      applies: 'live',
+      secrets: [],
+      revision: 0,
+    })
+  }
+  return namespaces
 }
 
 let nextRpc = 0
@@ -154,10 +170,13 @@ function scriptedFace(overrides: {
   backupApiKeys?: readonly string[]
   /** Per-ref credential state overrides for the describe answer. */
   credentialStates?: Record<string, { configured?: boolean; writable?: boolean }>
+  /** Model-picker visibility preference returned by the settings mirror. */
+  hiddenProviders?: readonly string[]
 } = {}) {
-  const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(wireNamespaces(overrides.backupApiKeys)[2])))
-  const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(wireNamespaces(overrides.backupApiKeys)[2])))
-  const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(wireNamespaces(overrides.backupApiKeys)[2])))
+  const namespaces = (): SettingsNamespaceView[] => wireNamespaces(overrides.backupApiKeys, overrides.hiddenProviders)
+  const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(namespaces()[2])))
+  const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(namespaces()[2])))
+  const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(namespaces()[2])))
   const set = overrides.set ?? vi.fn(() => Promise.resolve(ok({})))
   const unset = overrides.unset ?? vi.fn(() => Promise.resolve(ok({})))
   const face = {
@@ -175,7 +194,7 @@ function scriptedFace(overrides: {
       models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: wireNamespaces(overrides.backupApiKeys) }))),
+      describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: namespaces() }))),
       update,
       replace,
       mutate,
@@ -276,6 +295,25 @@ describe('ModelsSection', () => {
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
   })
 
+  it('persists a provider as hidden only from model pickers', async () => {
+    const update = vi.fn((_request: { ns: string; patch: Record<string, string[]> }) =>
+      Promise.resolve(ok(wireNamespaces([], [])[3])))
+    await mountSection({ update, hiddenProviders: [] })
+
+    const openaiRow = screen.getByRole('button', { name: openaiCopy(en.editProvider) }).closest('li')
+    const visibility = within(openaiRow as HTMLElement).getByRole('checkbox', { name: en.showInModelSelect })
+    expect((visibility as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(visibility)
+
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith({
+        ns: MODELS_SETTINGS_NAMESPACE,
+        patch: { [HIDDEN_PROVIDERS_FIELD]: ['openai'] },
+        expectedRevision: 0,
+      })
+    })
+  })
+
   it('marks only a confirmed missing reference and leaves native or unavailable state unmarked', async () => {
     const { face } = scriptedFace()
     face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
@@ -328,6 +366,7 @@ describe('ModelsSection', () => {
       apiKeyEnv: 'X',
       backupApiKeys: [],
       credential,
+      hiddenInModelSelect: false,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
     expect(needsSetup(row({ configured: true, writable: true }), false)).toBe(false)

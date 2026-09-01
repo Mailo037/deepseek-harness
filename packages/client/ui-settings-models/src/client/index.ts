@@ -92,7 +92,7 @@ export function apply(ctx: ClientContext): void {
     },
     t,
   })
-  // The scope's own memory mode is what keeps a remote browser process-local,
+  // The scope's own memory mode is what keeps a remote browser browser-local,
   // so the store needs no isLoopback branch of its own.
   const welcomeController = new WelcomeNoticeStore(ctx.settingsScope.bind({
     namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE,

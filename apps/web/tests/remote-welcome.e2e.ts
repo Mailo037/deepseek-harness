@@ -1,6 +1,6 @@
 // Trusted non-loopback Web access cannot call the loopback-only settings API;
 // the notice therefore advances for this browser process and returns on reload.
-import type { Browser, Page } from 'playwright'
+import type { Browser, Page, WebSocket } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -58,3 +58,35 @@ describe.skipIf(MODE === 'record')('web e2e: remote welcome notice', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })
+
+it.skipIf(MODE === 'record')('keeps remote event sockets open without secure-context randomUUID', async () => {
+  const remoteHost = 'remote.test'
+  const scaffold = await launchWebScaffold({
+    remoteAuthority: remoteHost,
+    welcomeNoticePending: true,
+  })
+  const browser = await chromium.launch({
+    args: [`--host-resolver-rules=MAP ${remoteHost} 127.0.0.1`, '--no-proxy-server'],
+  })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 960 },
+    locale: ZH_BROWSER_LOCALE,
+  })
+  const tripwire = watchConsole(page)
+  const sockets: WebSocket[] = []
+  page.on('websocket', (socket) => { sockets.push(socket) })
+  try {
+    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.waitForSelector('#root', { timeout: 30_000 })
+    await page.getByRole('dialog', { name: WELCOME_NOTICE_COPY.zh.title }).waitFor({ timeout: 15_000 })
+    expect(await page.evaluate(() => globalThis.isSecureContext)).toBe(false)
+    await expect.poll(() => sockets.length, { timeout: 15_000 }).toBe(2)
+    await page.waitForTimeout(2_000)
+    expect(sockets.every(socket => !socket.isClosed())).toBe(true)
+    expect(tripwire.warnings).toEqual([])
+    expect(tripwire.pageErrors).toEqual([])
+  } finally {
+    await browser.close()
+    await scaffold.close()
+  }
+}, 120_000)

@@ -28,6 +28,8 @@ interface UpdatePlan {
   node: string
   pnpmCli: string
   restartArgs: string[]
+  /** `false` rebuilds the current tree without a fast-forward pull. */
+  pull: boolean
   logPath: string
   issueUrl: string
 }
@@ -63,6 +65,7 @@ function readPlan(encoded: string | undefined): UpdatePlan {
   if (typeof plan.pnpmCli !== 'string' || !isAbsolute(plan.pnpmCli)) throw new Error('invalid pnpm executable')
   if (!Array.isArray(plan.restartArgs) || !plan.restartArgs.every(arg => typeof arg === 'string')) throw new Error('invalid restart argv')
   if (typeof plan.logPath !== 'string' || !isAbsolute(plan.logPath)) throw new Error('invalid update log path')
+  if (typeof plan.pull !== 'boolean') throw new Error('invalid update pull flag')
   if (typeof plan.issueUrl !== 'string' || !isGitHubIssueUrl(plan.issueUrl)) throw new Error('invalid issue URL')
   return plan as UpdatePlan
 }
@@ -223,13 +226,15 @@ export async function runUpdate(encoded: string | undefined): Promise<void> {
   })
   await listen(server, plan)
   try {
-    progress = { ...progress, phase: 'pulling', status: 'Pulling the latest changes…' }
-    appendLog('system', '$ git pull --ff-only')
-    await writeLog('git pull --ff-only')
-    await command('git', ['-C', plan.root, 'pull', '--ff-only'], plan.root, appendLog, {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: '0',
-    })
+    if (plan.pull) {
+      progress = { ...progress, phase: 'pulling', status: 'Pulling the latest changes…' }
+      appendLog('system', '$ git pull --ff-only')
+      await writeLog('git pull --ff-only')
+      await command('git', ['-C', plan.root, 'pull', '--ff-only'], plan.root, appendLog, {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+      })
+    }
     progress = { ...progress, phase: 'building', status: 'Building the updated app…' }
     appendLog('system', '$ pnpm run build')
     await writeLog('pnpm run build')

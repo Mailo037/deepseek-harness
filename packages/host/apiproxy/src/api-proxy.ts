@@ -288,6 +288,22 @@ function providerDisplayOrder(ctx: Context): string[] | undefined {
 }
 
 /**
+ * The provider routes a user chose to omit from advisory model selectors.
+ * This preference never affects the live adapter registry or model dispatch:
+ * persisted sessions and direct route selections remain valid.
+ * @param ctx - host context that may acquire the settings service.
+ * @returns the route ids excluded from catalog responses.
+ */
+function hiddenModelProviders(ctx: Context): Set<string> {
+  const settings = ctx.get('settings')
+  if (settings === undefined) return new Set()
+  const section = settings.get(settingsNamespace('models'))
+  if (typeof section !== 'object' || section === null) return new Set()
+  const hidden = (section as { hiddenProviders?: unknown }).hiddenProviders
+  return new Set(Array.isArray(hidden) ? hidden.filter((id): id is string => typeof id === 'string') : [])
+}
+
+/**
  * Order items by the user's display preference: listed provider ids first in
  * preference order, everything else appended in its natural relative order.
  * @param items - items to order.
@@ -325,7 +341,8 @@ async function buildModelCatalog(ctx: Context): Promise<{
   groups: ModelProviderGroup[]
   failures: ModelCatalogFailure[]
 }> {
-  const catalog = await Promise.all(ctx.llm.listProviders().map(async (provider) => {
+  const hidden = hiddenModelProviders(ctx)
+  const catalog = await Promise.all(ctx.llm.listProviders().filter(provider => !hidden.has(provider.id)).map(async (provider) => {
     try {
       const models = await ctx.llm.listModels(provider.id)
       const entries = await Promise.all(models.map(async (model) => {

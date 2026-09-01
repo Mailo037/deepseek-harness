@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -250,6 +250,34 @@ describe('ToolRow', () => {
     fireEvent.click(view.getByRole('button'))
     expect(view.queryByTestId('tool-icon')).not.toBeNull()
     expect(view.getByText('List files')).toBeTruthy()
+  })
+
+  it('on phone the row click opens a bottom sheet instead of the inline body', () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    vi.useFakeTimers()
+    try {
+      const view = render(<ToolRow {...rowProps} />)
+      const row = view.getByRole('button')
+      fireEvent.click(row)
+      // The inline body stays condensed: the IN/OUT card is not inside the row.
+      expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
+      // The body opens in the bottom-sheet dialog instead.
+      expect(screen.getByRole('dialog', { name: 'Bash' })).toBeTruthy()
+      expect(screen.getByText(/"a": 1/)).toBeTruthy()
+      // The dialog's close button starts the slide-down, then it unmounts.
+      fireEvent.click(screen.getByLabelText('关闭'))
+      expect(screen.getByRole('dialog', { name: 'Bash' })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('running keeps the icon (row sweep carries the signal); error swaps in a StateDot', () => {

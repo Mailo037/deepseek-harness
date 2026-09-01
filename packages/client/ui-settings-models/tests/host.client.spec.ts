@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MODELS_SETTINGS_NAMESPACE, apply, ModelsSettingsSchema } from '../src/index.ts'
-import { PROVIDER_ORDER_FIELD } from '../src/provider-order.ts'
+import { HIDDEN_PROVIDERS_FIELD, PROVIDER_ORDER_FIELD } from '../src/provider-order.ts'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -23,9 +23,14 @@ describe('ui-settings-models host', () => {
     const ns = settingsNamespace(MODELS_SETTINGS_NAMESPACE)
     // The inject callback registers the namespace once the settings service is
     // available, so the registration lands on a later tick than the fiber.
-    await vi.waitFor(() => { expect(ctx.settings.get(ns)).toEqual({ [PROVIDER_ORDER_FIELD]: [] }) })
+    await vi.waitFor(() => {
+      expect(ctx.settings.get(ns)).toEqual({ [PROVIDER_ORDER_FIELD]: [], [HIDDEN_PROVIDERS_FIELD]: [] })
+    })
     await ctx.settings.update(ns, { [PROVIDER_ORDER_FIELD]: ['openai', 'deepseek-official'] })
-    expect(ctx.settings.get(ns)).toEqual({ [PROVIDER_ORDER_FIELD]: ['openai', 'deepseek-official'] })
+    expect(ctx.settings.get(ns)).toEqual({
+      [PROVIDER_ORDER_FIELD]: ['openai', 'deepseek-official'],
+      [HIDDEN_PROVIDERS_FIELD]: [],
+    })
     // The schema rejects a non-array field value.
     await expect(ctx.settings.update(ns, { [PROVIDER_ORDER_FIELD]: 'openai' })).rejects.toThrow()
     await fiber.dispose()
@@ -34,8 +39,12 @@ describe('ui-settings-models host', () => {
 
   it('exports the schema and field contract the browser and host share', () => {
     expect(PROVIDER_ORDER_FIELD).toBe('providerOrder')
-    expect(ModelsSettingsSchema({ [PROVIDER_ORDER_FIELD]: ['a'] })).toEqual({ [PROVIDER_ORDER_FIELD]: ['a'] })
-    // A missing field resolves to the schema's materialized empty array.
-    expect(ModelsSettingsSchema({})).toEqual({ [PROVIDER_ORDER_FIELD]: [] })
+    expect(HIDDEN_PROVIDERS_FIELD).toBe('hiddenProviders')
+    expect(ModelsSettingsSchema({
+      [PROVIDER_ORDER_FIELD]: ['a'],
+      [HIDDEN_PROVIDERS_FIELD]: ['b'],
+    })).toEqual({ [PROVIDER_ORDER_FIELD]: ['a'], [HIDDEN_PROVIDERS_FIELD]: ['b'] })
+    // Missing fields resolve to materialized empty arrays.
+    expect(ModelsSettingsSchema({})).toEqual({ [PROVIDER_ORDER_FIELD]: [], [HIDDEN_PROVIDERS_FIELD]: [] })
   })
 })

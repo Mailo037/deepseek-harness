@@ -90,7 +90,7 @@ function mountFrame() {
       useSessions={useSessions}
       useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
-      t={((key: string) => key) as AppFrameProps['t']}
+      t={(key: string) => key}
     />
   )
   const utils = render(element())
@@ -526,6 +526,10 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
           return () => { listeners.delete(fn) }
         },
       },
+      shell: {
+        getSnapshot: () => undefined,
+        subscribe: () => () => {},
+      },
     } as never
     const { frame } = mountFrame()
     expect(frame.querySelector('[data-connection-lost]')).toBeNull()
@@ -540,7 +544,7 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
         useWorkspaces={(() => undefined) as never}
         SessionProvider={SessionProviderStub}
         connection={fakeConnection}
-        t={((key: string) => key) as AppFrameProps['t']}
+        t={(key: string) => key}
       />,
     )
     expect(container.querySelector('[data-connection-lost]')).toBeNull()
@@ -561,6 +565,50 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
       state = 'connected'
       for (const fn of listeners) fn()
     })
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+  })
+
+  it('keeps Android content visible without duplicating its parent-shell status', () => {
+    let state = 'connected' as 'connected' | 'reconnecting'
+    const listeners = new Set<() => void>()
+    const shellContext = { kind: 'android', protocolVersion: 1 } as const
+    const fakeConnection = {
+      state: {
+        getSnapshot: () => state,
+        subscribe: (fn: () => void) => {
+          listeners.add(fn)
+          return () => { listeners.delete(fn) }
+        },
+      },
+      shell: {
+        getSnapshot: () => shellContext,
+        subscribe: () => () => {},
+      },
+    } as never
+    const instance = createLayoutStore().create()
+    const { container } = render(
+      <AppFrame
+        useStore={hookOf(instance)}
+        actions={instance.actions}
+        renderSlot={() => <span>conversation stays mounted</span>}
+        useSessions={(() => undefined) as never}
+        useWorkspaces={(() => undefined) as never}
+        SessionProvider={SessionProviderStub}
+        connection={fakeConnection}
+        t={(key: string) => key}
+      />,
+    )
+
+    expect(container.querySelector('[data-android-connection]')).toBeNull()
+    expect(container.querySelector('[data-connection-lost]')).toBeNull()
+
+    act(() => {
+      state = 'reconnecting'
+      for (const fn of listeners) fn()
+      vi.advanceTimersByTime(2_000)
+    })
+    expect(container.textContent).toContain('conversation stays mounted')
+    expect(container.querySelector('[data-android-connection]')).toBeNull()
     expect(container.querySelector('[data-connection-lost]')).toBeNull()
   })
 })

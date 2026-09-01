@@ -144,11 +144,11 @@
 }
 
 /* Section tab row: one horizontally scrolling line of cells under the
-   header. The scrollbar is hidden — the row is short, drag/scroll still
-   works, and the visible bar read as broken chrome (mobile screenshot). */
+   header. The row overflows once more sections register than fit, so the
+   themed horizontal scrollbar stays visible to drag to the remaining tabs. */
 .nav {
   flex: none;
-  padding: 0 16px;
+  padding: 0 16px 6px;
 }
 
 .navList {
@@ -156,11 +156,6 @@
   flex-direction: row;
   gap: 4px;
   overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.navList::-webkit-scrollbar {
-  display: none;
 }
 
 /* Nav cell (figma .Setting-nav-cell 501:29962): r12, pad (9,16,9,12), gap 8;

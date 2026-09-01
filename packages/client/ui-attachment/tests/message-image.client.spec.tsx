@@ -157,6 +157,12 @@ describe('ImageGallery', () => {
     expect(several.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(3)
   })
 
+  it('honors a forced square thumbnail for a lone image', () => {
+    const load = vi.fn(() => new Promise<string>(() => {}))
+    const view = render(<ImageGallery images={[{ attachment }]} load={load} align="start" variant="tile" labels={labels} />)
+    expect(view.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(1)
+  })
+
   it('renders the conversation slot entry with translated labels', async () => {
     const t = ((key: string, params?: Readonly<Record<string, unknown>>) => {
       const translated: Record<string, string> = {

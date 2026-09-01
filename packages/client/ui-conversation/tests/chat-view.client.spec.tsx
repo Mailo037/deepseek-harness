@@ -159,6 +159,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partia
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
+  const reloadHistory = vi.fn()
   const inspectCall = vi.fn<(callId: string) => void>()
   // In-memory scroll memory matching the apply.ts per-session map contract.
   let savedScroll: ReturnType<ChatViewSlotProps['chatScroll']['read']> = null
@@ -289,6 +290,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partia
     openDetails,
     openFile,
     loadOlder,
+    reloadHistory,
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     inspectCall,
     chatScroll,
@@ -304,7 +306,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, sessionsInit?: Partia
     sessionsStore.set({ ...sessionsStore.getSnapshot(), ...next })
   }
   return {
-    set, setSessions, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
+    set, setSessions, ChatView, props, openDetails, openFile, loadOlder, reloadHistory, inspectCall,
     chatScroll, forkAt, sendMessage, setSelection, toolOwners,
   }
 }
@@ -885,8 +887,10 @@ describe('ChatView', () => {
         running: false,
       })
     })
-    expect(disclosure.dataset.active).toBeUndefined()
-    expect(within(disclosure).getByRole('status').textContent).toBe('已重试模型请求（2/2） · 1s')
+    fireEvent.click(view.getByRole('button', { name: 'Think' }))
+    const settledDisclosure = view.container.querySelector('details') as HTMLDetailsElement
+    expect(settledDisclosure.dataset.active).toBeUndefined()
+    expect(within(settledDisclosure).getByRole('status').textContent).toBe('已重试模型请求（2/2） · 1s')
 
     act(() => {
       h.set({ nodes: [user(1, 'try'), { ...retry(6), retryState: 'cancelled' }], running: true })
@@ -1757,6 +1761,9 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText(/历史加载失败：boom/)).toBeTruthy()
+    // The dead-end error carries its recovery control: clicking re-runs the open.
+    fireEvent.click(view.getByRole('button', { name: '重试加载' }))
+    expect(h.reloadHistory).toHaveBeenCalledTimes(1)
     const loading = makeHarness({ openState: 'loading' })
     const lv = render(<loading.ChatView {...loading.props} />)
     // The replay window keeps the transcript's assistant/user rhythm while

@@ -49,6 +49,7 @@ function singleFit(attachment: ImageAttachmentRef): { width: number; height: num
  * @param props.load - session-authorized URL loader.
  * @param props.variant - `single` for a message's lone image, `tile` otherwise.
  * @param props.labels - resolved strings (tooltip, loading, retry, lightbox).
+ * @param props.variant - optional forced square-thumbnail treatment.
  * @returns the bounded thumbnail button, or the retry control on failure.
  */
 export function MessageImage({ attachment, load, variant, labels }: {
@@ -102,14 +103,15 @@ export function MessageImage({ attachment, load, variant, labels }: {
 
 /** Wrapping image group shared by user and assistant history: a lone image
  * renders large, several render as 64px square tiles (DeepSeek Chat rule). */
-export function ImageGallery({ images, load, align, labels }: {
+export function ImageGallery({ images, load, align, variant: forcedVariant, labels }: {
   images: readonly { attachment: ImageAttachmentRef }[]
   load: ImageLoader
   align: 'start' | 'end'
+  variant?: 'tile' | undefined
   labels: MessageImageLabels
 }) {
   if (images.length === 0) return null
-  const variant = images.length === 1 ? 'single' : 'tile'
+  const variant = forcedVariant ?? (images.length === 1 ? 'single' : 'tile')
   return (
     <div className={css.gallery} data-align={align}>
       {images.map((image, index) => (

@@ -490,21 +490,24 @@ function renderTableRow(
  * request carries no referrer, matching the renderer's remote-image policy.
  */
 function LinkFavicon({ href }: { href: string }) {
-  const [loaded, setLoaded] = useState(false)
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading')
   const origin = new URL(href).origin
   return (
     <>
-      <img
-        className={css.linkIcon}
-        src={`${origin}/favicon.ico`}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-        onLoad={() => { setLoaded(true) }}
-        style={loaded ? undefined : { display: 'none' }}
-      />
-      {!loaded && <IconLinkOutline16 size={14} className={css.linkIcon} />}
+      {status !== 'failed' && (
+        <img
+          className={css.linkIcon}
+          src={`${origin}/favicon.ico`}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onLoad={() => { setStatus('loaded') }}
+          onError={() => { setStatus('failed') }}
+          style={status === 'loaded' ? undefined : { display: 'none' }}
+        />
+      )}
+      {status !== 'loaded' && <IconLinkOutline16 size={14} className={css.linkIcon} />}
     </>
   )
 }

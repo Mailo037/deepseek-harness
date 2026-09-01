@@ -8,13 +8,11 @@
 
 该贡献只依赖会话标准工具包（`useInput` / `inputActions`）与浏览器 API：不发起 Host 请求、不产生 Session 事件、不生成投影——转写文本与键入文本完全相同。
 
-`/client` 导出面为插件本体（`apply`/`inject`）。
+`/client` 导出面为插件本体（`apply`/`inject`）。识别语言跟随 `navigator.language`（浏览器/系统默认——Windows 转写跟随系统语言），启用连续聆听与中间结果，最终片段渐进提交。
 
 ## 模型体验
 
-间接影响：转写文本与键入文本一样落入 composer 草稿，因此模型只会在用户发送时看到它。该功能本身不添加提示词内容，录制期间也不会发送任何内容。
-
-识别语言跟随 `navigator.language`（浏览器/系统默认——Windows 转写跟随系统语言），启用连续聆听与中间结果，最终片段渐进提交。
+Indirectly, through the composer draft, transcribed text reaches the model only when the user sends it; the feature adds no prompt content of its own, and nothing is sent while recording.
 
 #### KV Cache 影响
 

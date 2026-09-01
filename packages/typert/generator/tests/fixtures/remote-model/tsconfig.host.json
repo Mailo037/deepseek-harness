@@ -3,6 +3,6 @@
   "files": [],
   "references": [
     { "path": "./packages/domain" },
-    { "path": "./packages/remote" }
+    { "path": "./packages/remote-fixture" }
   ]
 }

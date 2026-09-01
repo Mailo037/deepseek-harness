@@ -17,10 +17,17 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, Modal, MultiSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconEditOutline16, IconGripOutline14, Modal, MultiSelect,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
+import { ModelModalityDialog, ModalityBadges } from './ModelModalityDialog.tsx'
 import { messageOf } from './store.ts'
+import {
+  indexAfterMove, indexAfterRemove, insertIndexOf, movedRows, reindexRowState, rekeyEditingBuffers,
+  rowHalfOf, type RowHalf,
+} from './reorder.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -75,7 +82,7 @@ export function catalogCandidates(id: string): string[] {
   // never standalone candidates.
   push(trimmed)
   const segments = trimmed.split('/')
-  const modelBase = segments.length > 1 ? segments[segments.length - 1]! : trimmed
+  const modelBase = segments.at(-1) ?? trimmed
   const dashStart = segments.length > 1 ? 0 : 1
   const dashes = modelBase.split('-')
   for (let drop = dashStart; drop < dashes.length; drop++) {
@@ -201,6 +208,9 @@ const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
   maxTokens: '32K',
 }
 
+/** The modalities the pi-ai adapter accepts, mirroring its MODALITIES. */
+const PI_AI_MODALITIES: readonly string[] = ['text', 'image']
+
 /**
  * Spell a stored count for a field that may be unset. The spelling itself is
  * {@link formatCapacity}, shared with the DeepSeek catalog editor so both
@@ -232,32 +242,6 @@ interface CatalogModelInfo {
   defaultEfforts: string[]
   inputModalities: string[]
   visionInferred?: boolean
-}
-
-/**
- * The catalog modality badges of one model, with the inferred-vision hint —
- * shared by the expanded row panel and the fetch dialog so both surfaces
- * spell modalities one way.
- */
-function ModalityBadges({ info, t }: {
-  info: {
-    inputModalities?: readonly string[] | undefined
-    visionInferred?: boolean | undefined
-  }
-  t: (key: keyof typeof en) => string
-}): ReactNode {
-  return (
-    <span className={styles['modelBadges']}>
-      {(info.inputModalities ?? []).map(mod => (
-        <span key={mod} className={styles['modalityBadge']}>
-          {mod === 'text' ? t('modalityText') : mod === 'image' ? t('modalityImage') : mod === 'video' ? t('modalityVideo') : mod}
-        </span>
-      ))}
-      {info.visionInferred === true && info.inputModalities?.includes('image') ? (
-        <span className={styles['modalityHint']}>{t('modalityVisionInferredHint')}</span>
-      ) : null}
-    </span>
-  )
 }
 
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
@@ -309,6 +293,12 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   // FIELD: a single buffer would be displaced by editing any other field, and
   // the abandoned one would render its stored NaN as the literal `NaN`.
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(new Map())
+  // The open modality-override dialog targets one row index; undefined while closed.
+  const [modalityTarget, setModalityTarget] = useState<number | undefined>(undefined)
+  // Drag reorder: the dragged row while a drag runs, and the hovered row half
+  // that positions the insert marker — the same pair the provider list keeps.
+  const [drag, setDrag] = useState<{ from: number } | null>(null)
+  const [drop, setDrop] = useState<{ index: number; half: RowHalf } | null>(null)
 
   /** Buffer key for one capacity field; the row half moves when rows do. */
   const bufferKey = (index: number, field: CapacityField): string => `${String(index)}:${field}`
@@ -322,19 +312,81 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const capacityText = (model: ModelDraft, index: number, field: CapacityField): string =>
     editing.get(bufferKey(index, field)) ?? capacitySpelling(numberOf(model, field))
 
-  /** Drop one row's entries and shift the rows after it down, in one pass. */
-  const reindexOnRemove = (
-    current: ReadonlyMap<string, string>,
-    index: number,
-  ): Map<string, string> => {
-    const next = new Map<string, string>()
-    for (const [key, value] of current) {
-      const at = Number(key.slice(0, key.indexOf(':')))
-      if (at === index) continue
-      // Only the row number moves; the field half of the key is untouched.
-      next.set(at > index ? key.replace(/^\d+/, String(at - 1)) : key, value)
-    }
-    return next
+  const remove = (index: number): void => {
+    const shifted = (at: number): number | undefined => indexAfterRemove(at, index)
+    // Both stores are keyed by position, so every row after this one shifts
+    // down and would otherwise inherit its neighbour's state — a different
+    // row's capacities popping open, or its half-typed text appearing in
+    // another row's field.
+    setEditing(current => rekeyEditingBuffers(current, shifted))
+    setExpanded(current => reindexRowState(current, shifted))
+    setModalityTarget(current => (current === undefined ? undefined : shifted(current)))
+    onChange(models.filter((_model, at) => at !== index))
+  }
+
+  const move = (from: number, to: number): void => {
+    setDrag(null)
+    setDrop(null)
+    if (to === from) return
+    /* v8 ignore next -- drag and keyboard moves always name an existing row */
+    if (models[from] === undefined) return
+    const shifted = (at: number): number => indexAfterMove(at, from, to)
+    setEditing(current => rekeyEditingBuffers(current, shifted))
+    setExpanded(current => reindexRowState(current, shifted))
+    setModalityTarget(current => (current === undefined ? undefined : shifted(current)))
+    onChange(movedRows(models, from, to))
+  }
+
+  const commitDrop = (over: { index: number; half: RowHalf }): void => {
+    if (drag === null) return
+    move(drag.from, insertIndexOf(drag.from, over))
+  }
+
+  /** The modalities a row answers with: its override, else the catalog entry, else text. */
+  const effectiveInputOf = (model: ModelDraft): readonly string[] => {
+    const stored = model['input']
+    const own = Array.isArray(stored)
+      ? stored.filter((value): value is string =>
+        typeof value === 'string' && PI_AI_MODALITIES.includes(value))
+      : []
+    if (own.length > 0) return own
+    // Absent and empty both inherit: the catalog entry, or the adapter default
+    // for an id the catalog does not know.
+    const id = textOf(model, 'id')
+    const info = id !== '' ? catalogOf(id, catalogMap) : undefined
+    return info?.inputModalities ?? ['text']
+  }
+
+  /** Insert-marker class for a hovered entry, absent while it is the dragged one. */
+  const dropMarkClass = (index: number): string => {
+    if (drop === null || drop.index !== index) return ''
+    // Reaches only if state ever desyncs: the hover guard never parks a marker
+    // on the dragged row itself.
+    /* v8 ignore next -- the hover guard never parks a marker on the dragged row */
+    if (drag?.from === index) return ''
+    return drop.half === 'before' ? ` ${styles['modelEntryDropBefore']}` : ` ${styles['modelEntryDropAfter']}`
+  }
+
+  /** The open dialog for one row, gone when a move or remove has dropped the row. */
+  const modalityDialogFor = (target: number): ReactNode => {
+    const model = models[target]
+    /* v8 ignore next -- move and remove re-map the open dialog onto its row */
+    if (model === undefined) return null
+    return (
+      <ModelModalityDialog
+        choices={PI_AI_MODALITIES}
+        selected={effectiveInputOf(model)}
+        allowEmpty
+        t={t}
+        onApply={(next) => {
+          // An empty selection is the inherit path: the field drops and the
+          // row reads the catalog entry again.
+          patch(target, { input: next.length === 0 ? undefined : [...next] })
+          setModalityTarget(undefined)
+        }}
+        onClose={() => { setModalityTarget(undefined) }}
+      />
+    )
   }
 
   const toggleExpanded = (index: number): void => {
@@ -488,8 +540,50 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         const isInheriting = inCatalog && model['contextWindow'] === undefined && model['maxTokens'] === undefined && model['reasoningEfforts'] === undefined
 
         return (
-          <div key={index} className={styles['modelEntry']}>
+          <div
+            key={index}
+            className={`${styles['modelEntry']}${dropMarkClass(index)}`}
+            onDragOver={(event) => {
+              if (drag === null || drag.from === index) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+              setDrop({ index, half: rowHalfOf(event) })
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              commitDrop({ index, half: rowHalfOf(event) })
+            }}
+          >
             <div className={styles['modelRow']}>
+              <button
+                type="button"
+                className={styles['dragHandle']}
+                aria-label={`${t('reorderModel')} ${index + 1}`}
+                title={t('reorderModel')}
+                draggable={!disabled}
+                disabled={disabled}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData('text/plain', modelId)
+                  event.dataTransfer.effectAllowed = 'move'
+                  setDrag({ from: index })
+                }}
+                onDragEnd={() => {
+                  setDrag(null)
+                  setDrop(null)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowUp' && index > 0) {
+                    event.preventDefault()
+                    move(index, index - 1)
+                  }
+                  if (event.key === 'ArrowDown' && index < models.length - 1) {
+                    event.preventDefault()
+                    move(index, index + 1)
+                  }
+                }}
+              >
+                <IconGripOutline14 />
+              </button>
               <input
                 className={styles['input']}
                 type="text"
@@ -524,22 +618,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 aria-label={`${t('removeModel')} ${index + 1}`}
                 title={t('removeModel')}
                 disabled={disabled}
-                onClick={() => {
-                  onChange(models.filter((_model, at) => at !== index))
-                  // Both stores are keyed by position, so every row after this
-                  // one shifts down and would otherwise inherit its neighbour's
-                  // state — a different row's capacities popping open, or its
-                  // half-typed text appearing in another row's field.
-                  setExpanded((current) => {
-                    const next = new Set<number>()
-                    for (const at of current) {
-                      if (at < index) next.add(at)
-                      else if (at > index) next.add(at - 1)
-                    }
-                    return next
-                  })
-                  setEditing(current => reindexOnRemove(current, index))
-                }}
+                onClick={() => { remove(index) }}
               >
                 <IconTrash />
               </button>
@@ -547,12 +626,29 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             {expanded.has(index)
               ? (
                 <div className={styles['modelAdvanced']}>
-                  {catalogInfo !== undefined && catalogInfo.inputModalities.length > 0 ? (
-                    <div className={styles['modalitiesRow']}>
-                      <span className={styles['modalitiesLabel']}>{t('modelModalities')}</span>
-                      <ModalityBadges info={catalogInfo} t={t} />
-                    </div>
-                  ) : null}
+                  <div className={styles['modalitiesRow']}>
+                    <span className={styles['modalitiesLabel']}>{t('modelModalities')}</span>
+                    <ModalityBadges
+                      info={{
+                        inputModalities: effectiveInputOf(model),
+                        visionInferred: catalogInfo?.visionInferred,
+                      }}
+                      t={t}
+                    />
+                    {Array.isArray(model['input'])
+                      ? <span className={styles['rowTag']}>{t('modalityCustomTag')}</span>
+                      : null}
+                    <button
+                      type="button"
+                      className={styles['iconButton']}
+                      aria-label={`${t('editModelModalities')} ${index + 1}`}
+                      title={t('editModelModalities')}
+                      disabled={disabled}
+                      onClick={() => { setModalityTarget(index) }}
+                    >
+                      <IconEditOutline16 size={14} />
+                    </button>
+                  </div>
                   {inCatalog ? (
                     <div className={styles['inheritRow']}>
                       <label className={styles['inheritLabel']}>
@@ -655,6 +751,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           </div>
         )
       })}
+      {modalityTarget === undefined ? null : modalityDialogFor(modalityTarget)}
       <button
         type="button"
         className={styles['addModelButton']}

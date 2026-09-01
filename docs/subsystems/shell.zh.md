@@ -335,4 +335,50 @@ list(): BashEnvVariableInfo[]
 Types: [DshEnvironment](subprocess.zh.md) · [ToolExecution](tools.zh.md)
 
 Source: [`packages/shell/shell-env/src/index.ts`](../../packages/shell/shell-env/src/index.ts)
+
+<a id="shell-events"></a>
+
+### `shell/*` events
+
+<a id="shellauthorize--waterfall"></a>
+
+#### `shell/authorize` — waterfall
+
+Waterfall: whether a shell command is authorized to run.
+
+```ts cordis-catalog
+/**
+ * Waterfall: whether a shell command is authorized to run.
+ * @mode waterfall
+ * @param command - Shell command proposed for execution.
+ * @param next - Continue authorization through the remaining listeners.
+ * @returns Whether the command is authorized.
+ */
+'shell/authorize'(this: Context, command: string, next: () => boolean): boolean
+```
+
+Source: [`packages/fs/fs-sandbox/src/index.ts`](../../packages/fs/fs-sandbox/src/index.ts)
+
+<a id="shellauthorize--waterfall"></a>
+
+#### `shell/authorize` — waterfall
+
+Waterfall: whether a shell command is authorized to run. The default (no listener, or every listener delegating via `next()`) is `true`; a listener returning `false` without calling `next()` blocks the command with a `SHELL_DENIED` error. Plugins implementing deny lists (e.g. the fs-deny policy) register here.
+
+```ts cordis-catalog
+/**
+ * Waterfall: whether a shell command is authorized to run. The default
+ * (no listener, or every listener delegating via `next()`) is `true`; a
+ * listener returning `false` without calling `next()` blocks the command
+ * with a `SHELL_DENIED` error. Plugins implementing deny lists (e.g. the
+ * fs-deny policy) register here.
+ * @param command - the raw command string (e.g. `cat .env`).
+ * @param next - delegate to the next listener (or the default).
+ * @returns whether the command is authorized.
+ * @mode waterfall
+ */
+'shell/authorize'(this: Context, command: string, next: () => boolean): boolean
+```
+
+Source: [`packages/shell/shell/src/index.ts`](../../packages/shell/shell/src/index.ts)
 <!-- END GENERATED cordis-surface -->

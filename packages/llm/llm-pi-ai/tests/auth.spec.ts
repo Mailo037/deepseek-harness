@@ -16,7 +16,11 @@ async function stored(): Promise<Context> {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-auth-'))
   dirs.push(dir)
   const ctx = new Context()
-  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  await ctx.plugin(LocalCredentialProvider, {
+    path: join(dir, '.credentials.yaml'),
+    watch: false,
+    protection: 'plain',
+  })
   return ctx
 }
 

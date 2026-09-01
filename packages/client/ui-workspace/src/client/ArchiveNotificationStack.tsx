@@ -9,6 +9,12 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import css from './ArchiveNotificationStack.module.css'
 
+const CARD_OPACITY_EASE = [0.4, 0, 0.2, 1] as const
+const ENTER_SPRING = { type: 'spring', stiffness: 520, damping: 26, mass: 0.7 } as const
+const STACK_SPRING = { type: 'spring', stiffness: 400, damping: 28, mass: 0.8 } as const
+const EXIT_SPRING = { type: 'spring', stiffness: 540, damping: 38, mass: 0.62 } as const
+const HIDDEN_CARD = { opacity: 0, scale: 0.88, y: 32 } as const
+
 /** One archive outcome before the deck assigns its display identity. */
 export type ArchiveNotificationDraft = {
   sessionId: SessionId
@@ -97,15 +103,34 @@ export function ArchiveNotificationStack({
               key={notification.id}
               className={failure ? `${css.card} ${css.failure}` : css.card}
               role={failure ? 'alert' : 'status'}
-              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: 18 }}
+              initial={reduceMotion ? { opacity: 0 } : HIDDEN_CARD}
               animate={{
                 opacity: compact ? Math.max(0.4, 0.8 - index * 0.16) : 1,
                 scale: compact ? 1 - index * 0.035 : 1,
                 y: open ? -index * 52 : -index * 6,
               }}
-              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: 18 }}
-              transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 460, damping: 32, mass: 0.72 }}
-              style={{ zIndex: cards.length - index, pointerEvents: compact ? 'none' : 'auto' }}
+              exit={reduceMotion
+                ? { opacity: 0 }
+                : {
+                  ...HIDDEN_CARD,
+                  transition: {
+                    opacity: { duration: 0.14, ease: CARD_OPACITY_EASE },
+                    scale: EXIT_SPRING,
+                    y: EXIT_SPRING,
+                  },
+                }}
+              transition={reduceMotion
+                ? { duration: 0 }
+                : {
+                  opacity: { duration: 0.18, ease: CARD_OPACITY_EASE, delay: index * 0.045 },
+                  scale: { ...(index === 0 ? ENTER_SPRING : STACK_SPRING), delay: index * 0.045 },
+                  y: { ...(index === 0 ? ENTER_SPRING : STACK_SPRING), delay: index * 0.045 },
+                }}
+              style={{
+                zIndex: cards.length - index,
+                pointerEvents: compact ? 'none' : 'auto',
+                transformOrigin: '50% 100%',
+              }}
             >
               <span className={css.icon} aria-hidden><IconArchiveOutline20 size={16} /></span>
               <span className={css.text}>{text}</span>

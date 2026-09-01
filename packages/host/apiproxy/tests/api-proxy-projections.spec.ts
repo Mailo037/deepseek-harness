@@ -372,7 +372,7 @@ describe('session.list projections column', () => {
     expect(row?.attention).toBeUndefined()
   })
 
-  it('does not flag an error turn without retry exhaustion', async () => {
+  it('flags an error turn without retry exhaustion as the plain error verdict', async () => {
     const { ctx, session } = await harness(true)
     const gateway = api(ctx)
     session.append('turn/start', { turn: 1 })
@@ -380,7 +380,7 @@ describe('session.list projections column', () => {
     const response = await gateway.sessions.list(request({}))
     if (!response.result.ok) throw new Error('unreachable')
     const row = response.result.value.items.find(item => item.sessionId === session.id)
-    expect(row?.attention).toBeUndefined()
+    expect(row?.attention).toBe('error')
   })
 
   it('a fresh turn clears a previous retry-exhausted verdict', async () => {

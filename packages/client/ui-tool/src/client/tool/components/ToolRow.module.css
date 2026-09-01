@@ -37,6 +37,13 @@
   90%, 100% { left: 100%; }
 }
 
+/* The phone group sheet keeps the running shimmer, but the band is far subtler
+   there: at full strength it reads as a solid box over the text on the sheet
+   surface, so it is faded to a faint moving sheen instead. */
+:global([data-group-sheet]) .root[data-state='running'] .row::after {
+  opacity: 0.4;
+}
+
 .leading {
   /* Solid base disc so the ToolCallGroup connector line passing through the
      icon column centre does not show through the glyph (position unchanged —
@@ -44,6 +51,13 @@
   flex-shrink: 0;
   border-radius: 4px;
   background: var(--dsw-alias-bg-base);
+}
+
+/* In the phone group sheet the disc must match the sheet surface, not the
+   conversation base, so it blends instead of reading as a box behind the icon
+   (it still occludes the connector). */
+:global([data-group-sheet]) .leading {
+  background: var(--dsw-specific-menu);
 }
 
 /* Cordis lifecycle tools retain their generic row mechanics while carrying a
@@ -124,6 +138,16 @@
 }
 
 .root:hover .diffRemoved {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* In the phone group sheet there is no hover (touch), so the diff counts would
+   stay gray; colour them always there. */
+:global([data-group-sheet]) .root .diffStats .diffAdded {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+:global([data-group-sheet]) .root .diffStats .diffRemoved {
   color: var(--dsw-alias-state-error-primary);
 }
 
@@ -216,6 +240,10 @@
 .bodyScroll {
   max-height: 260px;
   overflow-y: auto;
+  /* Inside a group sheet the row sits on the elevated menu surface, so its
+     scrollbar takes the l2 pair instead of the base l1 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 /* Expanded input/output card (figma 1249:35657): the code-block surface and
@@ -344,4 +372,15 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* Phone bottom-sheet body: a small inset so the tool body never hugs the sheet
+   edges, and it clears the connector indent the desktop inline body wraps in
+   (the sheet has no ToolCallGroup connector line to clear). */
+.sheetBody {
+  padding: 0 12px 12px;
+}
+
+.sheetBody .bodyWrap {
+  padding-left: 0;
 }

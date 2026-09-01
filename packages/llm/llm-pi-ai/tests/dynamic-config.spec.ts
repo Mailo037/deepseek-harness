@@ -49,7 +49,11 @@ async function boot(
   })
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
-  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  await ctx.plugin(LocalCredentialProvider, {
+    path: join(dir, '.credentials.yaml'),
+    watch: false,
+    protection: 'plain',
+  })
   if (options.authorization === true) await ctx.plugin(AuthorizationService)
   await ctx.plugin(LlmPiAi, config)
   return ctx

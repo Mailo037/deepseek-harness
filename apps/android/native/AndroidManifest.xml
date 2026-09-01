@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android manifest for the Harness Remote app. This is the authoritative copy;
+  `npx cap add android` scaffolds the project and this file merges into it.
+  Permissions and the foreground service are the native additions for the
+  notification channel; everything else is the standard Capacitor shell.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Internet for the remote GUI + the notification WebSocket channel. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ runtime notification permission (POST_NOTIFICATIONS). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Foreground service for the persistent notification channel. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- targetSdk 36: dataSync is limited to 6 h and cannot start from
+         BOOT_COMPLETED; specialUse has neither restriction. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Restart the notification channel after a device reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Camera for the QR pairing scanner. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Network state probing for the connection-lost UI. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- GitHub Release APKs are handed to Android's package installer. The
+         user still controls the system installer confirmation and this app's
+         unknown-source setting. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- The PC channel is plain ws:// (LAN IPs, no TLS); Android blocks
+         cleartext by default since API 28, which fails every endpoint. -->
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|smallestScreenSize"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- The notification channel's foreground service. `specialUse` (with
+             PROPERTY_SPECIAL_USE_FGS_SUBTYPE) satisfies Android 14/15
+             foreground-service-type requirements without the 6 h dataSync
+             timeout. -->
+        <service
+            android:name=".DeviceChannelService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Maintains a persistent WebSocket to a paired computer to deliver real-time session-attention notifications" />
+        </service>
+
+        <!-- Restarts the notification channel after a device reboot; the
+             channel parameters are persisted by DeviceChannelPlugin. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Shares only the private update-download cache with Android's
+             package installer; release APKs never use broad storage paths. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
+    </application>
+</manifest>

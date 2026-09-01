@@ -6,7 +6,7 @@
  * (HMR safety) against the real SlotRegistry.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ConversationEventRegistry, ConversationNodeAssembler, SlotRegistry,
@@ -364,6 +364,40 @@ describe('LineChangeSummary', () => {
   it('stays absent until a successful result supplies applied diff lines', () => {
     const view = render(<LineChangeSummary {...props({ produced: [], lineChanges: [] })} t={t} />)
     expect(view.container.firstChild).toBeNull()
+  })
+
+  it('opens the per-file breakdown in an animated bottom sheet on a phone viewport', () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    vi.useFakeTimers()
+    try {
+      const view = render(
+        <LineChangeSummary
+          {...props({ produced: [], lineChanges: [
+            { seq: 2, path: 'src/ChatView.tsx', added: 26, removed: 10 },
+          ] })}
+          t={t}
+        />,
+      )
+      const trigger = view.getByRole('button', { name: '1 files changed, +26 lines and -10 lines' })
+      fireEvent.click(trigger)
+      // The breakdown opens in the bottom-sheet dialog (portaled to the body).
+      const dialog = screen.getByRole('dialog', { name: '1 files changed, +26 lines and -10 lines' })
+      expect(within(dialog).getByText('ChatView.tsx')).toBeTruthy()
+      expect(within(dialog).getByText('+26')).toBeTruthy()
+      // The sheet's close button slides it down, then it unmounts.
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+      expect(screen.getByRole('dialog', { name: '1 files changed, +26 lines and -10 lines' })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 })
 

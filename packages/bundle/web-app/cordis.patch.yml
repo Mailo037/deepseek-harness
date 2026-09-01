@@ -100,6 +100,17 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Remote device pairing and notification bridge.
+    - id: remote
+      name: '@deepseek-ai/dsh-host-remote'
+      inject: [webStartup]
+      config:
+        endpoints: []
+        pairingTtlSeconds: 300
+        notifyOnError: true
+        notifyOnCompleted: true
+        printPairingQr: !!js ctx.webStartup.printPairingQr ?? false
+
     # Human `!` shell commands: host-plane executor over the composed
     # `ctx.shell` (the base's bash-sandbox/pwsh-sandbox row), serving the
     # browser's shell-command input source over the Remote gateway.
@@ -117,6 +128,15 @@
     # degrades to the unavailable capability instead of failing the load.
     - id: self-update
       name: '@deepseek-ai/dsh-host-self-update'
+
+    # Host-plane model lifecycle control over the self-update row above:
+    # `rebuild_harness` stops the calling agent's background jobs, records them
+    # in the logged result, and rebuilds + restarts this process through the
+    # detached helper. It stays host-plane and Web-only because a restart is a
+    # process-wide fact, not a per-session capability; hosts without the
+    # restart path fail the call, not the load.
+    - id: tool-rebuild
+      name: '@deepseek-ai/dsh-tool-rebuild'
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
@@ -222,6 +242,9 @@
 
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
+
+    - id: ui-remote
+      name: '@deepseek-ai/dsh-client-ui-remote'
 
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'

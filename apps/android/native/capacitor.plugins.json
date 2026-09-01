@@ -1,0 +1,30 @@
+[
+	{
+		"pkg": "@capacitor/app",
+		"classpath": "com.capacitorjs.plugins.app.AppPlugin"
+	},
+	{
+		"pkg": "@capacitor/network",
+		"classpath": "com.capacitorjs.plugins.network.NetworkPlugin"
+	},
+	{
+		"pkg": "@capacitor/preferences",
+		"classpath": "com.capacitorjs.plugins.preferences.PreferencesPlugin"
+	},
+	{
+		"pkg": "@capacitor/status-bar",
+		"classpath": "com.capacitorjs.plugins.statusbar.StatusBarPlugin"
+	},
+	{
+		"pkg": "capacitor-barcode-scanner",
+		"classpath": "cl.kgames.capacitorbarcodescanner.BarcodeScannerPlugin"
+	},
+	{
+		"pkg": "ai.deepseek.harness.remote",
+		"classpath": "ai.deepseek.harness.remote.DeviceChannelPlugin"
+	},
+	{
+		"pkg": "ai.deepseek.harness.remote",
+		"classpath": "ai.deepseek.harness.remote.AppUpdatePlugin"
+	}
+]

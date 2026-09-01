@@ -6,18 +6,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.intro {
-  margin: 0;
-  font-size: 13px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* Cards, not rows: a preset is a thing you pick, and the description is the
    part that tells them apart — a row would bury it beside the actions. */
 .group {

@@ -54,6 +54,16 @@ export function loadOlderPageSize(page: number): number {
  */
 export const INITIAL_PAGE_MESSAGES = 4
 
+/**
+ * Backoff before each history-read retry, indexed by failed attempt count
+ * (two retries, three attempts total). One unary read is deadline-bounded by
+ * the carrier, but a cold or huge log can legitimately outlast one deadline
+ * while the host keeps preparing the page — the aborted client request does
+ * not cancel that server-side work, so a retry lands on the warm preparation
+ * instead of re-paying it.
+ */
+const HISTORY_RETRY_DELAYS_MS = [1_000, 3_000] as const
+
 /** Manager-owned observers of a Session object's local state edges. */
 export interface SessionOptions {
   /** Catalog-discovered address selecting non-activating subagent transport. */
@@ -419,6 +429,16 @@ export class Session implements SessionFace {
     })
     this.openPromise = promise
     return promise
+  }
+
+  /**
+   * Re-run the open flow after a failed open (the error state the UI offers a
+   * retry on). Delegates to {@link open}: an in-flight open shares its
+   * promise, a completed open is a no-op, and only an error state re-requests
+   * the tail page.
+   */
+  reloadHistory(): Promise<void> {
+    return this.open()
   }
 
   /** Page up: pull one earlier page with the window's first seq as beforeSeq and prepend. */
@@ -821,21 +841,45 @@ export class Session implements SessionFace {
     }
   }
 
-  /** Select ordinary or addressed history transport from the stored browser fact. */
-  private history(payload: { beforeSeq?: number; maxMessages?: number }): Promise<RpcResponse<{
+  /**
+   * Read one history page through the session's transport (ordinary or
+   * addressed), retrying bounded times when the read throws. The carrier
+   * deadline can fire while the host is still serving a slow page (cold log
+   * preparation is not cancelled by the client's abort), so the retry lands
+   * on the completed work instead of surfacing one timeout as a dead error.
+   * A business failure (`result.ok === false`) returns unretried — the host
+   * answered, and the call site owns that outcome.
+   */
+  private async history(payload: { beforeSeq?: number; maxMessages?: number }): Promise<RpcResponse<{
     events: HistoryEntry[]
     hasMore: boolean
     projections?: ProjectionsBaseline
   }>> {
-    return this.address === undefined
-      ? this.api.sessions.history({ sessionId: this.sessionId, ...payload })
-      : this.api.subagents.history({ ...this.address, ...payload })
+    let retries = 0
+    for (;;) {
+      try {
+        return this.address === undefined
+          ? await this.api.sessions.history({ sessionId: this.sessionId, ...payload })
+          : await this.api.subagents.history({ ...this.address, ...payload })
+      } catch (error) {
+        const delayMs = HISTORY_RETRY_DELAYS_MS[retries]
+        if (delayMs === undefined) throw error
+        retries++
+        console.warn(`[web-runtime] history read failed (attempt ${retries}); retrying:`, error)
+        await sleep(delayMs)
+      }
+    }
   }
 }
 
 /** Convert one wire history row into the assembler's transport-neutral input. */
 function conversationInput(entry: HistoryEntry): ConversationEventInput {
   return { event: entry.event, view: entry.view }
+}
+
+/** Settle after `ms` (the history-retry backoff); a plain timer, never rejected. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms) })
 }
 
 /** A generic command row alone remains control-plane content; every other visible Chat Node activates the conversation. */

@@ -81,7 +81,8 @@
     # Credential sources: inherited environment over the managed
     # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
     # Adapters resolve references per request; the Models page writes only the
-    # managed document, which is never materialized into the process environment.
+    # managed document, which is DPAPI-protected on Windows and never
+    # materialized into the process environment.
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 

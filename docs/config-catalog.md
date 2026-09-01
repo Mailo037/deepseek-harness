@@ -418,7 +418,7 @@ export interface ConnectionConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:69`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -560,7 +560,7 @@ Source: [`packages/extensions/cordis-host-runner/src/index.ts:88`](../packages/e
 ## `@deepseek-ai/dsh-credentials-local`
 
 ```ts config-catalog
-/** Plugin config: file location and hot-reload behavior. */
+/** Plugin config: file location, hot-reload behavior, and at-rest protection. */
 export interface Config {
   /** Credentials document path; defaults to `.credentials.yaml` under the harness home. */
   path?: string
@@ -570,10 +570,15 @@ export interface Config {
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
   debounceMs?: number
+  /** At-rest storage policy; `platform` uses user-scoped DPAPI on Windows and owner-only plaintext elsewhere. */
+  protection?: CredentialProtection
 }
+
+/** Operator-facing protection selection. */
+export type CredentialProtection = 'platform' | 'plain'
 ```
 
-Source: [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+Source: [`packages/credentials/credentials-local/src/index.ts:72`](../packages/credentials/credentials-local/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -678,7 +683,7 @@ Source: [`packages/fs/fs-local/src/index.ts:41`](../packages/fs/fs-local/src/ind
 
 ## `@deepseek-ai/dsh-fs-sandbox`
 
-Requires: `sandboxPolicy`
+Requires: `sandboxPolicy` · `settings`
 
 ```ts config-catalog
 /**
@@ -692,7 +697,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-fs-local)
 
-Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
+Source: [`packages/fs/fs-sandbox/src/index.ts:83`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -872,6 +877,30 @@ export interface Config {
 ```
 
 Source: [`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
+
+<a id="deepseek-aidsh-host-remote"></a>
+
+## `@deepseek-ai/dsh-host-remote`
+
+Requires: `webServer` · `storageDomain`
+
+```ts config-catalog
+/** Plugin config: pairing, notification, and channel choices. */
+export interface RemoteConfig {
+  /** Extra authorities appended to auto-detected LAN endpoints in the QR payload. */
+  readonly endpoints: string[]
+  /** Pairing token lifetime in seconds. */
+  readonly pairingTtlSeconds: number
+  /** Notify connected devices when a turn ends with an error. */
+  readonly notifyOnError: boolean
+  /** Notify connected devices when a turn completes. */
+  readonly notifyOnCompleted: boolean
+  /** Print a pairing QR code to stdout after activation. */
+  readonly printPairingQr: boolean
+}
+```
+
+Source: [`packages/host/remote/src/index.ts:55`](../packages/host/remote/src/index.ts)
 
 <a id="deepseek-aidsh-host-self-update"></a>
 
@@ -2841,6 +2870,26 @@ export interface Config {
 
 Source: [`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
 
+<a id="deepseek-aidsh-tool-rebuild"></a>
+
+## `@deepseek-ai/dsh-tool-rebuild`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Configures how long stopped background jobs may take to settle. */
+export interface Config {
+  /**
+   * Wall-clock bound in ms for waiting out one job's settlement after its
+   * cancellation request; a job still live at the bound is recorded as is.
+   * @default 10_000
+   */
+  jobStopTimeoutMs: number
+}
+```
+
+Source: [`packages/host/tool-rebuild/src/index.ts:25`](../packages/host/tool-rebuild/src/index.ts)
+
 <a id="deepseek-aidsh-tool-session-query"></a>
 
 ## `@deepseek-ai/dsh-tool-session-query`
@@ -3391,6 +3440,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-remote` ([`packages/client/ui-remote/src/index.ts`](../packages/client/ui-remote/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))

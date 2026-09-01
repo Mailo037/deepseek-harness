@@ -12,13 +12,11 @@ Host 报告的 `ModelSelection` 是唯一的选择事实，其中包含提供方
 
 每一份常驻目录都会直接在转发的 owner 事件 `llm/adapters-updated` 与 `settings/document-updated` 上重拉。因此提供方拓扑、提供方目录与默认选择都能收敛，Host 与 client runtime 无需再派生一个单独的模型变更别名。
 
-`/client` 导出面为插件本体（`apply`/`inject`）、`ModelDirectoryResolver`、`ModelDirectory` 及其状态形状、slot 注入面类型。
+`/client` 导出面为插件本体（`apply`/`inject`）、`ModelDirectoryResolver`、`ModelDirectory` 及其状态形状、slot 注入面类型。按提供方分组的选择器把 modality 徽标保留为无底框的图标。悬停某个模型行会打开只读卡片，其中只显示适配器为该确切路由公布的元数据：提供方模型 ID、上下文窗口、配置的输出上限以及可接受的输入 modality。适配器未公布的数据会显示为未知；客户端不会从模型名称推测容量。
 
 ## 模型体验
 
 间接影响。两个入口都通过仅供普通会话使用的 `session.selectModel` RPC 提交完整的 `ModelSelection`；Host 会在下一次提示词组装边界对其进行快照，因此后续请求采用所选提供方、模型与推理强度，而运行中的步骤保留已组装选择。只有当现有请求头记录一次实际采用该选择的请求后，选择才会持久化；菜单交互不会添加提示词内容。
-
-按提供方分组的选择器把 modality 徽标保留为无底框的图标。悬停某个模型行会打开只读卡片，其中只显示适配器为该确切路由公布的元数据：提供方模型 ID、上下文窗口、配置的输出上限以及可接受的输入 modality。适配器未公布的数据会显示为未知；客户端不会从模型名称推测容量。
 
 #### KV Cache 影响
 

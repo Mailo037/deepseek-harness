@@ -66,6 +66,8 @@ export interface MessageImagesOwnerProps {
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   /** Message-side alignment. */
   align: 'start' | 'end'
+  /** Fixed square thumbnails for a compact non-message image presentation. */
+  variant?: 'tile' | undefined
 }
 
 /** Slot-backed renderer used by chat nodes without importing an attachment implementation. */
@@ -797,6 +799,8 @@ export interface ChatViewInjected {
    */
   openFile: (path: string) => Promise<void>
   loadOlder: () => void
+  /** Re-run a failed history open (the error-state retry control; a completed open is a no-op). */
+  reloadHistory: () => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   /** Hand a call off to the trajectory view: write the one-shot inspect target and switch tabs. */

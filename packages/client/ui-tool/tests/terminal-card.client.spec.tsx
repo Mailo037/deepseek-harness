@@ -5,7 +5,7 @@
 // and the details panel's Output section.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CONVERSATION_VIEWS,
@@ -369,6 +369,33 @@ describe('BashRow terminal card', () => {
     fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.queryByText(/a\.ts/)).toBeNull()
     expect(view.getByText('List files')).toBeTruthy()
+  })
+
+  it('on phone the row click opens a bottom sheet instead of the inline card', () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    vi.useFakeTimers()
+    try {
+      const view = render(<BashRow {...rowProps(settled())} />)
+      fireEvent.click(view.container.querySelector('[data-expandable]')!)
+      // The inline body stays condensed: no terminal card inside the row.
+      expect(view.container.querySelector('[data-terminal]')).toBeNull()
+      // The body opens in the bottom-sheet dialog instead.
+      expect(screen.getByRole('dialog', { name: 'Bash' })).toBeTruthy()
+      expect(screen.getByText('a.ts  b.ts', RAW)).toBeTruthy()
+      // The dialog's close button starts the slide-down, then it unmounts.
+      fireEvent.click(screen.getByLabelText('关闭'))
+      expect(screen.getByRole('dialog', { name: 'Bash' })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 
   // The row's leading StateDot and the card's run-state dot describe the same

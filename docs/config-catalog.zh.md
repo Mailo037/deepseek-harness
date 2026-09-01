@@ -562,7 +562,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-credentials-local`
 
 ```ts config-catalog
-/** Plugin config: file location and hot-reload behavior. */
+/** Plugin config: file location, hot-reload behavior, and at-rest protection. */
 export interface Config {
   /** Credentials document path; defaults to `.credentials.yaml` under the harness home. */
   path?: string
@@ -572,10 +572,15 @@ export interface Config {
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
   debounceMs?: number
+  /** At-rest storage policy; `platform` uses user-scoped DPAPI on Windows and owner-only plaintext elsewhere. */
+  protection?: CredentialProtection
 }
+
+/** Operator-facing protection selection. */
+export type CredentialProtection = 'platform' | 'plain'
 ```
 
-来源：[`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+来源：[`packages/credentials/credentials-local/src/index.ts:72`](../packages/credentials/credentials-local/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -874,7 +879,32 @@ export interface Config {
 
 来源：[`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
 
+<a id="deepseek-aidsh-host-remote"></a>
+
+## `@deepseek-ai/dsh-host-remote`
+
+需要：`webServer` · `storageDomain`
+
+```ts config-catalog
+/** Plugin config: pairing, notification, and channel choices. */
+export interface RemoteConfig {
+  /** Extra authorities appended to auto-detected LAN endpoints in the QR payload. */
+  readonly endpoints: string[]
+  /** Pairing token lifetime in seconds. */
+  readonly pairingTtlSeconds: number
+  /** Notify connected devices when a turn ends with an error. */
+  readonly notifyOnError: boolean
+  /** Notify connected devices when a turn completes. */
+  readonly notifyOnCompleted: boolean
+  /** Print a pairing QR code to stdout after activation. */
+  readonly printPairingQr: boolean
+}
+```
+
+来源：[`packages/host/remote/src/index.ts:55`](../packages/host/remote/src/index.ts)
+
 <a id="deepseek-aidsh-host-self-update"></a>
+
 ## `@deepseek-ai/dsh-host-self-update`
 
 需要：`agents`
@@ -972,6 +1002,15 @@ export interface Config {
 export interface Config {
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary. Each is resolved through the same seams as
+   * {@link apiKeyEnv}; a backup with no stored value fails the request that
+   * reaches it rather than being silently skipped.
+   */
+  backupApiKeys?: string[]
+  /** How long a quota-failed key stays retired before it is tried again (default one hour). */
+  apiKeyCooldownMs?: number
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
@@ -1060,6 +1099,15 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Additional credential references tried in order after a quota-classified
+   * failure retires the primary. Each is resolved through the same seams as
+   * {@link apiKeyEnv}; a backup with no stored value fails the request that
+   * reaches it rather than being silently skipped.
+   */
+  backupApiKeys?: string[]
+  /** How long a quota-failed key stays retired before it is tried again (default one hour). */
+  apiKeyCooldownMs?: number
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -2575,6 +2623,28 @@ export type TokenMeterConfig = Record<string, never>
 
 来源：[`packages/llm/token-meter/src/types.ts:12`](../packages/llm/token-meter/src/types.ts)
 
+<a id="deepseek-aidsh-tool-ast-query"></a>
+
+## `@deepseek-ai/dsh-tool-ast-query`
+
+Requires: `tools` · `fs` · `systemPrompt`
+
+```ts config-catalog
+/** Deployment-owned source and result bounds. */
+export interface Config {
+  /** Maximum matching syntax nodes retained by one call. Defaults to 100. */
+  maxMatches?: number
+  /** Maximum UTF-8 bytes read from one source file. Defaults to 1000000. */
+  maxSourceBytes?: number
+  /** Maximum UTF-16 characters retained from one matched syntax node. Defaults to 1000. */
+  maxMatchCharacters?: number
+  /** Maximum UTF-16 characters in one model-visible rendered result. Defaults to 16000. */
+  maxResultCharacters?: number
+}
+```
+
+来源：[`packages/fs/tool-ast-query/src/index.ts:45`](../packages/fs/tool-ast-query/src/index.ts)
+
 <a id="deepseek-aidsh-tool-bash"></a>
 
 ## `@deepseek-ai/dsh-tool-bash`
@@ -2799,6 +2869,26 @@ export interface Config {
 ```
 
 来源：[`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
+
+<a id="deepseek-aidsh-tool-rebuild"></a>
+
+## `@deepseek-ai/dsh-tool-rebuild`
+
+需要：`tools`
+
+```ts config-catalog
+/** Configures how long stopped background jobs may take to settle. */
+export interface Config {
+  /**
+   * Wall-clock bound in ms for waiting out one job's settlement after its
+   * cancellation request; a job still live at the bound is recorded as is.
+   * @default 10_000
+   */
+  jobStopTimeoutMs: number
+}
+```
+
+来源：[`packages/host/tool-rebuild/src/index.ts:25`](../packages/host/tool-rebuild/src/index.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 
@@ -3349,6 +3439,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-permission-presets`（[`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-plan`（[`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-reference`（[`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-remote`（[`packages/client/ui-remote/src/index.ts`](../packages/client/ui-remote/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-renderer`（[`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
@@ -3364,6 +3455,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-tool`（[`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-trajectory`（[`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-user-questions`（[`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-voice-input`（[`packages/client/ui-voice-input/src/index.ts`](../packages/client/ui-voice-input/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-workflow-run`（[`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-workspace`（[`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts)）
 - `@deepseek-ai/dsh-command-compact` — 需要 `commands` · `compact`（[`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts)）

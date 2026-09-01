@@ -202,9 +202,9 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getAllByRole('separator')).toHaveLength(3)
+    expect(screen.getAllByRole('separator')).toHaveLength(2)
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新', '仅显示当前工作区', '全部会话', '需要关注', '已归档',
+      '按工作区', '单列表', '手动排序', '最近更新', '全部会话', '需要关注', '已归档',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -1703,7 +1703,7 @@ describe('WorkspaceBrowser', () => {
     }
 
     it('shows the pull label and releases into a full reload past the trigger', async () => {
-      const refreshDeferred = Promise.withResolvers<void>()
+      const refreshDeferred = Promise.withResolvers<undefined>()
       const refreshAll = vi.fn(async () => { await refreshDeferred.promise })
       mount({ refreshAll })
       // The list inherits data-pull-scroll-root through the browser tree.
@@ -1724,7 +1724,7 @@ describe('WorkspaceBrowser', () => {
       expect(screen.getByText('正在刷新…').closest('[data-pull-phase]')?.getAttribute('data-pull-phase')).toBe('refreshing')
 
       // Release the deferred so the indicator goes back to idle.
-      await act(async () => { refreshDeferred.resolve() })
+      await act(async () => { refreshDeferred.resolve(undefined) })
       await waitFor(() => {
         expect(screen.queryByText('正在刷新…')).toBeNull()
       })

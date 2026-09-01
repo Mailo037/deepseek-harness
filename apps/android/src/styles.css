@@ -1,0 +1,909 @@
+/* Harness Remote app UI — the pairing screen, connecting flow, and status
+ * bar only. The remote GUI brings its own theme in the iframe. The design
+ * styles consume the same ui-theme token sheets as the served Web GUI. This
+ * file owns only Android composition and mobile geometry: 44/48px targets,
+ * safe areas, and native screen transitions. */
+
+/* ── Design tokens ─────────────────────────────────────────────────────── */
+
+body {
+  --bg: var(--dsw-alias-bg-base);
+  --bg-raised: var(--dsw-alias-bg-layer-1);
+  --bg-sunken: var(--dsw-specific-login-input);
+  --fg: var(--dsw-alias-label-primary);
+  --fg-secondary: var(--dsw-alias-label-secondary);
+  --fg-muted: var(--dsw-alias-label-tertiary);
+  --border: var(--dsw-alias-border-l2);
+  --border-strong: var(--dsw-alias-border-l4);
+  --accent: var(--dsw-alias-state-business-primary);
+  --accent-hover: var(--dsw-alias-button-info-hover);
+  --accent-soft: var(--dsw-alias-state-business-tertiary);
+  --primary-fill: var(--dsw-alias-button-primary-fill);
+  --primary-hover: var(--dsw-alias-button-primary-hover);
+  --on-primary: var(--dsw-alias-label-primary-foreground);
+  --success: var(--dsw-alias-state-success-primary);
+  --success-soft: var(--dsw-alias-state-success-tertiary);
+  --warning: var(--dsw-alias-state-warn-primary);
+  --warning-soft: var(--dsw-alias-state-warn-tertiary);
+  --danger: var(--dsw-alias-state-error-primary);
+  --danger-soft: var(--dsw-alias-interactive-bg-hover-danger);
+  --shadow-1: var(--dsw-shadow-lv1);
+  --shadow-2: var(--dsw-shadow-lv3);
+  --radius-s: 8px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --ease-standard: var(--ds-ease-in-out);
+  --dur-fast: var(--ds-transition-duration-fast);
+  --dur-base: var(--ds-transition-duration);
+  --dur-slow: var(--ds-transition-duration-slow);
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: var(--dsw-font-family);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding:
+    calc(24px + env(safe-area-inset-top))
+    calc(24px + env(safe-area-inset-right))
+    calc(24px + env(safe-area-inset-bottom))
+    calc(24px + env(safe-area-inset-left));
+  gap: 16px;
+  text-align: center;
+}
+
+/* Animated screen entrance for full-screen states. */
+.screen-enter {
+  animation: screen-in var(--dur-slow) var(--ease-standard) both;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.hint {
+  font-size: 14px;
+  color: var(--fg-secondary);
+  max-width: 320px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+/* ── Brand ─────────────────────────────────────────────────────────────── */
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-word {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg-secondary);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 22px;
+  border: none;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+
+.button:active {
+  transform: scale(0.98);
+  background: var(--primary-hover);
+}
+
+.button.danger {
+  background: var(--danger);
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+.button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+}
+
+.button.ghost {
+  background: transparent;
+  color: var(--fg-secondary);
+  min-height: 44px;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button svg {
+  flex-shrink: 0;
+}
+
+/* ── Inputs ────────────────────────────────────────────────────────────── */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.input {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  font-size: 15px;
+  font-family: var(--ds-font-family-code);
+  background: var(--bg);
+  color: var(--fg);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.input::placeholder {
+  color: var(--fg-muted);
+  font-family: var(--dsw-font-family);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ── Cards and banners ─────────────────────────────────────────────────── */
+
+.manual-form {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 360px;
+  text-align: left;
+}
+
+.connect-button {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.option-button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+
+.option-button:active {
+  transform: scale(0.985);
+  background: var(--bg-sunken);
+}
+
+.option-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* No filled tile behind the icon: a bare accent-colored stroke icon keeps
+ * the row calm; the 44px box only preserves text alignment. */
+.option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.option-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.option-sub {
+  display: block;
+  font-size: 13px;
+  color: var(--fg-secondary);
+}
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-radius: var(--radius-s);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 13px;
+  text-align: left;
+  animation: banner-in var(--dur-base) var(--ease-standard) both;
+}
+
+.banner svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Connecting flow ───────────────────────────────────────────────────── */
+
+/* Device-link animation: two nodes with packets traveling along the beam.
+ * Pure transforms/opacity so it stays cheap in the WebView. */
+.link-visual {
+  position: relative;
+  width: 240px;
+  height: 132px;
+}
+
+.link-node {
+  position: absolute;
+  top: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-node .node-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-m);
+  background: var(--bg);
+  border: 1.5px solid var(--border-strong);
+  color: var(--fg-secondary);
+  transition:
+    border-color var(--dur-slow) var(--ease-standard),
+    color var(--dur-slow) var(--ease-standard),
+    box-shadow var(--dur-slow) var(--ease-standard);
+}
+
+.link-node.active .node-circle {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+
+.link-node.done .node-circle {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.link-node .node-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+}
+
+.link-node-left {
+  left: 4px;
+}
+
+.link-node-right {
+  right: 4px;
+}
+
+.link-beam {
+  position: absolute;
+  top: 54px;
+  left: 72px;
+  right: 72px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.link-beam::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 600ms var(--ease-standard);
+}
+
+.link-visual[data-stage='handshake'] .link-beam::before,
+.link-visual[data-stage='setup'] .link-beam::before {
+  transform: scaleX(1);
+}
+
+.link-packet {
+  position: absolute;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+}
+
+.link-visual[data-stage='finding'] .link-packet {
+  animation: packet-search 1.4s var(--ease-standard) infinite;
+}
+
+.link-visual[data-stage='handshake'] .link-packet,
+.link-visual[data-stage='setup'] .link-packet {
+  animation: packet-flow 0.9s linear infinite;
+}
+
+.link-packet:nth-child(1) { animation-delay: 0ms; }
+.link-packet:nth-child(2) { animation-delay: 350ms; }
+.link-packet:nth-child(3) { animation-delay: 700ms; }
+
+@keyframes packet-search {
+  0% { left: 0; opacity: 0; }
+  15% { opacity: 1; }
+  50% { left: 96px; opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 0; opacity: 0; }
+}
+
+@keyframes packet-flow {
+  0% { left: 0; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { left: 96px; opacity: 0; }
+}
+
+/* Step list with connector line. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 320px;
+  gap: 0;
+  text-align: left;
+}
+
+.step {
+  display: flex;
+  gap: 12px;
+  position: relative;
+  padding-bottom: 20px;
+}
+
+.step:last-child {
+  padding-bottom: 0;
+}
+
+.step::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 26px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
+}
+
+.step.done::before {
+  background: var(--success);
+}
+
+.step-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  color: transparent;
+  flex-shrink: 0;
+  background: var(--bg);
+  z-index: 1;
+  transition:
+    border-color var(--dur-base) var(--ease-standard),
+    background-color var(--dur-base) var(--ease-standard);
+}
+
+.step.current .step-marker {
+  border-color: var(--accent);
+}
+
+.step.current .step-marker::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.step.done .step-marker {
+  border-color: var(--success);
+  background: var(--success);
+  color: rgb(255, 255, 255);
+}
+
+.step-text {
+  padding-top: 1px;
+}
+
+.step-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  transition: color var(--dur-base) var(--ease-standard);
+}
+
+.step.current .step-title {
+  color: var(--fg);
+}
+
+.step.done .step-title {
+  color: var(--fg-secondary);
+}
+
+.step-detail {
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+/* Looping spinner reserved for short (2–10 s) waits inside the current step. */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pulsing status dot for the connected bar. */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.dot.connected {
+  color: var(--success);
+  background: currentColor;
+}
+
+.dot.reconnecting {
+  color: var(--warning);
+  background: currentColor;
+}
+
+.dot.disconnected {
+  color: var(--fg-muted);
+  background: currentColor;
+}
+
+.dot.pulse::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  animation: dot-pulse 2s var(--ease-standard) infinite;
+}
+
+@keyframes dot-pulse {
+  0% { transform: scale(0.5); opacity: 0.5; }
+  70% { transform: scale(1.4); opacity: 0; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+/* Splash (app boot + GUI load): soft breathing ring around the mark. */
+.splash-ring {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+}
+
+/* Splash (app boot + GUI load): the bare mark plus a soft breathing ring —
+ * deliberately no filled tile behind the icon. */
+.splash-mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .splash-ring {
+    animation: splash-breathe 1.8s var(--ease-standard) infinite;
+  }
+}
+
+@keyframes splash-breathe {
+  0% { transform: scale(0.72); opacity: 0; }
+  35% { opacity: 0.45; }
+  100% { transform: scale(1.12); opacity: 0; }
+}
+
+/* Iframe loading overlay above the remote GUI. */
+.gui-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--bg);
+  z-index: 10;
+  transition: opacity var(--dur-slow) var(--ease-standard);
+}
+
+.gui-loader.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gui-loader-advice,
+.connection-advice {
+  max-width: min(320px, calc(100vw - 48px));
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+  border-radius: var(--radius-m);
+  background: var(--warning-soft);
+  color: var(--fg-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  animation: loader-advice-in var(--dur-slow) var(--ease-standard) both;
+}
+
+.connection-advice {
+  margin-top: -4px;
+}
+
+@keyframes loader-advice-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ── Status bar (connected screen chrome) ──────────────────────────────── */
+
+.iframe-wrapper {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.iframe-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(40px + env(safe-area-inset-top));
+  padding: calc(2px + env(safe-area-inset-top)) 8px 2px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg-secondary);
+  z-index: 100;
+}
+
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 102px;
+  color: var(--fg);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.connection-status-window {
+  width: 78px;
+  height: 18px;
+  overflow: hidden;
+}
+
+.connection-status-track {
+  display: grid;
+  grid-template-rows: repeat(2, 18px);
+  transform: translateY(0);
+  transition: transform var(--dur-slow) var(--ease-standard);
+}
+
+.connection-status-label {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  white-space: nowrap;
+  opacity: 0.22;
+  transform: translateY(4px);
+  transition:
+    opacity var(--dur-base) var(--ease-standard),
+    transform var(--dur-slow) var(--ease-standard);
+}
+
+.connection-status[data-state='connected'] .connection-status-label:first-child,
+.connection-status[data-state='reconnecting'] .connection-status-label:last-child {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.connection-status[data-state='reconnecting'] .connection-status-track {
+  transform: translateY(-18px);
+}
+
+.bar-spacer {
+  flex: 1;
+}
+
+.bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bar-button:active {
+  background: var(--bg-sunken);
+}
+
+.bar-button.compact {
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+
+.bar-button.danger {
+  justify-content: center;
+  width: 100%;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+}
+
+.connection-details {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 12px;
+  z-index: 110;
+  display: grid;
+  gap: 10px;
+  width: min(300px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--shadow-2);
+  color: var(--fg);
+}
+
+.connection-details-label {
+  color: var(--fg-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.connection-address {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-sunken);
+}
+
+.connection-details-url {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  user-select: text;
+  transition:
+    filter var(--dur-base) var(--ease-standard),
+    opacity var(--dur-base) var(--ease-standard);
+}
+
+.connection-address[data-address-revealed='false'] .connection-details-url {
+  filter: blur(7px);
+  opacity: 0.52;
+  user-select: none;
+}
+
+.connection-address-cover {
+  position: absolute;
+  inset: 3px 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  border: 0;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--bg-raised) 88%, transparent) 22%,
+      color-mix(in srgb, var(--bg-raised) 88%, transparent) 78%,
+      transparent 100%
+    );
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.connection-address-cover span {
+  padding: 3px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-1);
+}
+
+.connection-address-hide {
+  align-self: stretch;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.connection-address-cover:focus-visible,
+.connection-address-hide:focus-visible,
+.bar-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.iframe-remote {
+  flex: 1;
+  border: none;
+  width: 100%;
+  position: relative;
+}
+
+/* ── Motion preferences ────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

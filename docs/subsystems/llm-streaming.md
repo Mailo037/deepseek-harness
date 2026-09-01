@@ -221,6 +221,13 @@ interface LlmFailure {
   readonly providerRetryAfterMs?: number
   /** Opaque provider-issued request identifier for diagnostics. */
   readonly requestId?: ProviderRequestId
+  /**
+   * The credential reference this request authenticated through, when the
+   * adapter resolved one. A reference names where a secret lives, never the
+   * secret itself; key-rotation policy reads it to retire an exhausted key
+   * without confusing it with a sibling that succeeded.
+   */
+  readonly apiKeyRef?: string
 }
 ```
 

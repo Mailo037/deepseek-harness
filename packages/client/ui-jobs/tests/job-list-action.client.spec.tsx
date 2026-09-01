@@ -214,6 +214,33 @@ describe('JobListAction dismissal', () => {
   })
 })
 
+describe('JobListAction phone sheet', () => {
+  it('opens the list in an animated bottom sheet on a phone viewport', () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(max-width: 639px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    try {
+      render(<JobListAction {...props([job()])} />)
+      fireEvent.click(screen.getByRole('button'))
+
+      // The list lands inside the bottom-sheet dialog rather than a popover.
+      const dialog = screen.getByRole('dialog', { name: zh['list.aria'] })
+      expect(within(dialog).getByRole('list', { name: zh['list.aria'] })).toBeTruthy()
+
+      // The sheet's close button slides it down, then it unmounts.
+      fireEvent.click(within(dialog).getByRole('button', { name: zh['actions.close'] }))
+      expect(screen.getByRole('dialog', { name: zh['list.aria'] })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(240) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe('JobListAction wire tolerance', () => {
   it('treats a settled job with no finishedAt as zero-duration and sorts it by start', () => {
     // `finishedAt` is optional on the wire; the Host always sets it, so this

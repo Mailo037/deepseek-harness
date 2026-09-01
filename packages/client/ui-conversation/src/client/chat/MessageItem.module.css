@@ -186,6 +186,10 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 14px;
   line-height: 24px;
+  /* The body sits on the elevated bubble surface, so its scrollbar takes the
+     l2 pair instead of the base l1 pair the indirection defaults to. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .retryRow {

@@ -210,21 +210,54 @@ describe('open', () => {
     expect(api.callsOf('session.history')).toHaveLength(1)
   })
 
-  it('lands an error result in openState=error with the RpcError kept', async () => {
+  it('lands an error result in openState=error with the RpcError kept, without retrying the answered host', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => Promise.resolve(err({ code: 'session-not-found', message: 'gone', details: { sessionId: SID } }))
     await session.open()
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('error')
     expect(snapshot.openError?.code).toBe('session-not-found')
+    // The host answered: a business failure is authoritative, never retried.
+    expect(api.callsOf('session.history')).toHaveLength(1)
   })
 
-  it('folds a transport throw into openState=error / internal', async () => {
-    const { api, session } = makeSession()
-    api.onHistory = () => Promise.reject(new Error('socket died'))
-    await session.open()
-    expect(session.getSnapshot().openState).toBe('error')
-    expect(session.getSnapshot().openError).toMatchObject({ code: 'internal', message: 'socket died' })
+  it('retries a transport-failed read and lands the page on the second attempt', async () => {
+    vi.useFakeTimers()
+    try {
+      const { api, session } = makeSession()
+      let call = 0
+      api.onHistory = () => {
+        call++
+        return call === 1
+          ? Promise.reject(new Error('signal timed out'))
+          : histResponse(plainTurn(6, 1, '问', '答'))
+      }
+      const opening = session.open()
+      await vi.advanceTimersByTimeAsync(1_000)
+      await opening
+      expect(call).toBe(2)
+      expect(session.getSnapshot().openState).toBe('open')
+      expect(session.getSnapshot().openError).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('surfaces the folded transport error only after the retry budget is spent', async () => {
+    vi.useFakeTimers()
+    try {
+      const { api, session } = makeSession()
+      api.onHistory = () => Promise.reject(new Error('socket died'))
+      const opening = session.open()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await opening
+      // Three attempts (the two backoffs elapsed), then the error state.
+      expect(api.callsOf('session.history')).toHaveLength(3)
+      expect(session.getSnapshot().openState).toBe('error')
+      expect(session.getSnapshot().openError).toMatchObject({ code: 'internal', message: 'socket died' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('stitches live frames arriving while history is pending, dropping the page overlap', async () => {
@@ -721,18 +754,24 @@ describe('remaining branches', () => {
     const calls = api.calls.length
     await session.loadOlder()
     expect(api.calls.length).toBe(calls)
-    // throw path: fail-soft with console.error
+    // throw path: bounded retries then fail-soft with console.error
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       await session.resync()
       api.onHistory = () => histResponse(plainTurn(6, 1, 'x', 'y'), true)
       await session.resync()
+      vi.useFakeTimers()
       api.onHistory = () => Promise.reject(new Error('page wire down'))
-      await session.loadOlder()
+      const older = session.loadOlder()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await older
       expect(errorSpy).toHaveBeenCalled()
       expect(session.getSnapshot().loadingOlder).toBe(false)
     } finally {
+      vi.useRealTimers()
       errorSpy.mockRestore()
+      warnSpy.mockRestore()
     }
   })
 
@@ -831,7 +870,8 @@ describe('remaining branches', () => {
       session.handleMuxEnvelope('r2' as never, { type: 'session/event', sessionId: SID, event: ev.user(10, '洞二') }) // stitching: detours, no second repair
       expect(repairs).toBe(1)
       gate.reject(new Error('repair wire down'))
-      await vi.waitFor(() => { expect(errorSpy).toHaveBeenCalled() })
+      // The read retries twice (1s + 3s backoff) before repairGap logs the failure.
+      await vi.waitFor(() => { expect(errorSpy).toHaveBeenCalled() }, { timeout: 8_000 })
       // Window unchanged; a later successful repull still lands the buffered frames.
       expect(session.getSnapshot().nodes).toHaveLength(2)
     } finally {
