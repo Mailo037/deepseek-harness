@@ -16,7 +16,7 @@ export function apply(ctx: ClientContext): void {
       try {
         const models = ctx.reflect.get('modelDirectories', false) as { directoryFor: (id: string) => { store: unknown } } | undefined
         return {
-          directory: sessionId && models ? models.directoryFor(sessionId)?.store : undefined,
+          directory: sessionId && models ? models.directoryFor(sessionId).store : undefined,
         } as never
       } catch {
         return {} as never

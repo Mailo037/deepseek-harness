@@ -39,6 +39,8 @@ pnpm run dev:electron   # tsc -b && electron .
 
 `electron-builder.yml` 会打包已生成的 Electron 主进程树、随附的 agent preset、运行时依赖，以及由 `dsh-web-app` 通过 package export 解析的已构建 `@deepseek-ai/dsh-web-frontend` dist。Windows 可执行文件和安装包使用已提交的应用 id、产品名称和 `.ico` 图标。
 
+随附预设从应用的包 manifest 解析，不依赖编译后模块目录或进程工作目录。已构建宿主冒烟测试会在提供 GUI 前验证 `code`、`cordis`、`minimal` 和 `standard` 预设列表。
+
 Windows 签名的源代码不含凭据：electron-builder 只从受保护的 release workflow 环境发现 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`（或文档规定的 `CSC_*` 回退）。release workflow 包含常规的未签名打包/冒烟任务和单独批准、受 tag 约束的发布任务；它是仓库中唯一引用签名 secret 的配置。该任务会把 `electron-builder.yml` 所选 GitHub release 的 NSIS 安装包、blockmap 和更新元数据上传上去。
 
 ## 已安装应用更新
@@ -63,7 +65,7 @@ Windows 签名的源代码不含凭据：electron-builder 只从受保护的 rel
 pnpm --filter @deepseek-ai/dsh-electron run test
 ```
 
-The host smoke test boots the real web profile in a plain-Node subprocess (the same boot path the Electron main uses, minus Electron), asserts the served page carries `window.__DSH_BOOT__`, and verifies the clean-shutdown path.
+仓库构建后，宿主冒烟测试在普通 Node 子进程中启动真实 Web 配置（与 Electron 主进程使用相同的启动路径，但不启动 Electron），断言所提供的页面包含 `window.__DSH_BOOT__`，并验证干净关闭。仅源码测试会跳过此已构建运行时测试。已打包应用的冒烟测试使用其隔离临时主目录中的就绪文件，因为 Windows GUI 可执行文件不能可靠地转发标准输出。生成的 Electron 文件不包含发布包中的源码映射和声明映射。
 
 `tests/updater.spec.ts` 固定更新器的两次明确批准和错误行为。`tests/distribution.spec.ts` 固定 NSIS、资源、签名验证和发布配置。`smoke:package` 是已构建产品的冒烟测试；它不会发布，也不会联系更新 feed。
 

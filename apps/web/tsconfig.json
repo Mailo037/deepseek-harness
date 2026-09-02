@@ -17,6 +17,10 @@
     "src"
   ],
   "exclude": [
+    "tests/assembled-boot.ts",
+    "tests/harness-update-settings.e2e.ts",
+    "tests/session-control.e2e.ts",
+    "tests/pinned-session-rail.e2e.ts",
     "tests/scaffold.ts",
     "tests/scaffold-hermetic.e2e.ts",
     "tests/startup-rpc-budget.e2e.ts",

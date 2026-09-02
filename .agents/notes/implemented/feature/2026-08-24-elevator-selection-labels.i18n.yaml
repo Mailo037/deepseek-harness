@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-elevator-selection-labels.md
-2026-08-24-elevator-selection-labels.md: 1b8adbb60b4de319343b3b51a58e696185502d98
-2026-08-24-elevator-selection-labels.zh.md: 4a30bd91ae472d51c5179f25c476f6b539c3e1ad
+2026-08-24-elevator-selection-labels.md: 7432f25cec2e4dc78d2df93be29763222a6860d3
+2026-08-24-elevator-selection-labels.zh.md: dd7858c9563d3dabc797529b80a1299558c06985

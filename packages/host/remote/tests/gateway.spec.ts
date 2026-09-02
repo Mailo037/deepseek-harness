@@ -5,12 +5,14 @@ import { Context } from '@deepseek-ai/cordis'
 import { Storage } from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionTitleService from '@deepseek-ai/dsh-session-title'
 import WebSocket from 'ws'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import RemoteGateway, { DEVICE_PATH, REMOTE_PAGE_PATH } from '../src/index.ts'
 import { ACCESS_COOKIE_SCRIPT } from '../src/auth.ts'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import type { PairedMessage } from '../src/types.ts'
+import type { NotificationFrame, PairedMessage } from '../src/types.ts'
 
 const contexts: Context[] = []
 
@@ -22,6 +24,10 @@ async function harness(): Promise<{
 }> {
   const ctx = new Context()
   contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionTitleService, {
+    fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80,
+  })
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
@@ -47,7 +53,7 @@ afterEach(async () => {
 async function pairDevice(wsUrl: string, token: string, name = 'Pixel 8'): Promise<{ ws: WebSocket; paired: PairedMessage }> {
   const ws = new WebSocket(wsUrl)
   await new Promise<void>((resolve, reject) => {
-    ws.once('open', () =>{  resolve() })
+    ws.once('open', () => { resolve() })
     ws.once('error', reject)
   })
   ws.send(JSON.stringify({ type: 'pair', token, name, platform: 'Android' }))
@@ -114,11 +120,37 @@ describe('RemoteGateway (real WebServer composition)', () => {
     expect(listed.devices[0]?.connected).toBe(true)
     expect(listed.devices[0]?.name).toBe('Pixel 8')
 
-    const closed = new Promise<void>(resolve => ws.once('close', () =>{  resolve() }))
+    const closed = new Promise<void>(resolve => ws.once('close', () => { resolve() }))
     const receipt = await gateway.devicesRevoke({ deviceId: paired.deviceId })
     expect(receipt.revoked).toBe(true)
     await closed
     expect(gateway.devicesList().devices).toHaveLength(0)
+  })
+
+  it('pushes the durable session title in a completed-turn notification', async () => {
+    const { ctx, gateway, wsUrl } = await harness()
+    const view = await gateway.pairingCreate()
+    const { ws } = await pairDevice(wsUrl, view.token)
+    const next = new Promise<NotificationFrame>((resolve) => {
+      ws.once('message', (raw) => { resolve(parseMessage(raw) as NotificationFrame) })
+    })
+
+    const session = ctx.sessions.create(SessionId('remote-title'))
+    session.append('session/title', {
+      title: 'Use titles in Android alerts', messageSeqs: [], source: { kind: 'user' },
+    })
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    await expect(next).resolves.toMatchObject({
+      type: 'notification',
+      notification: {
+        kind: 'turn-completed',
+        sessionId: 'remote-title',
+        message: 'Use titles in Android alerts completed',
+      },
+    })
+    ws.close()
   })
 
   it('devicesRevoke on an unknown device resolves revoked=false', async () => {
@@ -149,7 +181,7 @@ describe('RemoteGateway (real WebServer composition)', () => {
     // Second device with the same token must be rejected.
     const ws2 = new WebSocket(wsUrl)
     await new Promise<void>((resolve, reject) => {
-      ws2.once('open', () =>{  resolve() })
+      ws2.once('open', () => { resolve() })
       ws2.once('error', reject)
     })
     ws2.send(JSON.stringify({ type: 'pair', token: view.token, name: 'Other', platform: 'Android' }))

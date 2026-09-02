@@ -60,6 +60,7 @@ function focusComposer(): void {
  * @param workspaces - the workspace/session-action face.
  */
 function dispatch(event: KeyboardEvent, layout: ILayout, workspaces: IWorkspaces): void {
+  // oxlint-disable-next-line typescript/no-deprecated -- legacy IMEs expose composition only through keyCode 229
   if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229) return
   if (isChord(event, SIDEBAR_KEY, false)) {
     event.preventDefault()

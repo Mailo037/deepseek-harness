@@ -89,7 +89,7 @@ describe('ShellCommandSource', () => {
     mint('s1')
     const signal = new AbortController().signal
 
-    const outcome = await source.matchEnter!(proj('s1'), '!echo hi', signal, { images: 0 })
+    const outcome = await source.matchEnter(proj('s1'), '!echo hi', signal, { images: 0 })
 
     expect(outcome).toBe('handled')
     expect(runCalls).toEqual([{ sessionId: sid('s1'), command: 'echo hi' }])
@@ -101,7 +101,7 @@ describe('ShellCommandSource', () => {
     mint('s1')
     const controller = new AbortController()
 
-    const outcome = await source.matchEnter!(proj('s1'), '!  pwd  ', controller.signal, { images: 0 })
+    const outcome = await source.matchEnter(proj('s1'), '!  pwd  ', controller.signal, { images: 0 })
 
     expect(outcome).toBe('handled')
     expect(runCalls).toEqual([{ sessionId: sid('s1'), command: 'pwd' }])
@@ -111,7 +111,7 @@ describe('ShellCommandSource', () => {
     const { source, mint, runCalls, consumes } = await bench()
     mint('s1')
 
-    const outcome = await source.matchEnter!(proj('s1'), '!', new AbortController().signal, { images: 0 })
+    const outcome = await source.matchEnter(proj('s1'), '!', new AbortController().signal, { images: 0 })
 
     expect(outcome).toBeUndefined()
     expect(runCalls).toEqual([])
@@ -123,7 +123,7 @@ describe('ShellCommandSource', () => {
     mint('s1')
 
     await expect(
-      source.matchEnter!(proj('s1'), '!echo hi', new AbortController().signal, { images: 1 }),
+      source.matchEnter(proj('s1'), '!echo hi', new AbortController().signal, { images: 1 }),
     ).rejects.toThrow('shellCommand:notice.imagesUnsupported')
     expect(runCalls).toEqual([])
     expect(consumes.size).toBe(0)
@@ -135,7 +135,7 @@ describe('ShellCommandSource', () => {
     })
     mint('s1')
 
-    await source.matchEnter!(proj('s1'), '!ls', new AbortController().signal, { images: 0 })
+    await source.matchEnter(proj('s1'), '!ls', new AbortController().signal, { images: 0 })
     // The detached run settles on a microtask; flush it.
     await new Promise(resolve => setTimeout(resolve, 0))
 

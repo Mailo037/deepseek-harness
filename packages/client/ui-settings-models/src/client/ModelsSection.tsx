@@ -518,7 +518,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                     <input
                       type="checkbox"
                       checked={!row.hiddenInModelSelect}
-                      disabled={!state.writable || visibilitySaving !== undefined}
+                      disabled={
+                        !state.writable
+                        || visibilitySaving !== undefined
+                        || !state.namespaces.has(MODELS_SETTINGS_NAMESPACE)
+                      }
                       onChange={() => { persistPickerVisibility(row) }}
                     />
                     {t('showInModelSelect')}

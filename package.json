@@ -141,6 +141,7 @@
     "release:verify-packed-install": "tsx scripts/release/verify-packed-install.ts",
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
+    "dsh:reset": "node --import tsx/esm apps/cli/src/bin.ts reset",
     "dsh:dev": "node scripts/dsh-dev.mjs",
     "dsh:web": "node scripts/dsh-dev.mjs web",
     "dsh:build": "node scripts/dsh-dev.mjs build",
@@ -150,16 +151,7 @@
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "dev:electron": "pnpm --filter @deepseek-ai/dsh-electron run dev",
-    "postinstall": "node scripts/install-lefthook.mjs",
-    "desktop:compile": "tsc -p desktop/tsconfig.json",
-    "desktop:config": "node scripts/writeFirebaseConfig.mjs",
-    "desktop:check": "tsc -p desktop/tsconfig.json --noEmit",
-    "desktop:run": "npm run build && npm run desktop:compile && npm run desktop:config && electron .",
-    "desktop:clean:win": "node scripts/cleanDesktopStaging.mjs win",
-    "desktop:clean:linux": "node scripts/cleanDesktopStaging.mjs linux",
-    "desktop:package": "npm run build && npm run desktop:compile && npm run desktop:config && electron-builder --config desktop/electron-builder.yml --dir",
-    "desktop:package:win": "npm run desktop:clean:win && npm run build && npm run desktop:compile && npm run desktop:config && electron-builder --config desktop/electron-builder.yml --win",
-    "desktop:package:linux": "npm run desktop:clean:linux && npm run build && npm run desktop:compile && npm run desktop:config && electron-builder --config desktop/electron-builder.yml --linux"
+    "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.25.1",

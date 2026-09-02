@@ -10,7 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   CandidateRequest, ClientSessionContext, InputTriggerCandidate, InputTriggerSource,
   PickOutcome, SubmitEnvelope,
@@ -40,8 +40,8 @@ export class ShellCommandSource implements InputTriggerSource {
     private readonly t: TranslateNS<'shellCommand'>,
   ) {}
 
-  async candidates(_session: ClientSessionContext, _req: CandidateRequest): Promise<readonly InputTriggerCandidate[]> {
-    return []
+  candidates(_session: ClientSessionContext, _req: CandidateRequest): Promise<readonly InputTriggerCandidate[]> {
+    return Promise.resolve([])
   }
 
   onPick(): PickOutcome {
@@ -49,6 +49,7 @@ export class ShellCommandSource implements InputTriggerSource {
     return undefined
   }
 
+  // oxlint-disable-next-line typescript/require-await -- validation failures are rejected promises in the trigger API
   async matchEnter(
     session: ClientSessionContext,
     line: string,
@@ -101,7 +102,7 @@ export class ShellCommandSource implements InputTriggerSource {
 
   /** id → actx interchange (registered exchange point: this source coordinates for projection-only sources). */
   private scopeFor(id: SessionId): ClientContext | undefined {
-    const sessions = this.rootCtx.get('sessions') as ISessions | undefined
+    const sessions = this.rootCtx.get('sessions')
     return sessions?.scope(id)
   }
 }

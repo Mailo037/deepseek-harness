@@ -22,7 +22,7 @@ export type NativeCommandRunner = (
   command: string,
   args: readonly string[],
   signal: AbortSignal,
-  options?: NativeCommandOptions | undefined,
+  options?: NativeCommandOptions,
 ) => Promise<{ stdout: string; stderr: string }>
 
 /**

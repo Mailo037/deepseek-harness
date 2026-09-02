@@ -115,7 +115,8 @@ describe('ui-notifications apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
 
     const { instance, face } = faceOf(b.slots)
-    expect(instance.getSnapshot()).toMatchObject({ enabled: true, doneSound: 'chime', revision: expect.any(Number) })
+    expect(instance.getSnapshot()).toMatchObject({ enabled: true, doneSound: 'chime' })
+    expect(instance.getSnapshot().revision).toBeTypeOf('number')
     expect(b.slots.entries(SLOT).find(e => e.component === NotificationsRow)!.locale).toBe(SETTINGS_NS)
 
     face.setSound('error', 'bell')

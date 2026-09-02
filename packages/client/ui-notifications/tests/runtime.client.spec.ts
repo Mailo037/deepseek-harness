@@ -33,7 +33,7 @@ function withRows(...rows: SessionSummary[]): SessionListState {
   return {
     ...emptyList(),
     ids: rows.map(r => r.id),
-    byId: Object.fromEntries(rows.map(r => [r.id, r])) as SessionListState['byId'],
+    byId: Object.fromEntries(rows.map(r => [r.id, r])),
   }
 }
 
@@ -109,7 +109,7 @@ describe('NotificationRuntime', () => {
     b.service.setSound('attention', 'ping')
     expect(b.set).toHaveBeenCalledWith('attentionSound', 'ping')
     expect(b.service.getSnapshot()).toMatchObject({ enabled: true, attentionSound: 'ping' })
-    expect(() => b.service.setSound('done', 'scream' as never)).toThrow()
+    expect(() => { b.service.setSound('done', 'scream' as never) }).toThrow()
 
     b.service.preview('error')
     expect(b.play).toHaveBeenCalledWith('pulse')
@@ -122,7 +122,7 @@ describe('NotificationRuntime', () => {
 
   it('adopts Host-side section changes without writing back', async () => {
     const b = await runtime()
-    await b.publish({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: true, doneSound: 'bell' })
+    b.publish({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: true, doneSound: 'bell' })
     expect(b.service.getSnapshot().enabled).toBe(true)
     expect(b.service.getSnapshot().doneSound).toBe('bell')
     b.set.mockClear()
@@ -136,7 +136,7 @@ describe('NotificationRuntime', () => {
 
   it('adopts a Host-side sound change before the next flush plays it', async () => {
     const b = await runtime({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: true })
-    await b.publish({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: true, doneSound: 'bell' })
+    b.publish({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: true, doneSound: 'bell' })
     b.list.set(withRows(row('a', { running: true })))
     b.list.set(withRows(row('a')))
     expect(b.play).toHaveBeenLastCalledWith('bell')

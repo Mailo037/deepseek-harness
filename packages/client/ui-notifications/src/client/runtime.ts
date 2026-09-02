@@ -103,7 +103,7 @@ export class NotificationRuntime {
    * @param sound - a built-in sound id; unknown ids throw.
    */
   setSound(kind: NotificationEventKind, sound: NotificationSound): void {
-    if (!isNotificationSound(sound)) throw new Error(`sound "${sound}" is not a built-in notification sound`)
+    if (!isNotificationSound(sound)) throw new Error(`sound "${String(sound)}" is not a built-in notification sound`)
     if (this.soundOf(kind) === sound) return
     if (kind === 'done') this.doneSound = sound
     else if (kind === 'attention') this.attentionSound = sound

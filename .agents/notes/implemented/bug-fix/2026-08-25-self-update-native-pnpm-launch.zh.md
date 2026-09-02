@@ -17,7 +17,7 @@ Status: implemented
 
 构建改为 `command(pnpmLaunch.executable, [...pnpmLaunch.prefix, 'run', 'build'], ...)`；重启则 spawn `pnpmLaunch.executable` 并传入 `[...pnpmLaunch.prefix, ...plan.restartArgs.slice(1)]`，去掉交接计划中第 0 项嵌入的 pnpm 入口。
 
-这与仓库脚本在 [pnpm-binary-invocation](2026-08-23-pnpm-binary-invocation.md) 中使用的规则相同，但无法复用该辅助函数：`scripts/` 属于根目录工具，而发布的 `self-update` 包不能跨包边界导入（其 tsconfig 的 `rootDir` 为 `src`）。因此该辅助函数放在拥有运行器的包中。这更新了 [self-update-launcher-restart](../architecture/2026-08-12-self-update-launcher-restart.md) 的机制，此前它对构建与重启都假定 `node <pnpmCli>`。
+这与仓库脚本在 [pnpm-binary-invocation](2026-08-23-pnpm-binary-invocation.zh.md) 中使用的规则相同，但无法复用该辅助函数：`scripts/` 属于根目录工具，而发布的 `self-update` 包不能跨包边界导入（其 tsconfig 的 `rootDir` 为 `src`）。因此该辅助函数放在拥有运行器的包中。这更新了 [self-update-launcher-restart](../architecture/2026-08-12-self-update-launcher-restart.zh.md) 的机制，此前它对构建与重启都假定 `node <pnpmCli>`。
 
 失败覆盖层的 Issue 按钮也一并调整：它此前使用了未定义的 `--dsw-alias-bg-elevated` token，在深色终端主题下回退为 `#fff`，导致深色标签文字落在白色按钮上。现在改用真实的 `--dsw-alias-button-elevated-fill` 与 `--dsw-alias-button-floating-hover` token，并以 `mark-github` 16px 图标（`packages/client/ui-primitives/src/icons/index.tsx` 中的 `IconGithubMark16`）引导标签，使链接看起来像 GitHub 操作。
 

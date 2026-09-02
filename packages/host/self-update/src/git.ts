@@ -64,7 +64,8 @@ function normalizeGitError(error: unknown): GitError {
   const message = error instanceof Error ? error.message : String(error)
   // exit 128 with this stderr text is git's only "not a work tree" report;
   // matching the message keeps the classification independent of locale.
-  if (/not a git repository/u.test(String((error as { stderr?: unknown } | null)?.stderr ?? ''))) {
+  const stderr: unknown = (error as { stderr?: unknown } | null)?.stderr
+  if (typeof stderr === 'string' && /not a git repository/u.test(stderr)) {
     return new GitError('not-a-repository', message)
   }
   if (/no upstream configured|does not point to a branch|no tracking information/u.test(message)) {

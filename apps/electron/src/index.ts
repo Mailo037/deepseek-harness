@@ -16,6 +16,7 @@
  */
 
 import { app, BrowserWindow, shell } from 'electron'
+import { writeFileSync } from 'node:fs'
 import { bootWebHost, type WebHost } from './host.ts'
 import { DEFAULT_GRACE_MS, GraceTimer } from './grace.ts'
 import { createDesktopUpdater, type DesktopUpdater } from './updater.ts'
@@ -92,6 +93,8 @@ function createWindow(url: string): void {
   // load) and exit, so the desktop app is verifiable without a display.
   if (process.env.DSH_ELECTRON_SMOKE === '1') {
     void loading.then(() => {
+      const readyMarker = process.env.DSH_ELECTRON_SMOKE_READY
+      if (readyMarker !== undefined) writeFileSync(readyMarker, `${url}\n`)
       console.log(`ELECTRON_WINDOW_READY ${url}`)
       void shutdown(0)
     }).catch((error: unknown) => {
@@ -164,7 +167,7 @@ if (!app.requestSingleInstanceLock()) {
       void shutdown(0)
     }
   })
-  void app.whenReady().then(() => startHost()).catch((error) => {
+  void app.whenReady().then(() => startHost()).catch((error: unknown) => {
     console.error('dsh-electron: host boot failed:', error)
     void shutdown(1)
   })
@@ -175,7 +178,7 @@ if (!app.requestSingleInstanceLock()) {
       state.updater = createDesktopUpdater(() => state.window)
       state.updater.start()
     }
-  }).catch((error) => {
+  }).catch((error: unknown) => {
     console.error('dsh-electron: updater initialization failed:', error)
   })
 }

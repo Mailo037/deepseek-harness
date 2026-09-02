@@ -20,7 +20,7 @@ Models 设置 namespace 将 `hiddenProviders` 与 `providerOrder` 一起存储�
 
 ## Consequences
 
-复选框持久化的是展示偏好，并刷新既有 Models 联接。一个从目录隐藏的提供方仍可由已保存会话或直接配置选择，但不会再出现在任一 Host 目录响应中。
+复选框持久化的是展示偏好，并刷新既有 Models 联接。Models 设置 namespace 不可用时，该复选框会禁用。一个从目录隐藏的提供方仍可由已保存会话或直接配置选择，但不会再出现在任一 Host 目录响应中。
 
 ## Testing
 

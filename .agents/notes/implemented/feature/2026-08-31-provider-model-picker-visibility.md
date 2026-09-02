@@ -20,7 +20,7 @@ The Models settings namespace stores `hiddenProviders` beside `providerOrder`. E
 
 ## Consequences
 
-The checkbox persists a presentation preference and refreshes the existing Models join. A provider hidden from the catalog can still be selected by a saved session or direct configuration, but it is no longer offered in either Host catalog response.
+The checkbox persists a presentation preference and refreshes the existing Models join. It is disabled when the Models settings namespace is unavailable. A provider hidden from the catalog can still be selected by a saved session or direct configuration, but it is no longer offered in either Host catalog response.
 
 ## Testing
 

@@ -40,8 +40,9 @@ export interface SessionsPort {
   /**
    * Select a session as current.
    * @param id - session id (must exist in the list store).
+   * @returns Optional completion promise for asynchronous implementations.
    */
-  open(id: SessionId): void
+  open(id: SessionId): void | Promise<void>
   /** Clear the current selection into the no-session view state. */
   clear(): void
 }

@@ -1,9 +1,12 @@
 /** Experimental-package publication and dependency constraints. */
 
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
+  checkWorkspace,
+  type PackageManifest,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
 
@@ -11,6 +14,22 @@ const experimental: WorkspaceManifest = {
   dir: 'packages/experimental/prototype',
   manifest: { name: '@deepseek-ai/dsh-experimental-prototype', private: true },
 }
+
+describe('remote publication files', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../packages/host/remote/package.json', import.meta.url), 'utf8')) as PackageManifest
+
+  it('includes the shared registry runtime chunk in the exact publication list', () => {
+    expect(manifest.files).toContain('lib/registry-*.js')
+    expect(checkWorkspace({ dir: 'packages/host/remote', manifest })).toEqual([])
+  })
+
+  it.each([undefined, 'lib/*.js'])('rejects an omitted or overbroad registry publication glob: %s', (replacement) => {
+    const files = manifest.files!.flatMap(file => file === 'lib/registry-*.js' ? replacement ?? [] : [file])
+    expect(checkWorkspace({ dir: 'packages/host/remote', manifest: { ...manifest, files } })).toEqual([
+      expect.stringContaining('package.json files must be'),
+    ])
+  })
+})
 
 describe('experimental workspace constraints', () => {
   it('requires the experimental package-name prefix', () => {

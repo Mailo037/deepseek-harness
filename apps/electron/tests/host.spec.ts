@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 /**
  * Boots the real web profile in a plain-Node subprocess (the same path the
@@ -14,21 +14,24 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const SMOKE_ENTRY = fileURLToPath(new URL('../lib/types/smoke.js', import.meta.url))
 
-describe('dsh-electron host boot', () => {
+// The assembled Loader resolves package exports from built lib/ artifacts.
+// Clean-tree unit lanes leave this artifact-plane smoke to the build/release lane.
+describe.skipIf(!existsSync(SMOKE_ENTRY))('dsh-electron host boot', () => {
   let home: string | undefined
 
   beforeAll(() => {
     // A throwaway DSH_HOME keeps the boot from touching the real profile,
     // sessions, and settings on disk.
     home = mkdtempSync(join(tmpdir(), 'dsh-electron-host-'))
-    process.env.DSH_HOME = home
+    vi.stubEnv('DSH_HOME', home)
   })
 
   afterAll(() => {
+    vi.unstubAllEnvs()
     if (home !== undefined) rmSync(home, { recursive: true, force: true })
   })
 
-  it('serves the browser UI and shuts down on demand', async () => {
+  it('discovers shipped presets, serves the browser UI, and shuts down on demand', async () => {
     const child = spawn(process.execPath, [SMOKE_ENTRY], {
       env: { ...process.env, DSH_HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -37,8 +40,8 @@ describe('dsh-electron host boot', () => {
     let stderr = ''
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk) => { stdout += chunk })
-    child.stderr.on('data', (chunk) => { stderr += chunk })
+    child.stdout.on('data', (chunk: string) => { stdout += chunk })
+    child.stderr.on('data', (chunk: string) => { stderr += chunk })
 
     try {
       const url = await new Promise<string>((resolve, reject) => {
@@ -66,6 +69,7 @@ describe('dsh-electron host boot', () => {
       // boot-manifest injection (the page cannot boot without it). The
       // renderer may spell the global as `window.__DSH_BOOT__` or the
       // equivalent `globalThis["__DSH_BOOT__"]` row form.
+      expect(stdout).toContain('ELECTRON_HOST_PRESETS ["code","cordis","minimal","standard"]')
       const response = await fetch(url)
       expect(response.status).toBe(200)
       const html = await response.text()
@@ -73,7 +77,7 @@ describe('dsh-electron host boot', () => {
 
       // Request a clean shutdown and wait for the process to exit.
       const exited = new Promise<number | null>((resolve) => {
-        child.on('exit', code => resolve(code))
+        child.on('exit', (code) => { resolve(code) })
       })
       child.stdin.write('q\n')
       const code = await exited

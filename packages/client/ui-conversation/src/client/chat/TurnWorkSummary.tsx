@@ -31,7 +31,7 @@ export const TurnWorkSummary = memo(function TurnWorkSummary({
         type="button"
         className={css.turnSummary}
         aria-expanded={open}
-        onClick={() => setOpen(value => !value)}
+        onClick={() => { setOpen(value => !value) }}
       >
         <span>{label}</span>
         <IconChevronDownOutline14 className={clsx(css.turnSummaryChevron, open && css.turnSummaryChevronOpen)} />

@@ -103,7 +103,8 @@ describe('FirecrawlSearchProvider search', () => {
     expect(init.redirect).toBe('error')
     const headers = init.headers as Record<string, string>
     expect(headers.authorization).toBe('Bearer firecrawl-key')
-    expect(JSON.parse(String(init.body))).toEqual({ query: 'DeepSeek Harness', limit: 7 })
+    expect(typeof init.body).toBe('string')
+    expect(JSON.parse(init.body as string)).toEqual({ query: 'DeepSeek Harness', limit: 7 })
     expect(result.sources).toEqual([{ url: 'https://a.test', title: 'A', snippet: 'd' }])
   })
 
@@ -115,7 +116,8 @@ describe('FirecrawlSearchProvider search', () => {
     await provider.search({ query: 'q' })
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(JSON.parse(String(init.body))).toEqual({ query: 'q' })
+    expect(typeof init.body).toBe('string')
+    expect(JSON.parse(init.body as string)).toEqual({ query: 'q' })
   })
 
   it('uses the configured default limit when the request carries none', async () => {
@@ -126,7 +128,8 @@ describe('FirecrawlSearchProvider search', () => {
     await provider.search({ query: 'q' })
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(JSON.parse(String(init.body))).toEqual({ query: 'q', limit: 5 })
+    expect(typeof init.body).toBe('string')
+    expect(JSON.parse(init.body as string)).toEqual({ query: 'q', limit: 5 })
   })
 
   it('resolves the key through the resolver per operation', async () => {
@@ -160,7 +163,8 @@ describe('FirecrawlSearchProvider search', () => {
     const controller = new AbortController()
     vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init: RequestInit) => {
       controller.abort()
-      return Promise.reject(init.signal instanceof AbortSignal ? (init.signal as AbortSignal).reason : new DOMException('Aborted', 'AbortError'))
+      const reason: unknown = init.signal?.reason
+      return Promise.reject(reason instanceof Error ? reason : new DOMException('Aborted', 'AbortError'))
     }))
     const provider = new FirecrawlSearchProvider(() => options)
     await expect(provider.search({ query: 'q' }, controller.signal))

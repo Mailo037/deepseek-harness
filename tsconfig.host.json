@@ -8,6 +8,9 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/web/tests/harness-update-settings.e2e.ts",
+    "apps/web/tests/session-control.e2e.ts",
+    "apps/web/tests/pinned-session-rail.e2e.ts",
     "apps/web/tests/scaffold.ts",
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/declared-reasoning.e2e.ts",

@@ -26,7 +26,7 @@ electron-builder 只从受保护 workflow 环境中的 `WIN_CSC_LINK` 和 `WIN_C
 
 ## Testing
 
-更新器单元测试覆盖定期检查、两次批准点、进度和错误。发行版测试固定 NSIS 目标、图标、随附资源、验证设置、release provider 以及不存在签名材料。package smoke 会在禁用更新流量的情况下启动解包后的 Electron 产品，等待真实窗口就绪信号，并观察干净关闭。
+更新器单元测试覆盖定期检查、两次批准点、进度和错误。发行版测试固定 NSIS 目标、图标、随附资源、验证设置、release provider 以及不存在签名材料。package smoke 会在禁用更新流量的情况下启动解包后的 Electron 产品，等待真实窗口加载后写入的就绪文件，并观察干净关闭。使用文件是因为 Windows GUI 可执行文件不能可靠地转发标准输出。普通 Node 宿主冒烟测试需要已构建的运行时依赖，因此仅源码测试通道会跳过它。Electron 的生成目录不包含源码映射和声明映射，使 npm tarball 满足 release 归档策略。
 
 ## Consequences
 

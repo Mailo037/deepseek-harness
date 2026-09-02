@@ -10,7 +10,7 @@ type ScriptedReply = string | readonly string[] | Error
 function scripted(replies: Map<string, ScriptedReply>): GitCommandRunner {
   const queues = new Map<string, string[]>()
   for (const [key, value] of replies) {
-    if (Array.isArray(value)) queues.set(key, [...value])
+    if (typeof value !== 'string' && !(value instanceof Error)) queues.set(key, [...value])
   }
   const run: GitCommandRunner = async (args) => {
     const key = args.join(' ')

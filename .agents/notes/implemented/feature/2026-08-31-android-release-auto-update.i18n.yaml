@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-31-android-release-auto-update.md
-2026-08-31-android-release-auto-update.md: a75a2b811e6bb4d485077ee363c8eb77d005e81e
-2026-08-31-android-release-auto-update.zh.md: b09af303956bfcb429333988e907b977b7647066
+2026-08-31-android-release-auto-update.md: 164bd0621d3b56736169bc41f685a044f97a8761
+2026-08-31-android-release-auto-update.zh.md: 2944a33ec4e5d87b22504b52414ae5e8011c9068

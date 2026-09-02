@@ -723,7 +723,7 @@ export function ChatView({
       if (run.children.length === 1) {
         // A single call needs no window chrome around it — the bare row IS
         // the one-line summary.
-        out.push({ el: run.children[0] as ReactNode, fold: true })
+        out.push({ el: run.children[0], fold: true })
       } else {
         const header = groupHeaderOf(run.nodes, t)
         out.push({
@@ -810,7 +810,7 @@ export function ChatView({
   for (const segment of built) {
     if (segment.closedTurn === undefined) continue
     const turn = timeline.turns.get(segment.closedTurn)
-    if (turn?.start?.time === undefined || turn?.end?.time === undefined) continue
+    if (turn?.start?.time === undefined || turn.end?.time === undefined) continue
     foldTotals.set(
       segment.closedTurn,
       (foldTotals.get(segment.closedTurn) ?? 0) + segment.actionCount,
@@ -834,7 +834,7 @@ export function ChatView({
           foldSlots.set(turnId, flow.length)
           flow.push(null)
         }
-        ;(body as ReactNode[]).push(element.el)
+        body.push(element.el)
       } else {
         flow.push(element.el)
       }

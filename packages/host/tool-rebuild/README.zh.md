@@ -1,6 +1,6 @@
 # `@deepseek-ai/dsh-tool-rebuild`
 
-English | [中文](README.zh.md)
+[English](README.md) | 中文
 
 面向模型的 `rebuild_harness` 工具，适用于从源码检出运行的 Web 宿主：调用方 agent 可以自行重建 harness 并重启宿主，无需人工操作终端。一次调用会停止该 agent 正在运行的后台作业（对每个作业执行 `kill` 加有界等待），把每个作业的 id、kind、label 与结束状态记录进已落日志的工具结果中，并在调用回合结束时安排重启 —— 通过 `whenIdle()` 等待，使携带作业记录的结果在进程退出前先进入会话日志。重启本身复用 [self-update](../self-update/README.zh.md) 机制：`quiesceAgents()` 取消所有活跃 agent 的回合（排队的收件箱工作对恢复后的会话仍然保留），`createWebUpdateHandoff({host, port}, {pull: false})` 构建分离的 helper，再由启动器的 `ctx.appLifecycle.restart` 交接；helper 等待端口释放，运行 `pnpm run build`，并以 `--no-open` 重新启动同一 Web 调用。重启之后，模型恢复会话，读到日志中的作业列表，并重新启动自己拥有的作业。
 
@@ -14,7 +14,7 @@ English | [中文](README.zh.md)
 
 #### What the model sees
 
-在工具可见时，是生成的 [`rebuild_harness` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-rebuild)。
+在工具可见时，是生成的 [`rebuild_harness` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-rebuild)。
 
 #### Token effect
 

@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-08-30-settings-section-heading-unification.zh.md)
+
 ## Problem
 
 Each settings section painted its own title-and-description header in its own CSS module, so the heading block changed as you switched tabs: the title was 16px/500 (Models), 18px/600 (Plugins, Agent presets), or 14px/600 (Access restrictions), over a description at 13px or 14px, inside a container at 12px or 20px gap and 720px, 760px, or full width. Navigating between tabs visibly shifted the section's rhythm.

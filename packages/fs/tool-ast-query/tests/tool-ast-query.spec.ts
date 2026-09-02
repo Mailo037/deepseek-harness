@@ -46,8 +46,9 @@ describe('tool-ast-query', () => {
     expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['ast_search', 'ast_rewrite_preview'])
     expect((await ctx.systemPrompt.assemble()).sections.find(section => section.name === 'tool:ast-query')?.text)
       .toContain('ast_rewrite_preview')
-    expect(ctx.tools.get('ast_search')?.isConcurrencySafe?.({})).toBe(true)
-    expect(ctx.tools.get('ast_rewrite_preview')?.isConcurrencySafe?.({})).toBe(true)
+    const input = { file_path: 'example.ts', language: 'typescript', pattern: 'target(null)' }
+    expect(ctx.tools.get('ast_search')?.isConcurrencySafe?.(input)).toBe(true)
+    expect(ctx.tools.get('ast_rewrite_preview')?.isConcurrencySafe?.({ ...input, rewrite: 'target(undefined)' })).toBe(true)
   })
 
   it('finds syntax nodes rather than plain-text substrings and resolves paths from the agent workspace', async () => {
@@ -71,7 +72,8 @@ describe('tool-ast-query', () => {
       omitted: false,
       matches: [{ startLine: 2, startColumn: 16, kind: 'call_expression', text: 'target(null)' }],
     })
-    expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('2:16') })
+    expect(result.content[0]).toHaveProperty('type', 'text')
+    expect(result.content[0]).toHaveProperty('text', expect.stringContaining('2:16'))
   })
 
   it('returns a structural rewrite preview without changing the source file', async () => {
@@ -90,7 +92,8 @@ describe('tool-ast-query', () => {
     expect(result.isError).toBe(false)
     expect(result.value).toMatchObject({ before, after: 'const actual = target(undefined)\n' })
     expect(await readFile(path, 'utf8')).toBe(before)
-    expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('No file was changed.') })
+    expect(result.content[0]).toHaveProperty('type', 'text')
+    expect(result.content[0]).toHaveProperty('text', expect.stringContaining('No file was changed.'))
   })
 
   it('fails before parsing a source file above the configured byte cap', async () => {

@@ -12,7 +12,7 @@
 
 ## 模型体验
 
-Indirectly, through the composer draft, transcribed text reaches the model only when the user sends it; the feature adds no prompt content of its own, and nothing is sent while recording.
+间接影响：转写文本通过 composer 草稿，仅在用户发送时才到达模型；该功能本身不添加提示词内容，录制期间也不会发送任何内容。
 
 #### KV Cache 影响
 

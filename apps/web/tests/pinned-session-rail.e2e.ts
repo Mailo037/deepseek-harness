@@ -112,7 +112,7 @@ describe('web e2e: pinned session in collapsed sidebar rail', () => {
     await page.getByRole('menuitem', { name: 'Archive session' }).waitFor({ state: 'visible', timeout: 10_000 })
     await page.keyboard.press('Escape')
 
-    await renamedPin.click({ noWaitAfter: true })
+    await renamedPin.click()
     await expect.poll(() => renamedPin.getAttribute('aria-current'), { timeout: 10_000 }).toBe('page')
     expect(await frame.getAttribute('data-sidebar-collapsed')).toBe('true')
     expect(tripwire.pageErrors).toEqual([])

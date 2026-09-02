@@ -37,7 +37,7 @@ export function apply(ctx: ClientContext): void {
     async getJobOutput(sessionId: SessionId, jobId: JobId): Promise<{ text: string; status: JobView['status']; detail?: string }> {
       if (connection?.api?.jobs) {
         const res = await connection.api.jobs.output({ sessionId, jobId })
-        if (res?.ok) {
+        if (res.ok) {
           return res.value
         }
       }

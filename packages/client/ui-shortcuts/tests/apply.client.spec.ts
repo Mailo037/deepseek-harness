@@ -133,6 +133,7 @@ describe('ui-shortcuts apply', () => {
     const { ctx, layout } = bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     // keyCode 229 is the legacy IME-composition signal
+    // oxlint-disable-next-line typescript/no-deprecated -- exercises the legacy IME compatibility path
     const event = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, keyCode: 229 })
     document.dispatchEvent(event)
     expect(layout.toggleSidebar).not.toHaveBeenCalled()

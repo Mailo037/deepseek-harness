@@ -22,7 +22,7 @@ export function ElevatorLabel({ value, className }: { value: string; className?:
 
   useLayoutEffect(() => {
     if (committed.current === value) return
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reducedMotion) {
       setIncoming(current => ({ value, revision: current.revision + 1 }))
       setOutgoing(null)

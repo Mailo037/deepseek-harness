@@ -79,7 +79,7 @@ function stubRecognizer(): { instances: FakeRecognizer[] } {
 /** Component harness: a real snapshot store the stub `useInput` subscribes to, plus the full standard-kit props. */
 function harness(initial = inputState()) {
   const store = createSnapshotStore<InputState>(initial)
-  const actions: InputActions = {
+  const actions = {
     setDraft: vi.fn((text: string) => {
       const current = store.getSnapshot()
       store.set({ ...current, draft: text, draftRev: current.draftRev + 1 })
@@ -88,14 +88,14 @@ function harness(initial = inputState()) {
     removeAttachment: vi.fn(),
     pruneAttachments: vi.fn(),
     submit: vi.fn(),
-  }
+  } satisfies InputActions
   const useInput: VoiceInputProps['useInput'] = selector =>
-    useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
+    useSyncExternalStore(listener => store.subscribe(listener), () => selector(store.getSnapshot()))
   const props = (overrides: Partial<VoiceInputProps> = {}): VoiceInputProps => ({
     sessionId: sid('s1'),
     // The unused standard kit: inert stubs the component never calls.
     useSession: (() => undefined) as unknown as VoiceInputProps['useSession'],
-    useProjection: (() => undefined) as unknown as VoiceInputProps['useProjection'],
+    useProjection: () => undefined,
     useSessions: (() => undefined) as unknown as VoiceInputProps['useSessions'],
     useWorkspaces: (() => undefined) as unknown as VoiceInputProps['useWorkspaces'],
     useInput,
@@ -217,17 +217,17 @@ describe('VoiceInput seat', () => {
     stubRecognizer()
     const { props } = harness()
     const view = render(<VoiceInput {...props({ locked: true })} />)
-    expect((screen.getByRole('button', { name: '开始语音输入' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '开始语音输入' }).disabled).toBe(true)
 
     view.rerender(<VoiceInput {...props()} />)
-    expect((screen.getByRole('button', { name: '开始语音输入' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '开始语音输入' }).disabled).toBe(false)
 
     const { store, props: busyProps } = harness(inputState(''))
     const busyView = render(<VoiceInput {...busyProps()} />)
     act(() => {
       store.set({ ...store.getSnapshot(), phase: 'submitting' })
     })
-    expect((within(busyView.container).getByRole('button', { name: '开始语音输入' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(within(busyView.container).getByRole<HTMLButtonElement>('button', { name: '开始语音输入' }).disabled).toBe(true)
   })
 
   it('a lock while recording aborts the recognizer', () => {
@@ -238,7 +238,7 @@ describe('VoiceInput seat', () => {
 
     view.rerender(<VoiceInput {...props({ locked: true })} />)
     expect(instances[0]!.abort).toHaveBeenCalledTimes(1)
-    expect((screen.getByRole('button', { name: '开始语音输入' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '开始语音输入' }).disabled).toBe(true)
   })
 
   it('unmount aborts the recognizer', () => {

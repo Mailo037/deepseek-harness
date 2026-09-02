@@ -1,6 +1,6 @@
-# Agent Note：自更新作为启动器拥有的重启，藏在环回线上平面之后
+# Agent Note: 自更新作为启动器拥有的重启，藏在环回线上平面之后
 
-状态：已实现
+Status: implemented
 
 [English](2026-08-12-self-update-launcher-restart.md) | 中文
 
@@ -18,7 +18,7 @@ GUI 既无从得知它对话的是哪个构建，也没有一条从「存在更�
 
 进程替换由启动器持有，并经始终存在的 `appLifecycle` 服务穿过插件隔离：`provideCmdline` 提供 `exit` 和可选的 `restart`。普通重启保留「dispose（资源释放）树 → 以相同 argv 分离重生 → 退出」，交接请求则携带一个不经 shell 的辅助进程命令。CLI 会先启动该辅助进程，只有操作系统确认 spawn 后才开始 dispose；辅助进程必须等父进程退出后才能接管其资源。Electron 忽略辅助进程形式，保留 `app.relaunch()` → 常规关闭。嵌入宿主没有 `restart` 时，`host.describe` 报告 `canRestart: false`，GUI 隐藏该手势而不是迟来失败。表面检测经 `process.versions.electron` 进入 `host.describe.surface`，让「关于」界面能说出自己运行于什么之上。
 
-**Web 更新会在修改检出之前转移所有权：** 完全停稳 → 创建分离交接 → 应答 `{ started: true }` → 把交接推迟 500 ms。辅助进程等待旧宿主释放其权威端口，在该端口提供 `GET /__dsh_update/status`，运行 `git pull --ff-only`，运行 `pnpm run build`，释放状态 server，再以原有 Web 参数加保留的 `--port` 与 `--no-open` 运行 `pnpm dsh`。旧宿主绝不会 pull 自身源码，辅助进程 spawn 失败时旧宿主仍继续提供服务。Electron 保留「完全停稳 → 进程内快进 → 应答 → 原生重启」，因为其应用所有者提供更新 UI 和生命周期。
+**Web 更新会在修改检出之前转移所有权：** 完全停稳 → 创建分离交接 → 应答 `{ started: true }` → 把交接推迟 500 ms。辅助进程等待旧宿主释放其权威端口，在该端口提供 `GET /__dsh_update/status`，运行 `git pull --ff-only`，运行 `pnpm run build`，释放状态 server，再以原有 Web 参数加保留的 `--port` 与 `--no-open` 运行 `pnpm dsh`。旧宿主绝不会 pull 自身源码，辅助进程 spawn 失败时旧宿主仍继续提供服务。当 `npm_execpath` 是原生可执行入口（`.exe`/`.cmd`/`.bat`）时，runner 直接启动捕获的 pnpm 入口，否则使用 `node <entry>`，因此构建与重启均支持 Windows 独立 pnpm 安装（见[原生 pnpm 启动](../bug-fix/2026-08-25-self-update-native-pnpm-launch.zh.md)）。Electron 保留「完全停稳 → 进程内快进 → 应答 → 原生重启」，因为其应用所有者提供更新 UI 和生命周期。
 
 设置客户端通过布局的 `shell.overlay` slot 拥有浏览器投影，并把它的全屏占位者 portal 到 `document.body`，因此已经打开的设置模态框无法遮住它。发起标签页会在断线前显示**正在应用更新**；其他所有打开的标签页会在重连期间发现同 origin 状态 endpoint。runner 阶段映射成本地化的等待、拉取、构建、启动或失败文案，旁边的自动滚动终端保留最近 80 条有界 stdout、stderr 与 runner 日志。替换宿主连接后，每个标签页都用一次 `__dsh_update=<update-id>` 查询导航，以避开陈旧的 index 响应，然后在加载后从浏览器历史中移除该标记。runner 失败时会保留端口与状态响应，因此页面会显示错误，而不是回到普通的连接丢失界面。它还会提供一个预填的 GitHub issue 草稿，其中包含经 token 与主目录路径自动脱敏后的有界日志尾部；用户会在公开提交前审阅草稿。
 
@@ -38,4 +38,4 @@ GUI 既无从得知它对话的是哪个构建，也没有一条从「存在更�
 
 ## 后果
 
-Web 自更新现在要求通过 pnpm 启动的 git 检出，因为分离 runner 使用当前 pnpm 入口完成构建与重启；拒绝发生在正在运行的宿主关闭之前。runner 在 pull 和 build 全程占用原端口，因此断线期间其他进程无法抢占它。失败的更新会有意让该状态 server 保持存活，并在暴露有界诊断与可审阅的 issue 草稿后要求用户介入。终端报告观察到的命令输出，而不估算 git 字节或编译器的逐项完成度。每个打开的页面都会在恢复后执行一次避开缓存的导航，Electron 则保留其原生更新器行为。
+Web 自更新现在要求通过 pnpm 启动的 git 检出，因为分离 runner 使用当前 pnpm 入口（原生可执行文件直接启动，其他入口通过 `node` 启动）完成构建与重启；拒绝发生在正在运行的宿主关闭之前。runner 在 pull 和 build 全程占用原端口，因此断线期间其他进程无法抢占它。失败的更新会有意让该状态 server 保持存活，并在暴露有界诊断与可审阅的 issue 草稿后要求用户介入。终端报告观察到的命令输出，而不估算 git 字节或编译器的逐项完成度。每个打开的页面都会在恢复后执行一次避开缓存的导航，Electron 则保留其原生更新器行为。

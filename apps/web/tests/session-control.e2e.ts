@@ -27,7 +27,7 @@ const SESSION_ID = SessionId('session-control-web-e2e')
 const QUESTION_PROMPT = 'Use the ask_user_question tool to ask me exactly one multi-select question with id "color", question "Which color do you prefer?", header "Pick one", and two options: label "Blue" with description "A cool recessive hue that reads as calm and trustworthy in long reading sessions and dense dashboards.", and label "Green" with description "A restful mid-spectrum hue with the highest perceived brightness, easiest on the eye over long sessions." Set multi_select to true. After I answer, reply with the single word DONE and stop.'
 
 /** Move through a hover-only row action without treating visibility as a DOM-state authority. */
-async function chooseRowAction(page: Page, row: Locator, label: string): Promise<void> {
+async function chooseRowAction(row: Locator, label: string): Promise<void> {
   const button = row.getByRole('button', { name: label })
   await expect.poll(async () => {
     await row.hover()
@@ -58,7 +58,7 @@ describe.skipIf(MODE === 'record')('web e2e: session archive restore and attenti
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    await seedSession(scaffold, await readFile(SEED, 'utf8'), SESSION_ID as string)
+    await seedSession(scaffold, await readFile(SEED, 'utf8'), SESSION_ID)
     const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
     await workspace.attachSession(SESSION_ID)
     workspaceTitle = workspace.title
@@ -82,7 +82,7 @@ describe.skipIf(MODE === 'record')('web e2e: session archive restore and attenti
     onTestFailed(() => saveFailureShot(page, 'web-e2e-session-control-archive'))
     const row = await memberRow()
     const title = await row.locator('[class*="title"]').innerText()
-    await chooseRowAction(page, row, `Session actions for ${title}`)
+    await chooseRowAction(row, `Session actions for ${title}`)
     await page.getByRole('menuitem', { name: 'Archive session' }).click()
     await expect.poll(() => [...scaffold.ctx.workspaceRegistry.archivedSessionIds])
       .toEqual([SESSION_ID])
@@ -97,7 +97,7 @@ describe.skipIf(MODE === 'record')('web e2e: session archive restore and attenti
     // Exercise the durable archived projection too: Undo is deliberately
     // immediate, while Restore remains available after the toast is gone.
     const restoredRow = await memberRow()
-    await chooseRowAction(page, restoredRow, `Session actions for ${title}`)
+    await chooseRowAction(restoredRow, `Session actions for ${title}`)
     await page.getByRole('menuitem', { name: 'Archive session' }).click()
     await expect.poll(() => [...scaffold.ctx.workspaceRegistry.archivedSessionIds])
       .toEqual([SESSION_ID])
@@ -106,7 +106,7 @@ describe.skipIf(MODE === 'record')('web e2e: session archive restore and attenti
     const archived = page.getByRole('tree', { name: 'Archived' })
     const archivedRow = archived.getByRole('treeitem').filter({ hasText: title })
     await archivedRow.waitFor({ timeout: 10_000 })
-    await chooseRowAction(page, archivedRow, `Session actions for ${title}`)
+    await chooseRowAction(archivedRow, `Session actions for ${title}`)
     await page.getByRole('menuitem', { name: 'Restore session' }).click()
     await expect.poll(() => [...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([])
     expect(tripwire.pageErrors).toEqual([])

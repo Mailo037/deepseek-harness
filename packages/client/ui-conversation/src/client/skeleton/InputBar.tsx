@@ -282,9 +282,8 @@ export function InputBar({
   // collapsed selection, but honoring direction keeps a future range-preserving
   // path from revealing its anchor instead of its focus.
   const revealSelectionFocus = (el: HTMLTextAreaElement): void => {
-    // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
     const caret = el.selectionDirection === 'backward' ? el.selectionStart : el.selectionEnd
-    revealCaret(caret ?? el.value.length)
+    revealCaret(caret)
   }
 
   // Unlock (mount / session switch) returns focus to the box, and owns the
@@ -302,7 +301,7 @@ export function InputBar({
   const coarsePointer = useMemo(
     // jsdom implements no matchMedia: the optional call keeps that lane on
     // the desktop path.
-    () => window.matchMedia?.('(pointer: coarse)').matches ?? false,
+    () => typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches,
     [],
   )
   useEffect(() => {
@@ -360,10 +359,9 @@ export function InputBar({
     return () => { el.removeEventListener('wheel', onWheel) }
   }, [])
 
-  // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
   const selectionOf = (el: HTMLTextAreaElement) => ({
-    start: el.selectionStart ?? 0,
-    end: el.selectionEnd ?? el.selectionStart ?? 0,
+    start: el.selectionStart,
+    end: el.selectionEnd,
   })
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
@@ -461,8 +459,7 @@ export function InputBar({
       setCaretView(prev => prev === null ? prev : null)
       return
     }
-    // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
-    const caret = Math.min(el.selectionStart ?? el.value.length, text.data.length)
+    const caret = Math.min(el.selectionStart, text.data.length)
     const origin = backdropEl.getBoundingClientRect()
     // Non-finite measurements (jsdom reports `line-height: normal`, parsed to
     // NaN) carry no geometry: drop to no caret instead of looping on a value
@@ -614,6 +611,7 @@ export function InputBar({
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
+    // oxlint-disable-next-line typescript/no-deprecated -- some IMEs report composition only through legacy keyCode 229
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
     if (e.key === 'ArrowLeft') {
       const selection = selectionOf(e.currentTarget)
@@ -767,8 +765,7 @@ export function InputBar({
     pendingEditRef.current = null
     safariNativeShrinkRef.current = safari && next.length < draft.length
     keyboard.setDraft(next, editRangeOf(pending, draft.length, next.length))
-    // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
-    keyboard.track(next, e.target.selectionStart ?? next.length)
+    keyboard.track(next, e.target.selectionStart)
   }
 
   const onCopyOrCut = (e: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean): void => {
@@ -1135,7 +1132,7 @@ export function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
-          warning: promptError?.error.code === 'attachment-error' && promptError.error.details?.reason === 'MODEL_DOES_NOT_SUPPORT_IMAGES'
+          warning: promptError?.error.code === 'attachment-error' && promptError.error.details.reason === 'MODEL_DOES_NOT_SUPPORT_IMAGES'
             ? t('image.modelUnsupported')
             : undefined,
           onAddFiles: intakeFiles,

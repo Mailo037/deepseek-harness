@@ -20,10 +20,7 @@ only:
    returned by the host. QR and manual pairing therefore authenticate the
    embedded GUI identically.
 2. **Connected screen** — full-screen iframe of the remote GUI with a quiet status bar, a branded loader, connection-lost UI (probe + retry button + 10 s auto-reprobe + offline banner), and a connection-details popover. After each iframe load, the app announces its informational Android shell context; the served GUI keeps content visible during reconnects and reports its live connection state back to the parent. The status bar animates vertically between `Remote` and `Reconnecting`, while the server origin starts blurred behind a `Show` control in the details popover. A selected Tailscale endpoint also triggers a native Android VPN-transport check, so slow loading and unreachable states tell the user when to enable Tailscale.
-3. **Notification foreground service** (`DeviceChannelService`) — the
-   persistent WebSocket authenticated with the device secret; posts a
-   notification for every host `notification` frame and reconnects with
-   backoff.
+3. **Notification foreground service** (`DeviceChannelService`) — the persistent WebSocket authenticated with the device secret; posts a notification for every host `notification` frame, showing the session title when available, and reconnects with backoff.
 
 The local pairing and connection chrome imports the Web GUI's `ui-theme`
 base, design-platform, and shadow/type token sheets directly. Android CSS
@@ -85,12 +82,14 @@ workflow artifact ([`.github/workflows/android-release.yml`](../../.github/workf
 
 ## Release updates
 
-At startup, the app makes a best-effort request for the latest stable GitHub
-Release in `Mailo037/deepseek-harness`. A release is an Android update only
-when its tag is `android-vMAJOR.MINOR.PATCH` and it contains the exactly named
-`harness-remote-android-vMAJOR.MINOR.PATCH.apk` asset. Drafts, prereleases, malformed
-tags, missing assets, older/equal versions, and failed or rate-limited requests
-are ignored without blocking pairing or the remote GUI.
+At startup, the app makes a best-effort request for the stable GitHub Releases
+in `Mailo037/deepseek-harness` and selects the newest valid Android release. A
+release is an Android update only when its tag is `android-vMAJOR.MINOR.PATCH`
+and it contains the exactly named
+`harness-remote-android-vMAJOR.MINOR.PATCH.apk` asset at that tag's download
+path. Drafts, prereleases, malformed tags, missing assets, older/equal versions,
+and failed or rate-limited requests are ignored without blocking pairing or the
+remote GUI.
 
 The app downloads a matching asset into its private cache, checks its package
 id, version code and release version, and requires the installed signing
@@ -101,6 +100,8 @@ so the app cannot silently install an update. Release APKs must keep the signing
 certificate and use a higher Android version code. `versionName` comes from
 `apps/android/package.json`; bump `versionCode` in `native/app.build.gradle`
 for every release after the initial value of `1`.
+The CI workflow uploads a debug artifact only; publish a separately signed
+release APK with the matching tag and asset name for an installable update.
 
 ## Dev workflow: build + serve on the LAN in one step
 

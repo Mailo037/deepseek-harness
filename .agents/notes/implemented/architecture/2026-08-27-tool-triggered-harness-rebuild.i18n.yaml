@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-27-tool-triggered-harness-rebuild.md
+2026-08-27-tool-triggered-harness-rebuild.md: acb1de39d29e37d535774c75e9d034c67becf32e
+2026-08-27-tool-triggered-harness-rebuild.zh.md: 6f8beaaf9c45077e0a7fe284c83097512976d8da

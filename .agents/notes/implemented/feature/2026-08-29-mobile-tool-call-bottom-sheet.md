@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-08-29-mobile-tool-call-bottom-sheet.zh.md)
+
 ## Problem
 
 Three conversation surfaces are cramped or abrupt on a phone viewport. An expandable tool-call row expanded its body inline, growing the message flow and forcing a long IN/OUT card, terminal, diff, read, search, or web body into one narrow column. The session-header background-job list and the subagent catalog both opened as popovers anchored to the header, which either overflow the narrow viewport or depend on hover (the subagent catalog opened on hover, so a touch tap could not open it). And the popovers appeared and vanished instantly — there was no dismiss animation. The sheet also had to stay live: a tool call still streaming must show the latest body when the user taps it, never a snapshot captured at tap time.

@@ -57,6 +57,7 @@ export interface RejectedMessage {
 export interface RemoteNotification {
   kind: 'turn-error' | 'turn-completed'
   sessionId: string
+  /** Host-rendered status text, identified by session title when available. */
   message: string
   time: string
 }

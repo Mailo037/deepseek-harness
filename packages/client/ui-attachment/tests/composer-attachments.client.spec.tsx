@@ -231,7 +231,7 @@ describe('ComposerAttachments', () => {
       ...snapshot,
       current: { provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' },
     }
-    listeners.forEach(fn => fn())
+    listeners.forEach((fn) => { fn() })
     view.rerender(
       <ComposerAttachments
         {...props({ attachments: [image] })}
@@ -247,7 +247,7 @@ describe('ComposerAttachments', () => {
       ...snapshot,
       current: { provider: 'deepseek', model: 'deepseek-v4-flash' },
     }
-    listeners.forEach(fn => fn())
+    listeners.forEach((fn) => { fn() })
     view.rerender(
       <ComposerAttachments
         {...props({ attachments: [image] })}

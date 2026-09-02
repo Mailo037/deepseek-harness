@@ -10,7 +10,7 @@ App **从不打包 Web GUI**。GUI 由 PC（`dsh --profile web`）提供，并�
 
 1. **配对页面**——扫描二维码（Settings → Remote devices →「生成配对码」）或手动输入服务器 URL 与配对令牌；执行 `pair` 握手，并存储主机返回的设备密钥与 GUI 访问令牌。因此二维码与手动配对以相同方式认证嵌入式 GUI。
 2. **已连接页面**——远程 GUI 的全屏 iframe，配有安静的状态栏、品牌加载器、连接丢失 UI（探测 + 重试按钮 + 10 秒自动重新探测 + 离线横幅）和连接详情弹层。每次 iframe 加载后，App 会通知其信息性 Android 外壳上下文；served GUI 在重连期间保持内容可见，并把实时连接状态报告回父页面。状态栏在 `Remote` 与 `Reconnecting` 之间纵向切换，而服务器 origin 在详情弹层中默认模糊并由 `Show` 控件遮盖。选中 Tailscale 端点时还会触发原生 Android VPN 传输检查，因此慢速加载和无法访问状态会提示用户何时启用 Tailscale。
-3. **通知前台服务**（`DeviceChannelService`）——使用设备密钥认证的持久 WebSocket；为每个主机 `notification` 帧发布通知，并通过退避机制重连。
+3. **通知前台服务**（`DeviceChannelService`）——使用设备密钥认证的持久 WebSocket；为每个主机 `notification` 帧发布通知，在有会话标题时显示该标题，并通过退避机制重连。
 
 本地配对与连接外壳直接导入 Web GUI 的 `ui-theme` base、design-platform 和 shadow/type token 样式表。因此 Android CSS 只负责组合与移动端人体工学：安全区域、页面过渡、主要触摸目标，以及紧凑的 40 px 已连接栏。配色方案、语义颜色、表面层级、边框、字体、阴影、圆角和动效时长都与 Web GUI 使用同一真源。可见标签保持句首字母大写形式。
 
@@ -66,9 +66,9 @@ CI 会在每次推送到 `apps/android/**` 时构建调试 APK，并将其上传
 
 ## Release 更新
 
-App 启动时会尽力请求 `Mailo037/deepseek-harness` 中最新的稳定 GitHub Release。只有当标签是 `android-vMAJOR.MINOR.PATCH` 且含有名称完全匹配的 `harness-remote-android-vMAJOR.MINOR.PATCH.apk` asset 时，Release 才属于 Android 更新。草稿、预发布版本、格式错误的标签、缺失 asset、较旧或相同版本，以及失败或受 rate limit 限制的请求都会被忽略，不会阻塞配对或远程 GUI。
+App 启动时会尽力请求 `Mailo037/deepseek-harness` 中的稳定 GitHub Release，并选择最新的有效 Android Release。只有当标签是 `android-vMAJOR.MINOR.PATCH`、含有名称完全匹配的 `harness-remote-android-vMAJOR.MINOR.PATCH.apk` asset，且该 asset 位于该标签的下载路径时，Release 才属于 Android 更新。草稿、预发布版本、格式错误的标签、缺失 asset、较旧或相同版本，以及失败或受 rate limit 限制的请求都会被忽略，不会阻塞配对或远程 GUI。
 
-App 会把匹配的 asset 下载到私有缓存，检查其 package id、version code 与 Release version，并要求它使用已安装的签名证书。随后它会通过受限的 `FileProvider` URI 打开 Android package installer；不会打开浏览器或 GitHub。Android 仍控制安装器确认与任何所需的每个 App unknown-source 授权，因此 App 无法静默安装更新。Release APK 必须保持签名证书并使用更高的 Android version code。`versionName` 来自 `apps/android/package.json`；初始值为 `1` 后，每个后续 Release 都要在 `native/app.build.gradle` 中提升 `versionCode`。
+App 会把匹配的 asset 下载到私有缓存，检查其 package id、version code 与 Release version，并要求它使用已安装的签名证书。随后它会通过受限的 `FileProvider` URI 打开 Android package installer；不会打开浏览器或 GitHub。Android 仍控制安装器确认与任何所需的每个 App unknown-source 授权，因此 App 无法静默安装更新。Release APK 必须保持签名证书并使用更高的 Android version code。`versionName` 来自 `apps/android/package.json`；初始值为 `1` 后，每个后续 Release 都要在 `native/app.build.gradle` 中提升 `versionCode`。CI 工作流只上传 debug artifact；可安装的更新必须另外发布使用相同签名、且标签与 asset 名称匹配的 release APK。
 
 ## 开发工作流：一步完成构建与 LAN 服务
 

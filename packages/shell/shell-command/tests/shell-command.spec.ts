@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
@@ -11,6 +12,8 @@ import type { JobStart } from '@deepseek-ai/dsh-jobs'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import ShellCommandService from '@deepseek-ai/dsh-shell-command'
 import type { Config } from '@deepseek-ai/dsh-shell-command'
+
+const SESSION_CWD = resolve('work')
 
 /** Deterministic executor stub: records the resolved spec and returns a canned run result. */
 class StubExecutor extends ShellExecutor {
@@ -138,14 +141,14 @@ describe('ShellCommandService', () => {
 
   it('runs in the session working directory when the session header carries one', async () => {
     const { ctx, executor } = await mount()
-    const session = ctx.sessions.create(SessionId('dir'), { meta: { cwd: 'C:\\work' } })
+    const session = ctx.sessions.create(SessionId('dir'), { meta: { cwd: SESSION_CWD } })
     const followup = vi.fn()
     const agent = { id: session.id, session, followup } as unknown as Agent
 
     await ctx.shellCommand.run(agent, 'pwd', new AbortController().signal)
 
-    expect(executor.specs[0]?.workdir).toBe('C:\\work')
-    expect(lifecycleOf(agent)[0]).toMatchObject({ type: 'shell/run', data: { cwd: 'C:\\work' } })
+    expect(executor.specs[0]?.workdir).toBe(SESSION_CWD)
+    expect(lifecycleOf(agent)[0]).toMatchObject({ type: 'shell/run', data: { cwd: SESSION_CWD } })
     expect(followup).toHaveBeenCalledTimes(1)
   })
 
@@ -249,12 +252,12 @@ describe('ShellCommandService (tool mode)', () => {
 
   it('uses the session working directory when the session header carries one', async () => {
     const { ctx, executor, jobs } = await mount(() => clean('out'), { mode: 'tool' }, true)
-    const session = ctx.sessions.create(SessionId('tool-dir'), { meta: { cwd: 'C:\\work' } })
+    const session = ctx.sessions.create(SessionId('tool-dir'), { meta: { cwd: SESSION_CWD } })
     const agent = { id: session.id, session, followup: vi.fn() } as unknown as Agent
 
     await ctx.shellCommand.run(agent, 'pwd', new AbortController().signal)
 
-    expect(executor.specs[0]?.workdir).toBe('C:\\work')
+    expect(executor.specs[0]?.workdir).toBe(SESSION_CWD)
     expect(jobs?.starts[0]?.owner).toBe(agent)
   })
 

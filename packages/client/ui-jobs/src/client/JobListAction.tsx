@@ -10,8 +10,8 @@ import css from './JobListAction.module.css'
 
 /** Injected capability to kill jobs and fetch logs. */
 export interface JobListActionInjected {
-  killJob?(sessionId: SessionId, jobId: JobId): Promise<void>
-  getJobOutput?(sessionId: SessionId, jobId: JobId): Promise<{ text: string; status: JobView['status']; detail?: string }>
+  killJob?(this: void, sessionId: SessionId, jobId: JobId): Promise<void>
+  getJobOutput?(this: void, sessionId: SessionId, jobId: JobId): Promise<{ text: string; status: JobView['status']; detail?: string }>
 }
 
 /** Phone breakpoint: the same capped-width gate the composer uses for its
@@ -140,7 +140,7 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
     const fetchLogs = async () => {
       try {
         const res = await getJobOutput(sessionId, activeLogJob.id)
-        if (active && res) {
+        if (active) {
           setLogText(res.text || (res.detail ? `[detail: ${res.detail}]` : ''))
         }
       } catch {
@@ -206,7 +206,7 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
     if (!logText) return
     await navigator.clipboard.writeText(logText)
     setCopied(true)
-    setTimeout(() => setCopied(false), 2_000)
+    setTimeout(() => { setCopied(false) }, 2_000)
   }
 
   /** One list surface, reused by the desktop popover and the phone bottom sheet. */
@@ -305,8 +305,8 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
 
       {/* Subagent-styled Log Modal Dialog with Breadcrumbs and Line Numbers */}
       {activeLogJob ? (
-        <div className={css.modalBackdrop} onClick={() => setActiveLogJob(null)}>
-          <div className={css.modalCard} onClick={e => e.stopPropagation()}>
+        <div className={css.modalBackdrop} onClick={() => { setActiveLogJob(null) }}>
+          <div className={css.modalCard} onClick={(e) => { e.stopPropagation() }}>
             <div className={css.modalHeader}>
               <nav className={css.modalBreadcrumbs} aria-label="Hierarchy">
                 <span className={css.crumbItem}>
@@ -356,7 +356,7 @@ export function JobListAction({ sessionId, useSessions, killJob, getJobOutput, t
                   type="button"
                   className={css.closeBtn}
                   aria-label={t('actions.close')}
-                  onClick={() => setActiveLogJob(null)}
+                  onClick={() => { setActiveLogJob(null) }}
                 >
                   <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />

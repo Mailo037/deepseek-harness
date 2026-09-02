@@ -34,7 +34,7 @@ export function StateDot({ state, size = 10, className }: {
         style={{
           width: size,
           height: size,
-        } as React.CSSProperties}
+        }}
         aria-hidden="true"
       >
         <span className={css.loader} />

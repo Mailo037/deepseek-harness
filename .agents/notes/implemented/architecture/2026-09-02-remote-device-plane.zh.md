@@ -15,7 +15,7 @@ Web GUI 按设计绑定 loopback：`dsh --profile web` 会拒绝 `--host 0.0.0.0
 - **配对**：`pairingCreate()` 创建带可配置寿命的一次性 token，并返回含端点列表的二维码 payload。端点包括自动探测到的 LAN IPv4 与额外配置项。JSON payload 使用 `v: 1`，Android 客户端可按顺序尝试多个端点。
 - **持久化注册表**：配对设备存入 `remote_devices` storage domain，包括 device id、名称、平台、SHA-256 secret hash、创建时间与最后在线时间。介质只接收 hash；invariant companion 拒绝任何不是 64 位十六进制摘要的 `secretHash`。
 - **设备 channel**：`/remote/device` 的 WebSocket upgrade route 要求首条消息是 `pair` token 或 `auth` secret。配对创建记录并把 secret 交给设备；鉴权重连更新 `lastSeenAt`，同时返回当前 GUI access token，使已配对 App 无需重新配对即可修复旧 token。重连会替换同一设备的旧 socket，撤销会终止连接。
-- **通知桥**：插件订阅 `session/event`，在 turn 出错或成功完成时向所有已连接设备广播 frame，两者均可配置。离线设备不会补收消息；重连拉取留待后续实现。
+- **通知桥**：插件订阅 `session/event`，在 turn 出错或成功完成时向所有已连接设备广播 frame，两者均可配置。可见消息使用最新的持久化会话标题；标题尚不存在时回退到会话 id。离线设备不会补收消息；重连拉取留待后续实现。
 - **GUI 鉴权**：二维码 payload 携带持久 GUI access token。Index script 将其保存在 session storage，发布到 `__DSH_REQUEST_AUTH__.query`，并设置同源回退 cookie。浏览器连接 carrier 会把 query token 附到 unary HTTP、Typert Remote 和两个 WebSocket downlink，因此 Android WebView iframe 不依赖第三方 cookie 策略。
 - **Android shell 呈现**：GUI iframe 每次加载后发送带版本的 `postMessage` 公告。浏览器连接 service 将其暴露为信息性 shell context，使布局保留当前内容并显示紧凑重连状态，而不是普通全屏 overlay。Android 状态栏把服务器 origin 与断开操作放进显式详情控件。
 - **共享视觉系统**：Android 配对和连接界面引入 Web 客户端的基础、设计平台、阴影与字体 token，复用语义表面、标签、边框、状态、字体、圆角、阴影和动效，同时保留 Android safe area 与 44/48 px 触控目标。
@@ -26,7 +26,7 @@ Web GUI 按设计绑定 loopback：`dsh --profile web` 会拒绝 `--host 0.0.0.0
 
 ## 测试
 
-`packages/host/remote/tests/` 从四层覆盖该平面：配对单元测试、使用真实 storage-domain 机制的注册表测试、真实 HTTP 与 WebSocket channel 套件，以及挂载在真实 `WebServer`（`127.0.0.1:0`）上的 `RemoteGateway` 套件。它们覆盖一次性 token、拒绝、重连、通知、撤销、广播，以及撤销后 socket 立即终止。客户端包包含 jsdom 组件测试与浏览器插件测试。
+`packages/host/remote/tests/` 从四层覆盖该平面：配对单元测试、使用真实 storage-domain 机制的注册表测试、真实 HTTP 与 WebSocket channel 套件，以及挂载在真实 `WebServer`（`127.0.0.1:0`）上的 `RemoteGateway` 套件。它们覆盖一次性 token、拒绝、重连、通知、撤销、广播、基于标题的通知文本、id 回退，以及撤销后 socket 立即终止。客户端包包含 jsdom 组件测试与浏览器插件测试。
 
 ## 曾考虑的替代方案
 

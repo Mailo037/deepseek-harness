@@ -281,7 +281,7 @@ export function QueueDock({ useSession, input, updateQueue, notify, loadImage, b
                 className={clsx(
                   css.row,
                   drag?.id === row.id && css.rowDragging,
-                  dropMark && (index < (drag?.from ?? index) ? css.dropAbove : css.dropBelow),
+                  dropMark && (index < drag.from ? css.dropAbove : css.dropBelow),
                 )}
                 data-queue-row=""
                 draggable={canReorder}

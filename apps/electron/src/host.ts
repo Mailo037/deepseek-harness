@@ -12,8 +12,7 @@
 
 import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -30,16 +29,17 @@ import {
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 
 /** Diagnostic prefix for boot errors and profile machinery. */
 const NAME = 'dsh-electron'
 
 /** Absolute path of this app's package.json, resolved via self-reference so it works in both source and built layouts. */
 const _require = createRequire(import.meta.url)
-export const INSTALL_ANCHOR = _require.resolve('@deepseek-ai/dsh-electron/package.json')
+const INSTALL_ANCHOR = _require.resolve('@deepseek-ai/dsh-electron/package.json')
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
-const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
+const SHIPPED_PRESET_ROOT = join(dirname(INSTALL_ANCHOR), 'config', 'agent-presets')
 
 /** The session-telemetry row id the DSH_TELEMETRY_DISABLED switch targets. */
 const TELEMETRY_ROW_ID = 'session-telemetry-otel'

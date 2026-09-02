@@ -27,8 +27,8 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { CollectedOutput, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
@@ -169,7 +169,7 @@ export class ShellCommandService extends TypertRemoteService {
     signal: AbortSignal,
   ): Promise<ShellCommandExecution> {
     const session = agent.session
-    const sandboxPolicy = this.ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
+    const sandboxPolicy = this.ctx.get('sandboxPolicy')
     const policy = sandboxPolicy?.resolve({ session })
     const spec = this.ctx.shell.resolve({
       command: trimmed,
@@ -236,7 +236,7 @@ export class ShellCommandService extends TypertRemoteService {
     if (jobs === undefined) {
       throw new Error('background jobs unavailable for `!` tool mode: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
     }
-    const sandboxPolicy = this.ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
+    const sandboxPolicy = this.ctx.get('sandboxPolicy')
     const policy = sandboxPolicy?.resolve({ session: agent.session })
     const request = {
       command: trimmed,

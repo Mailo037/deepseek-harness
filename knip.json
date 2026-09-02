@@ -626,6 +626,46 @@
         "react-dom"
       ]
     },
+    "apps/android": {
+      "entry": [
+        "src/PairingProtocol.ts",
+        "tests/device/*.mjs"
+      ],
+      "ignoreDependencies": [
+        "@capacitor/app"
+      ]
+    },
+    "apps/electron": {
+      "entry": [
+        "scripts/**/*.mjs",
+        "scripts/**/*.d.mts",
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.mjs",
+        "scripts/**/*.d.mts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
+    "packages/shell/shell-command": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
+    "packages/web/web-search-firecrawl": {
+      "entry": [
+        "tests/**/*.spec.ts",
+        "tests/**/*.e2e.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "apps/cli": {
       "entry": [
         "tests/**/*.spec.ts",

@@ -14,6 +14,7 @@
     "types": ["node"]
   },
   "include": [
+    "apps/web/tests/assembled-boot.ts",
     // Source-subpath test imports can arrive through workspace links whose
     // realpath semantics vary by host. Load package CSS declarations directly.
     "packages/client/*/src/css-modules.d.ts",

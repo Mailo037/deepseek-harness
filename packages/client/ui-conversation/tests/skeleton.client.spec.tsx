@@ -180,7 +180,7 @@ function mount(
           useSession={useSession}
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
-          useProjection={useProjection as never}
+          useProjection={useProjection}
           useInput={useInput}
           inputActions={inputActions}
           useStore={bindSnapshotSelector(chat)}
@@ -200,7 +200,7 @@ function mount(
           useSession={useSession}
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
-          useProjection={useProjection as never}
+          useProjection={useProjection}
           useInput={useInput}
           inputActions={inputActions}
           useStore={bindSnapshotSelector(chat)}
@@ -223,7 +223,7 @@ function mount(
           useSession={useSession}
           useSessions={props.useSessions}
           useWorkspaces={props.useWorkspaces}
-          useProjection={useProjection as never}
+          useProjection={useProjection}
           useInput={useInput}
           inputActions={inputActions}
           keyboard={wiring}
@@ -268,7 +268,7 @@ function mount(
     useSession,
     useSessions: bindSnapshotSelector(sessions),
     useWorkspaces: bindSnapshotSelector(workspaces),
-    useProjection: useProjection as never,
+    useProjection: useProjection,
     useComposerBlock: select => select(options.composerBlock),
     useInput,
     inputActions,
@@ -455,7 +455,7 @@ describe('ConversationRoot resident composer', () => {
     // evaluation after the metrics are stubbed.
     const callbacks = new Set<() => void>()
     class FanoutObserver {
-      constructor(cb: ResizeObserverCallback) { callbacks.add(() => { cb([], this as never) }) }
+      constructor(cb: ResizeObserverCallback) { callbacks.add(() => { cb([], this) }) }
       observe(): void {}
       unobserve(): void {}
       disconnect(): void { callbacks.delete(() => { /* noop: set holds wrappers */ }) }

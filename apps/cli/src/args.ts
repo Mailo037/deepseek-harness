@@ -44,8 +44,13 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** Interactively reset chat data or the complete Harness home. */
+interface ResetInvocation {
+  mode: 'reset'
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
+export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation | ResetInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -69,6 +74,7 @@ Examples:
   dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
   dsh --profile web --help                   the web app's own flags and help
   dsh plugin --profile tui add <package>     install a plugin into the tui profile
+  dsh reset                                  interactively delete chats or all user data
 `
 
 /**
@@ -179,6 +185,12 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
       resolved = { mode: 'plugin', profile: options.profile, args }
     })
+
+  const reset = program.command('reset').description('interactively delete chats or all data under $DSH_HOME')
+  reset.action(() => {
+    rejectParentOptions('reset')
+    resolved = { mode: 'reset' }
+  })
 
   try {
     program.parse(argv, { from: 'user' })

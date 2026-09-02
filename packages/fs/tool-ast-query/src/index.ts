@@ -262,7 +262,11 @@ async function readBoundedText(
 }
 
 function formatMatch(
-  node: { range(): { start: { line: number; column: number }; end: { line: number; column: number } }; kind(): string | number; text(): string },
+  node: {
+    range(): { start: { line: number; column: number }; end: { line: number; column: number } }
+    kind(): string | number
+    text(): string
+  },
   maxCharacters: number,
 ): AstMatch {
   const range = node.range()

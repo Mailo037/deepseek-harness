@@ -1,10 +1,8 @@
 # Device test lane — simulated PC + real emulator
 
-End-to-end check for the app UI on a real Android emulator, with the PC side
-played by a zero-dependency Node mock. The runner drives the app's Capacitor
-WebView over the Chrome DevTools Protocol and asserts the screens the user
-would see (no screenshots needed to judge — screenshots are saved as
-artifacts for human review).
+English | [中文](README.zh.md)
+
+End-to-end check for the app UI on a real Android emulator, with the PC side played by a zero-dependency Node mock. The runner drives the app's Capacitor WebView over the Chrome DevTools Protocol and asserts the screens the user would see (no screenshots needed to judge — screenshots are saved as artifacts for human review).
 
 ## Components
 
@@ -15,16 +13,12 @@ tests/device/
   run-smoke.mjs       CDP driver: phases of the app flow with DOM assertions
 ```
 
-The mock PC implements the wire protocol from `src/PairingProtocol.ts`
-(`pair` → `paired{deviceId,secret,accessToken}`, `auth` →
-`authed{deviceId,accessToken}`, or `rejected{reason}`). `GET /__status` returns
-`{pairs, auths, rejects, guiRequests, authenticatedGuiRequests, shellMessages}` so the runner can assert server-side effects.
+The mock PC implements the wire protocol from `src/PairingProtocol.ts` (`pair` → `paired{deviceId,secret,accessToken}`, `auth` → `authed{deviceId,accessToken}`, or `rejected{reason}`). `GET /__status` returns `{pairs, auths, rejects, guiRequests, authenticatedGuiRequests, shellMessages}` so the runner can assert server-side effects.
 
 ## Prerequisites
 
 - Android SDK with an emulator system image, `ANDROID_HOME` set.
-- One AVD (any recent image; the lane was built against
-  `Medium_Phone` / API 37 x86_64).
+- One AVD (any recent image; the lane was built against `Medium_Phone` / API 37 x86_64).
 - Node ≥ 22 (built-in `WebSocket` and `fetch`); JDK 21+ for Gradle.
 
 ## Run
@@ -64,8 +58,7 @@ node apps/android/tests/device/run-smoke.mjs --phase cleared
 node apps/android/tests/device/run-smoke.mjs --phase errors
 ```
 
-Each phase prints `PASS`/`FAIL` per check and exits non-zero on failure.
-Screenshots land in `.artifacts/android-device/`.
+Each phase prints `PASS`/`FAIL` per check and exits non-zero on failure. Screenshots land in `.artifacts/android-device/`.
 
 ## What the phases prove
 
@@ -80,9 +73,6 @@ Screenshots land in `.artifacts/android-device/`.
 
 ## Known limitations
 
-- The QR path is not exercised (the emulated camera cannot reliably show a
-  scannable code); manual pairing drives the same `PairingService` pipeline.
-- The WebView screenshot via CDP captures the app content only, not the
-  system bars; use `adb exec-out screencap -p` for full-device captures.
-- The emulator takes several minutes to cold boot; keep it running across
-  phases.
+- The QR path is not exercised (the emulated camera cannot reliably show a scannable code); manual pairing drives the same `PairingService` pipeline.
+- The WebView screenshot via CDP captures the app content only, not the system bars; use `adb exec-out screencap -p` for full-device captures.
+- The emulator takes several minutes to cold boot; keep it running across phases.

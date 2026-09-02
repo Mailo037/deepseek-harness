@@ -51,7 +51,7 @@ describe('ModelModalityDialog', () => {
     // Emptying the selection is refused for a schema that needs at least one.
     fireEvent.click(box(en.modalityText))
     fireEvent.click(box('ritual'))
-    expect((screen.getByText(en.apply) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText<HTMLButtonElement>(en.apply).disabled).toBe(true)
     fireEvent.click(box('ritual'))
     fireEvent.click(box(en.modalityText))
     fireEvent.click(screen.getByText(en.apply))
@@ -71,7 +71,7 @@ describe('ModelModalityDialog', () => {
     expect(screen.getByText(en.modalityInheritHint)).toBeTruthy()
     fireEvent.click(box(en.modalityText))
     // No selection still applies for the inherit path.
-    expect((screen.getByText(en.apply) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText<HTMLButtonElement>(en.apply).disabled).toBe(false)
     fireEvent.click(screen.getByText(en.apply))
     expect(onApply).toHaveBeenCalledWith([])
   })
@@ -153,7 +153,7 @@ describe('DeepSeekModelsEditor modalities and reorder', () => {
     expect(screen.getByText(en.modalityRequiredHint)).toBeTruthy()
     // The schema floors the list at one entry; emptying it refuses to apply.
     fireEvent.click(box(en.modalityText))
-    expect((screen.getByText(en.apply) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText<HTMLButtonElement>(en.apply).disabled).toBe(true)
     fireEvent.click(box(en.modalityText))
     fireEvent.click(box(en.modalityImage))
     fireEvent.click(box(en.modalityVideo))
@@ -281,7 +281,7 @@ describe('DeepSeekModelsEditor modalities and reorder', () => {
     const entry = box(`${en.modelId} 1`).closest('[class*="modelEntry"]') as HTMLElement
     vi.spyOn(entry, 'getBoundingClientRect').mockReturnValue({
       top: 100, height: 100, bottom: 200, left: 0, right: 200, width: 200, x: 0, y: 100, toJSON: () => ({}),
-    } as DOMRect)
+    })
     fireEvent.dragStart(grip(2), { dataTransfer: transfer() })
     // jsdom's DragEvent drops clientY from its init, so force it onto the
     // native event; a pointer on the row's top half resolves 'before'.
@@ -373,7 +373,7 @@ describe('ModelListEditor modalities and reorder', () => {
     const { onChange } = mountPi()
     expandRow(1)
     // The catalog entry answers until overridden; it arrives with the wire.
-    await waitFor(() => expect(screen.getByText(en.modalityImage)).toBeTruthy())
+    await waitFor(() => { expect(screen.getByText(en.modalityImage)).toBeTruthy() })
 
     fireEvent.click(screen.getByLabelText(`${en.editModelModalities} 1`))
     expect(screen.getByText(en.modalityWarning)).toBeTruthy()
@@ -404,7 +404,7 @@ describe('ModelListEditor modalities and reorder', () => {
     expandRow(1)
     expandRow(2)
     expandRow(3)
-    await waitFor(() => expect(screen.getAllByText(en.modalityText).length).toBe(3))
+    await waitFor(() => { expect(screen.getAllByText(en.modalityText).length).toBe(3) })
     expect(screen.getAllByText(en.modalityText).length).toBe(3)
   })
 
@@ -463,7 +463,7 @@ describe('ModelListEditor modalities and reorder', () => {
     const entry = box(`${en.modelId} 1`).closest('[class*="modelEntry"]') as HTMLElement
     vi.spyOn(entry, 'getBoundingClientRect').mockReturnValue({
       top: 100, height: 100, bottom: 200, left: 0, right: 200, width: 200, x: 0, y: 100, toJSON: () => ({}),
-    } as DOMRect)
+    })
     fireEvent.dragStart(grip(2), { dataTransfer: transfer() })
     const over = createEvent.dragOver(box(`${en.modelId} 1`), { dataTransfer: transfer() })
     Object.defineProperty(over, 'clientY', { value: 0 })
@@ -480,7 +480,7 @@ describe('ModelListEditor modalities and reorder', () => {
     const { onChange } = mountPi()
     expandRow(1)
     // Let the catalog load, which decides the row's start-of-dialog selection.
-    await waitFor(() => expect(screen.getByText(en.modalityImage)).toBeTruthy())
+    await waitFor(() => { expect(screen.getByText(en.modalityImage)).toBeTruthy() })
     fireEvent.click(screen.getByLabelText(`${en.editModelModalities} 1`))
     // Moving the row the dialog is on keeps the dialog open on the same model.
     fireEvent.keyDown(grip(1), { key: 'ArrowDown' })

@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-client-ui-remote
 
+English | [中文](README.zh.md)
+
 Web-GUI Settings section for remote devices: hand the guided Tailscale setup to the session agent, generate a one-time pairing QR code, list paired devices with live connection status, and revoke a device instantly (socket kill + persistent record removal, no undo).
 
 The section drives the host `device` Remote namespace (`@deepseek-ai/dsh-host-remote`): `pairingCreate`, `devicesList`, `devicesRevoke`, `accessTokenGet`. The Tailscale group queues the localized setup task (the [dsh-tailscale-remote-setup skill](../../../.agents/skills/dsh-tailscale-remote-setup/SKILL.md) procedure) into the current session through the sessions face; the modal closes onto the conversation where the agent runs it.

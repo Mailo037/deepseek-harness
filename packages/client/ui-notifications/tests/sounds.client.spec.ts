@@ -71,6 +71,6 @@ describe('sound synthesis', () => {
 
   it('production player stays silent without a global AudioContext', () => {
     const play = createWebAudioPlayer()
-    expect(() => play('chime')).not.toThrow()
+    expect(() => { play('chime') }).not.toThrow()
   })
 })

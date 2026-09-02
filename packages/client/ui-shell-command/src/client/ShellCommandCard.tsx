@@ -1,7 +1,6 @@
 import { memo } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { TerminalBlock, type TerminalBlockLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ShellCommandChatData } from './shell-command-node.ts'
 import css from './ShellCommandCard.module.css'
 
 /** Complete keyed Chat renderer props. */
@@ -16,7 +15,7 @@ export type ShellCommandCardProps =
  * @returns the terminal card element.
  */
 export const ShellCommandCard = memo(function ShellCommandCard({ node, t }: ShellCommandCardProps) {
-  const data = node.data as ShellCommandChatData
+  const data = node.data
   const labels: Partial<TerminalBlockLabels> = {
     signal: signal => t('terminal.signal', { signal }),
     exitCode: code => t('terminal.exitCode', { code }),

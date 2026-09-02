@@ -37,7 +37,7 @@ function failureFrom(match: ConversationMatch): TurnErrorState['failure'] | unde
     seq: match.event.seq,
     time: match.event.time,
     message: displayFailureMessage(failure),
-    ...failure.code === undefined ? {} : { code: failure.code },
+    code: failure.code,
     ...failure.status === undefined ? {} : { status: failure.status },
     ...failure.requestId === undefined ? {} : { requestId: String(failure.requestId) },
   }

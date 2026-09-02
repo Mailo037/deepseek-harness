@@ -1,4 +1,4 @@
-# Agent Note: Das Modell baut seinen eigenen Web-Host neu (`rebuild_harness`)
+# Agent Note: 模型重新构建自己的 Web 宿主（`rebuild_harness`）
 
 Status: implemented
 
@@ -6,24 +6,24 @@ Status: implemented
 
 ## Problem
 
-Ein Agent, der am Harness innerhalb der Web-GUI arbeitet, konnte seine eigenen Quellcode-Änderungen nicht anwenden: Das Neubauen und Neustarten des Hosts war eine manuelle Terminal-Aufgabe, und wer es bei laufenden Sessions machte, tötete Background-Jobs ohne Aufzeichnung darüber, was lief. Der bestehende Self-Update-Flow (`host.applyUpdate`) ist browser-seitig, macht immer einen Fast-Forward auf Upstream und erreicht nie eine Modellanfrage — das Modell konnte nicht sagen „baue neu, was auf der Platte liegt, und komme zurück“.
+在 Web GUI 内修改 harness 的 agent（智能体）无法应用自己的源码变更：构建和重启宿主需要人工终端操作，会话运行期间重启还会终止后台任务，却不记录当时运行的任务。现有自更新流程（`host.applyUpdate`）面向浏览器，始终快进到上游，且不进入模型请求，因此模型无法请求“重新构建磁盘上的内容并返回”。
 
 ## Decision
 
-Das Modell baut seinen eigenen Web-Host über genau ein Tool neu auf, `rebuild_harness` (`@deepseek-ai/dsh-tool-rebuild`), das drei bestehende Teile kombiniert, statt einen neuen Restart-Mechanismus zu bauen: die Job-Registry für sicheres Beenden der Jobs, den Self-Update-Service für Agent-Quiescence und den detached Helper sowie den `ctx.appLifecycle.restart` des Launchers für die Prozess-Übergabe. Der Helper erhält ein `pull: false`-Plan-Flag (`createWebUpdateHandoff(address, { pull: false })`), damit derselbe Runner sowohl Upstream-Updates als auch Rebuild-only-Restarts bedient; der Build bleibt im Helper, weil der laufende Host beendet sein muss, bevor `pnpm run build` die Artefakte ersetzen darf, aus denen er ausgeführt wird.
+模型通过一个工具 `rebuild_harness`（`@deepseek-ai/dsh-tool-rebuild`）重新构建并重启自己的 Web 宿主。它组合三项现有能力，而非新增重启机制：任务注册表负责安全终止任务，自更新服务负责让 agent 停稳并创建独立助手，启动器的 `ctx.appLifecycle.restart` 负责进程交接。助手计划支持 `pull: false`（`createWebUpdateHandoff(address, { pull: false })`），使同一运行器同时服务上游更新和只构建重启。构建仍在助手中执行，因为宿主必须先退出，`pnpm run build` 才能替换其正在执行的产物。
 
-Der Neustart wird vom Tool bewaffnet, feuert aber erst am `whenIdle()`-Punkt des aufrufenden Agents, nie innerhalb von `execute()`. Diese Reihenfolge macht den Job-Eintrag dauerhaft: Das Tool killt die laufenden Jobs seines Owners, wartet jedes Settlement ab (begrenzt durch `jobStopTimeoutMs`) und liefert sie im kanonischen Ergebnis zurück; der Turn endet dann, loggt das `tool/result`, und erst der Idle-Callback quiesct alle Agents (`quiesceAgents`, Inbox bleibt) und übergibt. Ein Neustart innerhalb von `execute()` würde den Turn abbrechen, der den Eintrag trägt, um den es geht.
+工具安排重启，但重启仅在调用 agent 的 `whenIdle()` 处触发，绝不在 `execute()` 内触发。这一顺序使任务记录持久：工具终止归属于调用者的运行中任务，等待各任务结算（受 `jobStopTimeoutMs` 限制），并在标准结果中返回任务列表；随后轮次结束并记录 `tool/result`，只有空闲回调才让所有 agent 停稳（`quiesceAgents`，保留 inbox）并交接。在 `execute()` 中重启会取消携带这份记录的轮次。
 
-Der Job-Wiederanlauf nach dem Neustart läuft über das Transkript, nicht über einen neuen Runtime-Mechanismus: Das geloggte Ergebnis listet jeden gestoppten Job auf und weist das Modell an, sie neu zu starten — eine fortgesetzte Session spielt die Anweisung als gewöhnliche History ab. Das Tool wird host-plane im `dsh-web-app`-Bundle gemountet (jeder Web-Session-Agent sieht es), weil ein Prozess-Neustart prozessweit ist; auf einem Host ohne Restart-Fähigkeit, `ctx.selfUpdate` oder `ctx.webServer` schlägt der Aufruf fehl — nicht das Laden.
+重启后通过 transcript（文本记录）重新驱动任务，而非引入新的运行时机制：日志结果列出所有已停止任务并要求模型重新启动，恢复的会话将该指令作为普通历史回放。工具在 `dsh-web-app` bundle 的宿主平面挂载，每个 Web 会话的 agent 均可见，因为重启影响整个进程。宿主缺少重启能力、`ctx.selfUpdate` 或 `ctx.webServer` 时，失败发生在调用阶段，而非加载阶段。
 
 ## Alternatives considered
 
-- **Neustart innerhalb von `execute()`** wäre in sich geschlossen, zerstört aber das eigene Ergebnis: Der Turn wird mitten im Flug abgebrochen, die Job-Liste erreicht nie das Log, und das Modell setzt blind fort. Die Idle-Arm-Reihenfolge ist der ganze Entwurf.
-- **Ein eigener dauerhafter „Pending Jobs“-Store** (neues Session-Event oder Datei) wurde verworfen, weil das geloggte Tool-Ergebnis bereits der dauerhafte Eintrag ist, den das Modell liest; ein zweiter Store würde ihn duplizieren und bräuchte eine eigene Replay-Story.
-- **`host.applyUpdate` für das Modell zu öffnen** koppelte das Modell an einen Git-Pull, um den es nicht gebeten hat; der Flow des Nutzers ist „baue neu, was auf der Platte liegt“, daher pinnt das Tool `pull: false`.
+- **在 `execute()` 内重启**虽然自包含，却会破坏自己的结果：轮次中途取消，任务列表无法进入日志，模型盲目恢复。空闲后重启的顺序是该设计的核心。
+- **专用持久“待恢复任务”存储**（新增会话事件或文件）被否决，因为日志工具结果已经是模型读取的持久记录；第二份存储会重复信息并需要独立回放机制。
+- **向模型开放 `host.applyUpdate`**会把模型与未经请求的 git pull 耦合。用户的流程是重新构建磁盘内容，因此工具固定 `pull: false`。
 
 ## Consequences
 
-- Ein per Tool ausgelöster Rebuild zeigt dem Browser nur einen Verbindungsabbruch: Das Update-Overlay der GUI verfolgt ausschließlich GUI-initiierte Updates über den Update-Store, und der Tool-Pfad umgeht ihn bewusst. Im Paket-README dokumentiert statt erweitert.
-- Fremde und unowned Jobs enumeriert das Tool nicht (owner-geführter Zugriff ist die Grenze der Registry); sie enden weiterhin sicher durch Agent-Quiescence und Registry-Disposal, fehlen aber im dauerhaften Eintrag — nur der aufrufende Agent bekommt seine Jobs neu angetrieben.
-- `verify-cordis-config` hält das Bundle ehrlich: Das Paket der neuen Row ist eine `dsh-web-app`-Abhängigkeit.
+- 工具触发的重新构建只向浏览器表现为断线：GUI 更新覆盖层通过更新 store 跟踪 GUI 发起的更新，工具路径刻意绕过它。该限制记录于包 README，而未扩展覆盖层。
+- 工具不列举无所有者或其他所有者的任务，因为注册表按所有者限制访问；这些任务仍通过 agent 停稳和注册表 dispose 安全结束，但不进入持久记录，只有调用 agent 的任务会被重新驱动。
+- `verify-cordis-config` 验证 bundle 的依赖声明：工具条目的包是 `dsh-web-app` 的依赖。

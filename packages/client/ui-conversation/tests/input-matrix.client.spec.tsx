@@ -346,7 +346,7 @@ describe('matrix row: queue editing (composer-side edit flow)', () => {
     const updateQueueItem = vi.fn(() => Promise.resolve())
     const b = bench({
       ...over,
-      updateQueueItem: updateQueueItem as never,
+      updateQueueItem: updateQueueItem,
       queue: { getSnapshot: () => [queuedRow('q-1'), queuedRow('q-2')], subscribe: () => () => {} },
     })
     return { ...b, updateQueueItem }

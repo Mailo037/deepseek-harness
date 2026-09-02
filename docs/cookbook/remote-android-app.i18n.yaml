@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/cookbook/remote-android-app.md
-remote-android-app.md: cab7edd54b1322b9cad640363b32fa87ff6a556b
-remote-android-app.zh.md: e124ae1dff852c496e236f39c3b4c697af839921
+remote-android-app.md: 756c3ac3a29c3ca8a873d0cc4f0919e2387c39ae
+remote-android-app.zh.md: 7f6324e1841f5d7b82a96612341c21f4a45dcd4c

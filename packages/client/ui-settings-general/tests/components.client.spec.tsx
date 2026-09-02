@@ -46,8 +46,8 @@ function idleUpdate() {
 function idleSync() {
   return new HarnessSyncStore(
     { sessions: {} } as never,
-    { binding: vi.fn(), open: vi.fn() } as never,
-    { connectWorkspace: vi.fn() } as never,
+    { binding: vi.fn(), open: vi.fn() },
+    { connectWorkspace: vi.fn() },
   )
 }
 
@@ -384,7 +384,7 @@ describe('AboutSection', () => {
         },
       } as never,
       { binding: vi.fn(() => ({ session: { prompt } })), open } as never,
-      { connectWorkspace: vi.fn(() => Promise.resolve(sessionId)) } as never,
+      { connectWorkspace: vi.fn(() => Promise.resolve(sessionId)) },
     )
     const mounted = mount(describeSource(description()), idleUpdate().controller, sync)
 

@@ -38,6 +38,8 @@ dsh --profile web --trusted-host 192.168.1.5:3080
 
 在电脑上进入 **Settings → Remote devices → 断开连接 / Disconnect**，选择对应手机。Host 会立即终止 socket、删除设备记录并使 secret 失效；手机必须重新扫描配对码后才能再次连接。
 
+<a id="remote-access-with-tailscale"></a>
+
 ## 通过 Tailscale 远程访问
 
 以上步骤只能从家庭 Wi-Fi 访问电脑。在两个设备上安装 [Tailscale](https://tailscale.com) 后，手机可通过加密 tailnet 从移动数据或任意网络访问 GUI 与通知 channel，无需路由器端口转发，切换网络时也无需重新配对，因为 App 会保存所有端点并自动回退。

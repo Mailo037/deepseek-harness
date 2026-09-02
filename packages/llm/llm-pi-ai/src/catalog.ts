@@ -263,7 +263,7 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
         compat: {
           supportsDeveloperRole: false,
         },
-      } as Model<Api>)
+      })
     }
     return map
   }
@@ -282,7 +282,7 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
         input: ['text', 'image'],
         reasoning: true,
         cost: NO_COST,
-      } as Model<Api>)
+      })
     }
     if (!map.has('deepseek/deepseek-v4-flash-vision-exp')) {
       map.set('deepseek/deepseek-v4-flash-vision-exp', {
@@ -296,7 +296,7 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
         input: ['text', 'image'],
         reasoning: true,
         cost: NO_COST,
-      } as Model<Api>)
+      })
     }
   }
   if (provider === 'deepseek') {
@@ -312,7 +312,7 @@ export function catalogModels(provider: string): Map<string, Model<Api>> {
         input: ['text', 'image'],
         reasoning: true,
         cost: NO_COST,
-      } as Model<Api>)
+      })
     }
   }
   return map

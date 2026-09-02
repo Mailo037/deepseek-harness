@@ -128,8 +128,8 @@ export class WorkspaceRuntime implements IWorkspaces {
    * Open a session as a navigation side effect. Failures (the manager not
    * knowing the id yet, transport loss) are non-fatal diagnostics — the
    * current view stays usable, matching the create/connect posture. The port
-   * face declares `void`, so both synchronous throws and an implementation's
-   * promise rejection are absorbed.
+   * face permits synchronous completion or a promise; both synchronous throws
+   * and promise rejections are absorbed.
    * @param sessionId - the session to select.
    */
   private openSession(sessionId: SessionId): void {

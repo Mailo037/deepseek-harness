@@ -127,7 +127,7 @@ export class Inbox {
     const span = Math.abs(to - from) + 1
     const window = inbox.slice(start, start + span)
     const reordered = window.toSpliced(from - start, 1)
-    reordered.splice(to - start, 0, window[from - start]!)
+    reordered.splice(to - start, 0, ...window.slice(from - start, from - start + 1))
     this.mutate('next-turn', start, span, reordered, 'silent')
     return true
   }

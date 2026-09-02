@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
 import type { DeviceChannel } from './device-channel.ts'
 import type { RemoteNotification } from './types.ts'
 
@@ -12,6 +13,8 @@ export interface BridgeConfig {
 /**
  * Subscribes to durable session events and forwards noteworthy events
  * (turn/end errors, completed turns) as notifications to connected devices.
+ * Messages identify the session by its latest durable title, falling back to
+ * the session id before a title exists.
  */
 export class NotificationBridge {
   private readonly dispose: () => void
@@ -35,11 +38,12 @@ export class NotificationBridge {
   private onSessionEvent(session: Session, event: SessionEvent): void {
     if (event.type !== 'turn/end') return
     const reason = event.data.reason
+    const sessionLabel = foldSessionTitle(session.events)?.title ?? session.id
     if (reason.kind === 'error' && this.config.notifyOnError) {
       const notification: RemoteNotification = {
         kind: 'turn-error',
         sessionId: session.id,
-        message: `Error in session ${session.id}: ${reason.error.message}`,
+        message: `Error in ${sessionLabel}: ${reason.error.message}`,
         time: new Date(event.time).toISOString(),
       }
       this.channel.broadcast(notification)
@@ -47,7 +51,7 @@ export class NotificationBridge {
       const notification: RemoteNotification = {
         kind: 'turn-completed',
         sessionId: session.id,
-        message: `Session ${session.id} completed`,
+        message: `${sessionLabel} completed`,
         time: new Date(event.time).toISOString(),
       }
       this.channel.broadcast(notification)

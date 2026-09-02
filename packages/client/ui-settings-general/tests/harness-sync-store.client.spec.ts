@@ -10,6 +10,8 @@ import {
 const sessionId = 'review-session' as SessionId
 const workspaceId = 'harness-workspace' as WorkspaceId
 
+type Prompt = (content: readonly { type: 'text'; text: string }[], mode: string) => Promise<unknown>
+
 function directory() {
   return {
     current: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
@@ -35,7 +37,7 @@ function directory() {
 function bench(overrides?: {
   models?: ReturnType<typeof vi.fn>
   selectModel?: ReturnType<typeof vi.fn>
-  prompt?: ReturnType<typeof vi.fn>
+  prompt?: ReturnType<typeof vi.fn<Prompt>>
   binding?: ReturnType<typeof vi.fn>
 }) {
   const models = overrides?.models ?? vi.fn(() => Promise.resolve({
@@ -49,7 +51,7 @@ function bench(overrides?: {
       value: { selected: { provider: request.provider, model: request.model } },
     },
   }))
-  const prompt = overrides?.prompt ?? vi.fn(() => Promise.resolve({
+  const prompt = overrides?.prompt ?? vi.fn<Prompt>(() => Promise.resolve({
     ok: true as const,
     value: { accepted: true as const },
   }))
@@ -59,7 +61,7 @@ function bench(overrides?: {
   const controller = new HarnessSyncStore(
     { sessions: { models, selectModel } } as never,
     { binding, open } as never,
-    { connectWorkspace } as never,
+    { connectWorkspace },
   )
   return { controller, models, selectModel, prompt, binding, open, connectWorkspace }
 }
@@ -91,8 +93,8 @@ describe('HarnessSyncStore', () => {
     expect(b.selectModel).not.toHaveBeenCalled()
     expect(b.prompt).toHaveBeenCalledOnce()
     const [content, mode] = b.prompt.mock.calls[0]!
-    expect(content[0].text).toContain(UNOFFICIAL_HARNESS_REPOSITORY)
-    expect(content[0].text).toContain('wait for my explicit approval before editing tracked files')
+    expect(content[0]?.text).toContain(UNOFFICIAL_HARNESS_REPOSITORY)
+    expect(content[0]?.text).toContain('wait for my explicit approval before editing tracked files')
     expect(mode).toBe('queue')
     expect(b.open).toHaveBeenCalledWith(sessionId)
   })
@@ -119,8 +121,8 @@ describe('HarnessSyncStore', () => {
     await b.controller.start()
 
     const [content] = b.prompt.mock.calls[0]!
-    expect(content[0].text).toContain(OFFICIAL_HARNESS_REPOSITORY)
-    expect(content[0].text).toContain('official DeepSeek Harness upstream')
+    expect(content[0]?.text).toContain(OFFICIAL_HARNESS_REPOSITORY)
+    expect(content[0]?.text).toContain('official DeepSeek Harness upstream')
   })
 
   it('keeps an unadvertised but routable current model selectable', async () => {

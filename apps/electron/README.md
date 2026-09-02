@@ -41,6 +41,8 @@ The desktop app needs a built frontend dist (`apps/web/dist`), which the reposit
 
 `electron-builder.yml` packages the emitted Electron main tree, shipped agent presets, runtime dependencies, and the built `@deepseek-ai/dsh-web-frontend` dist that `dsh-web-app` resolves through its package export. The Windows executable and installer use the committed application id, product name, and `.ico` icon.
 
+Shipped presets resolve from the application's package manifest, independently of the compiled module directory or process working directory. The built-host smoke verifies the `code`, `cordis`, `minimal`, and `standard` roster before serving the GUI.
+
 Windows signing is credential-free in source: electron-builder discovers `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` (or the documented `CSC_*` fallbacks) only from the protected release workflow environment. The release workflow has a normal unsigned packaging/smoke job and a separately approved, tag-bound publish job; it is the only repository configuration that references signing secrets. It uploads the NSIS installer, blockmap, and update metadata to the GitHub release selected by `electron-builder.yml`.
 
 ## Installed-app updates
@@ -65,7 +67,7 @@ This is distinct from the existing About-page Git checkout updater. Checkout upd
 pnpm --filter @deepseek-ai/dsh-electron run test
 ```
 
-The host smoke test boots the real web profile in a plain-Node subprocess (the same boot path the Electron main uses, minus Electron), asserts the served page carries `window.__DSH_BOOT__`, and verifies the clean-shutdown path.
+After a repository build, the host smoke test boots the real web profile in a plain-Node subprocess (the same boot path the Electron main uses, minus Electron), asserts the served page carries `window.__DSH_BOOT__`, and verifies clean shutdown. Source-only test runs skip this built-runtime test. The packaged smoke uses a readiness file under its isolated temporary home because Windows GUI executables do not reliably forward standard output. Emitted Electron files exclude source and declaration maps from published packages.
 
 `tests/updater.spec.ts` pins the updater's two explicit approvals and error behavior. `tests/distribution.spec.ts` pins the NSIS, resource, signing-verification, and publish configuration. `smoke:package` is the built-product smoke; it does not publish or contact the update feed.
 

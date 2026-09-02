@@ -2,7 +2,11 @@
 
 const REDACTED = '[redacted]'
 
-const ASSIGNMENT_SECRET = /\b(api[-_]?key|access[-_]?token|auth(?:orization)?|cookie|password|private[-_]?key|secret|token)\b\s*([:=])\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu
+const ASSIGNMENT_SECRET = new RegExp(
+  String.raw`\b(api[-_]?key|access[-_]?token|auth(?:orization)?|cookie|password|private[-_]?key|secret|token)\b`
+  + String.raw`\s*([:=])\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)`,
+  'giu',
+)
 const BEARER_SECRET = /\b(?:bearer|basic)\s+[a-z0-9._~+/=-]{8,}/giu
 const KNOWN_SECRET = /\b(?:gh[pousr]_[a-zA-Z0-9_]{20,}|github_pat_[a-zA-Z0-9_]{20,}|sk-[a-zA-Z0-9_-]{16,})\b/gu
 

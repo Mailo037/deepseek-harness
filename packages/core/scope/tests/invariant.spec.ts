@@ -15,9 +15,7 @@ async function setup(): Promise<Context> {
 }
 
 function emit(ctx: Context, receiver: object | undefined, event: string, args: unknown[]): void {
-  const dispatch = ctx.emit.bind(ctx) as (...values: unknown[]) => void
-  if (receiver === undefined) dispatch(event, ...args)
-  else dispatch(receiver, event, ...args)
+  Reflect.apply(ctx.emit.bind(ctx), undefined, receiver === undefined ? [event, ...args] : [receiver, event, ...args])
 }
 
 describe('scoped-dispatch invariants', () => {

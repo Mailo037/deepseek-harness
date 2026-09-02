@@ -12,6 +12,7 @@
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh web` | `--profile web` 的别名。 |
 | `dsh plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
+| `dsh reset` | 交互式删除聊天数据或整个 Harness home。 |
 
 运行命令时所在的目录将作为默认 workspace 根目录。`web` 和 `headless` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `dsh plugin` 创建。
 
@@ -41,6 +42,12 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
+
+## 重置用户数据
+
+请在所有 Harness 应用均未运行时执行 `dsh reset`；从源码 checkout 中也可执行 `pnpm dsh:reset`。该命令会显示解析后的 `$DSH_HOME`，让用户选择删除聊天数据或整个 home，并在最后一次 `y/N` 确认前不删除任何数据。
+
+仅删除聊天的选项会移除 `sessions`、`attachments` 和 `storages`，但保留 `settings.yaml`、`.credentials.yaml`、profile、skill、模型配置与 API 凭据。完整选项会移除解析后的整个 Harness home。命令拒绝把文件系统根目录、用户 home 目录或当前工作目录当作 `$DSH_HOME` 删除。
 
 层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI（命令行界面）行为参考](reference/README.zh.md)为准。
 

@@ -108,7 +108,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   // keeps jsdom and non-browser lanes off this path.
   const handleBarTap = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button') !== null) return
-    if (window.matchMedia?.(TOUCH_LAYOUT).matches !== true) return
+    if (typeof window.matchMedia !== 'function' || !window.matchMedia(TOUCH_LAYOUT).matches) return
     setExpanded(prev => !prev)
   }, [])
 

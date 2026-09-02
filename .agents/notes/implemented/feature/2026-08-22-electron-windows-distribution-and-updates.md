@@ -26,7 +26,7 @@ Installed applications use `electron-updater` against the configured GitHub rele
 
 ## Testing
 
-The updater unit tests cover periodic checks, the two approval points, progress, and errors. Distribution tests pin the NSIS target, icon, shipped resources, verification setting, release provider, and absence of signing material. The package smoke starts the unpacked Electron product with updater traffic disabled, waits for the real window-ready signal, and observes clean shutdown.
+The updater unit tests cover periodic checks, the two approval points, progress, and errors. Distribution tests pin the NSIS target, icon, shipped resources, verification setting, release provider, and absence of signing material. The package smoke starts the unpacked Electron product with updater traffic disabled, waits for a readiness file written after the real window loads, and observes clean shutdown. A file is required because Windows GUI executables do not reliably forward standard output. The plain-Node host smoke requires built runtime dependencies and is skipped in source-only test lanes. Electron's emitted tree excludes source and declaration maps so npm tarballs satisfy the release archive policy.
 
 ## Consequences
 

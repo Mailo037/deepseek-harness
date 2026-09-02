@@ -20,9 +20,9 @@ describe('PairingService', () => {
       expect(view.expiresAt).toBeTruthy()
       expect(view.payload).toBeTruthy()
       expect(view.qrDataUrl).toMatch(/^data:image\/png;base64,/)
-      const payload = JSON.parse(view.payload)
-      expect(payload.v).toBe(1)
-      expect(payload.token).toBe(view.token)
+      const payload: unknown = JSON.parse(view.payload)
+      expect(payload).toHaveProperty('v', 1)
+      expect(payload).toHaveProperty('token', view.token)
     })
 
     it('includes loopback as an endpoint', async () => {

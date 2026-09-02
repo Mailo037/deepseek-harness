@@ -18,12 +18,12 @@ const TEST_CONFIG = { jobStopTimeoutMs: 10_000 } satisfies ToolRebuild.Config
 
 function fakeSelfUpdate(overrides: Partial<Pick<SelfUpdateService, 'quiesceAgents' | 'createWebUpdateHandoff'>> = {}) {
   const handoff: UpdateHandoff = { command: 'node', args: ['runner.js', 'plan'], cwd: '/repo' }
-  const quiesceAgents = overrides.quiesceAgents ?? vi.fn(async () => ({ cancelled: 0, drained: true }))
-  const createWebUpdateHandoff = overrides.createWebUpdateHandoff ?? vi.fn(() => handoff)
+  const quiesceAgents = vi.fn(overrides.quiesceAgents ?? (async () => ({ cancelled: 0, drained: true })))
+  const createWebUpdateHandoff = vi.fn(overrides.createWebUpdateHandoff ?? (() => handoff))
   return {
     service: { quiesceAgents, createWebUpdateHandoff } as unknown as SelfUpdateService,
-    quiesceAgents: quiesceAgents as ReturnType<typeof vi.fn>,
-    createWebUpdateHandoff: createWebUpdateHandoff as ReturnType<typeof vi.fn>,
+    quiesceAgents,
+    createWebUpdateHandoff,
     handoff,
   }
 }
@@ -272,7 +272,7 @@ describe('rebuild_harness execution', () => {
     const { ctx, lifecycle, selfUpdate, rebuildFiber } = await setup()
     let releaseQuiesce!: () => void
     selfUpdate.quiesceAgents.mockImplementationOnce(
-      () => new Promise<void>((resolve) => { releaseQuiesce = resolve }),
+      () => new Promise((resolve) => { releaseQuiesce = () => { resolve({ cancelled: 0, drained: true }) } }),
     )
     const { agent, goIdle } = fakeAgent(ctx)
     await call(ctx, agent)

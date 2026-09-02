@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-08-25-multi-api-key-rotation.zh.md)
+
 ## Problem
 
 Provider plugins (llm-deepseek, llm-pi-ai) and the Models settings page now support multiple API keys per provider route. A single API key may exhaust its usage quota while the user has another key for the same endpoint (a separate account, a different tier). Previously the only remedy was to duplicate the provider entry under a different route id, which fragments the Model tab and requires per-route model configuration. Adding multiple keys to one provider profile keeps the provider as a single configuration surface and lets the harness handle the switch transparently.
@@ -16,7 +18,7 @@ The mechanism is distinct from the existing `llm-retry` plugin's retry-policy ba
 
 ### Where the rotation lives
 
-The decision is split across two roles:
+The decision is split across three roles:
 
 1. **A shared `KeyRotation` helper** (`dsh-llm/src/key-rotation.ts`) — a per-provider cooldown registry with injectable clock for determinism in tests. Pure decision logic — `pickRotationRef`, `rotateAfterQuotaFailure` — is exported as plain functions over this registry.
 

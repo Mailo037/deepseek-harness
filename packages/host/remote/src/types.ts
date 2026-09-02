@@ -110,7 +110,7 @@ export interface RemoteNotification {
   readonly kind: 'turn-error' | 'turn-completed'
   /** The session the event belongs to. */
   readonly sessionId: string
-  /** Human-readable summary (locale of the host). */
+  /** Host-rendered summary, using the durable session title when available. */
   readonly message: string
   /** ISO timestamp of the underlying session event. */
   readonly time: string

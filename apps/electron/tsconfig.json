@@ -2,12 +2,20 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "lib/types"
+    "outDir": "lib/types",
+    "sourceMap": false,
+    "declarationMap": false
   },
   "include": [
     "src"
   ],
   "references": [
+    {
+      "path": "../../packages/preset/agent-presets"
+    },
+    {
+      "path": "../../packages/host/webserver"
+    },
     {
       "path": "../../vendor/cordis"
     },

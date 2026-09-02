@@ -90,7 +90,7 @@ const DEFAULT_DEEPSEEK_MODELS = [
 
 function wireNamespaces(
   backupApiKeys: readonly string[] = [],
-  hiddenProviders: readonly string[] | undefined = undefined,
+  hiddenProviders?: readonly string[]  ,
 ): SettingsNamespaceView[] {
   const openai = {
     apiKeyEnv: 'OPENAI_API_KEY',
@@ -312,6 +312,14 @@ describe('ModelsSection', () => {
         expectedRevision: 0,
       })
     })
+  })
+
+  it('disables picker visibility when the durable preference namespace is unavailable', async () => {
+    await mountSection()
+
+    const openaiRow = screen.getByRole('button', { name: openaiCopy(en.editProvider) }).closest('li')
+    const visibility = within(openaiRow as HTMLElement).getByRole('checkbox', { name: en.showInModelSelect })
+    expect((visibility as HTMLInputElement).disabled).toBe(true)
   })
 
   it('marks only a confirmed missing reference and leaves native or unavailable state unmarked', async () => {

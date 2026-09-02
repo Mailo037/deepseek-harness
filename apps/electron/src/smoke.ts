@@ -8,8 +8,10 @@
  */
 
 import { bootWebHost } from './host.ts'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 
 const host = await bootWebHost({ port: 0 })
+console.log(`ELECTRON_HOST_PRESETS ${JSON.stringify((await host.ctx.agentPresets.list()).map(preset => preset.id).sort())}`)
 console.log(`ELECTRON_HOST_READY ${host.url}`)
 
 let requested = false

@@ -10,11 +10,11 @@ Harness Remote is distributed as an Android APK, so users otherwise need to find
 
 ## Decision
 
-At application startup, `AppUpdatePlugin` makes one best-effort request to `https://api.github.com/repos/Mailo037/deepseek-harness/releases/latest`. It accepts only a published, non-draft, non-prerelease Release whose tag is exactly `android-vMAJOR.MINOR.PATCH` and whose asset is exactly `harness-remote-android-vMAJOR.MINOR.PATCH.apk`. `ReleaseVersion` compares all three numeric components, so a stable update cannot be mistaken for a preview or a downgrade.
+At application startup, `AppUpdatePlugin` makes one best-effort request to `https://api.github.com/repos/Mailo037/deepseek-harness/releases?per_page=100` and selects the highest Android version in that page. It accepts only a published, non-draft, non-prerelease Release whose tag is exactly `android-vMAJOR.MINOR.PATCH` and whose asset is exactly `harness-remote-android-vMAJOR.MINOR.PATCH.apk`. The asset URL must match that repository, tag, and filename. `ReleaseVersion` compares all three numeric components, so unrelated desktop releases do not mask an Android update and a stable update cannot be mistaken for a preview or a downgrade.
 
 The plugin downloads the selected asset into the app-private `cache/updates` directory. Before opening an installer it requires the app package id, the declared release version, a version code greater than the installed APK, and an exact installed signing certificate match. `FileProvider` exposes only that cache directory to an `ACTION_VIEW` package-installer intent. Android retains the system install confirmation and any required unknown-source authorization; the app never opens a browser or GitHub page and never installs silently.
 
-The Android `versionName` comes from `apps/android/package.json`; `native/app.build.gradle` holds the initial version code of `1`. Each later Android Release increases that version code while retaining the signing certificate. `scripts/sync-native.mjs` copies native source, resources, assets, and JVM tests into Capacitor's generated Gradle project, and the Android workflow invokes the same sync command.
+The Android `versionName` comes from `apps/android/package.json`; `native/app.build.gradle` holds the monotonically increasing version code. Each later Android Release increases that version code while retaining the signing certificate. `scripts/sync-native.mjs` copies native source, resources, assets, and JVM tests into Capacitor's generated Gradle project, and the Android workflow invokes the same sync command.
 
 ## Testing
 

@@ -24,11 +24,13 @@ if (packaged && (executable === undefined || !existsSync(executable))) {
 }
 
 const smokeHome = mkdtempSync(join(tmpdir(), 'dsh-electron-window-'))
+const readyMarker = join(smokeHome, 'window-ready')
 const child = spawn(command, args, {
   env: {
     ...process.env,
     DSH_HOME: smokeHome,
     DSH_ELECTRON_SMOKE: '1',
+    DSH_ELECTRON_SMOKE_READY: readyMarker,
     DSH_ELECTRON_DISABLE_AUTO_UPDATE: '1',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -48,8 +50,9 @@ child.on('error', error => {
 })
 child.on('exit', code => {
   clearTimeout(timeout)
+  const windowReady = existsSync(readyMarker)
   rmSync(smokeHome, { recursive: true, force: true })
-  if (code !== 0 || !output.includes('ELECTRON_WINDOW_READY')) {
+  if (code !== 0 || !windowReady) {
     process.stderr.write(`Electron smoke failed (exit ${String(code)}).\n${output}`)
     process.exitCode = 1
   }

@@ -31,7 +31,7 @@ export interface UpdatePresenter {
 }
 
 /** Message and progress state kept in the Electron main process. */
-export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
 
 /** Result exposed to the main entry for testable phase observation. */
 export interface DesktopUpdateState {
@@ -56,12 +56,12 @@ export class DesktopUpdater {
     this.updater.autoDownload = false
     // A downloaded installer remains pending until the user chooses restart.
     this.updater.autoInstallOnAppQuit = false
-    this.updater.on('checking-for-update', () => this.onChecking())
-    this.updater.on('update-available', info => this.onAvailable(readVersion(info)))
-    this.updater.on('update-not-available', () => this.onNotAvailable())
-    this.updater.on('download-progress', progress => this.onProgress(readPercent(progress)))
-    this.updater.on('update-downloaded', info => this.onDownloaded(readVersion(info)))
-    this.updater.on('error', error => this.onError(error))
+    this.updater.on('checking-for-update', () => { this.onChecking() })
+    this.updater.on('update-available', (info) => { this.onAvailable(readVersion(info)) })
+    this.updater.on('update-not-available', () => { this.onNotAvailable() })
+    this.updater.on('download-progress', (progress) => { this.onProgress(readPercent(progress)) })
+    this.updater.on('update-downloaded', (info) => { this.onDownloaded(readVersion(info)) })
+    this.updater.on('error', (error) => { this.onError(error) })
   }
 
   /** Current visible update phase. */
@@ -115,8 +115,8 @@ export class DesktopUpdater {
       if (response !== 0 || this.state.phase !== 'available') return
       this.state = { phase: 'downloading', version, error: null }
       this.presenter.notify('DeepSeek Harness', `Downloading version ${version}…`)
-      void this.updater.downloadUpdate().catch(error => this.onError(error))
-    }).catch(error => this.onError(error))
+      void this.updater.downloadUpdate().catch((error: unknown) => { this.onError(error) })
+    }).catch((error: unknown) => { this.onError(error) })
   }
 
   /** Record a clean no-update check without interrupting the user. */
@@ -145,7 +145,7 @@ export class DesktopUpdater {
       noLink: true,
     }).then(({ response }) => {
       if (response === 0 && this.state.phase === 'downloaded') this.updater.quitAndInstall()
-    }).catch(error => this.onError(error))
+    }).catch((error: unknown) => { this.onError(error) })
   }
 
   /** Report updater failures without attempting a fallback installer or restart. */

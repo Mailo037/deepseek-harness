@@ -658,7 +658,7 @@ describe('subagent ownership fence', () => {
     expect(response.result.ok).toBe(true)
     expect(prepend).toHaveBeenCalledOnce()
     expect(prepend).toHaveBeenCalledWith(expect.objectContaining({
-      source: { kind: 'user', rpcId: expect.any(String) },
+      source: { kind: 'user', rpcId: expect.any(String) as unknown },
     }))
     expect(followup).not.toHaveBeenCalled()
     expect(steer).not.toHaveBeenCalled()

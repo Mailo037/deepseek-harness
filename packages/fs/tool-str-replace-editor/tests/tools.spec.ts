@@ -12,6 +12,7 @@ import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
@@ -78,6 +79,7 @@ async function setup(
     await ctx.plugin(LocalFileSystem, { cwd: root })
   } else {
     await ctx.plugin(SandboxPolicy, { mode: options.sandboxMode, workspaceRoot: root })
+    await ctx.plugin(FileSettingsProvider, { path: join(root, 'settings.yaml') })
     await ctx.plugin(SandboxedFileSystem, { cwd: root })
   }
   if (options.fsPolicy === true) await ctx.plugin(FsPolicy)

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-02-remote-device-plane.md
-2026-09-02-remote-device-plane.md: 6fb798578e5d6d4445ec60622a1081b5e869e716
-2026-09-02-remote-device-plane.zh.md: 49e6f6d1e9cacd2c7063af0343ab48d5f925503e
+2026-09-02-remote-device-plane.md: f82c10514d7243fc05320f83e3755ae71c3dbaff
+2026-09-02-remote-device-plane.zh.md: b427a1f322ed49d9d7b6bba5054265529c072c9e

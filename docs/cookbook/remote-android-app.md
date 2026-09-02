@@ -2,15 +2,9 @@
 
 English | [中文](remote-android-app.zh.md)
 
-A step-by-step guide to controlling the Harness Web GUI from an Android phone
-via the [Harness Remote app](../../apps/android/README.md). The phone becomes a
-remote client of the PC that runs `dsh --profile web`; the app is a thin shell
-(QR pairing + WebView + notification service) and never bundles the GUI.
+A step-by-step guide to controlling the Harness Web GUI from an Android phone via the [Harness Remote app](../../apps/android/README.md). The phone becomes a remote client of the PC that runs `dsh --profile web`; the app is a thin shell (QR pairing + WebView + notification service) and never bundles the GUI.
 
-Prerequisites: a PC running the Harness checkout with the remote plane mounted
-(it is part of the `web` profile since the [remote device plane Agent Note](../../.agents/notes/implemented/architecture/2026-09-02-remote-device-plane.md)),
-a phone on the same network (or a tunnel), and the app APK built from
-[`apps/android`](../../apps/android/README.md).
+Prerequisites: a PC running the Harness checkout with the remote plane mounted (it is part of the `web` profile since the [remote device plane Agent Note](../../.agents/notes/implemented/architecture/2026-09-02-remote-device-plane.md)), a phone on the same network (or a tunnel), and the app APK built from [`apps/android`](../../apps/android/README.md).
 
 ## 1. Start the web profile with remote pairing
 
@@ -20,13 +14,9 @@ On the PC:
 dsh --profile web
 ```
 
-Open the GUI (`http://127.0.0.1:3080`), then **Settings → 远程设备 / Remote
-devices → 生成配对码 / Generate pairing code**. The card shows a QR code and the
-expiry time; the JSON payload text stays masked behind a Show/Hide toggle (it
-remains copyable while masked).
+Open the GUI (`http://127.0.0.1:3080`), then **Settings → 远程设备 / Remote devices → 生成配对码 / Generate pairing code**. The card shows a QR code and the expiry time; the JSON payload text stays masked behind a Show/Hide toggle (it remains copyable while masked).
 
-For phone access over the LAN, the browser API needs the PC's LAN address in
-the trust fence — pass it on startup:
+For phone access over the LAN, the browser API needs the PC's LAN address in the trust fence — pass it on startup:
 
 ```sh
 dsh --profile web --trusted-host 192.168.1.5:3080
@@ -34,33 +24,21 @@ dsh --profile web --trusted-host 192.168.1.5:3080
 
 ## 2. Pair the phone
 
-In the app: **Scan QR Code**. The app tries the endpoints from the QR payload
-in order (auto-detected LAN addresses first, then the configured extras),
-performs the `pair` handshake over the device channel
-(`ws://<pc>/remote/device`), stores the device secret, and opens the GUI in a
-full-screen iframe.
+In the app: **Scan QR Code**. The app tries the endpoints from the QR payload in order (auto-detected LAN addresses first, then the configured extras), performs the `pair` handshake over the device channel (`ws://<pc>/remote/device`), stores the device secret, and opens the GUI in a full-screen iframe.
 
-Manual fallback: enter the server URL (`192.168.1.5:3080`) and the pairing
-token in the app's manual fields.
+Manual fallback: enter the server URL (`192.168.1.5:3080`) and the pairing token in the app's manual fields.
 
 ## 3. What happens next
 
-- The **foreground notification service** connects to the device channel with
-  the stored secret and posts an Android notification whenever the host pushes
-  a `turn-error` or `turn-completed` frame (a turn that ended in an error, or a
-  completed turn). It reconnects with backoff and keeps working while the app
-  is backgrounded.
-- The **GUI iframe** loads the current web GUI fresh from the PC on every
-  connect — GUI improvements on the PC never require an app update.
-- If the PC is unreachable, the app shows the connection-lost screen with a
-  retry button; if the phone loses network, it shows the offline banner.
+- The **foreground notification service** connects to the device channel with the stored secret and posts an Android notification whenever the host pushes a `turn-error` or `turn-completed` frame (a turn that ended in an error, or a completed turn). It reconnects with backoff and keeps working while the app is backgrounded.
+- The **GUI iframe** loads the current web GUI fresh from the PC on every connect — GUI improvements on the PC never require an app update.
+- If the PC is unreachable, the app shows the connection-lost screen with a retry button; if the phone loses network, it shows the offline banner.
 
 ## 4. Revoke a device
 
-On the PC, **Settings → Remote devices → 断开连接 / Disconnect** next to the
-phone. The host terminates the socket immediately, deletes the device record,
-and invalidates its secret — the phone cannot reconnect until it scans a new
-pairing code.
+On the PC, **Settings → Remote devices → 断开连接 / Disconnect** next to the phone. The host terminates the socket immediately, deletes the device record, and invalidates its secret — the phone cannot reconnect until it scans a new pairing code.
+
+<a id="remote-access-with-tailscale"></a>
 
 ## Remote access with Tailscale
 

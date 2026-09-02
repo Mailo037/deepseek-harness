@@ -12,6 +12,7 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |
 | `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
+| `dsh reset` | Interactively delete chat data or the complete Harness home. |
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
 
@@ -39,6 +40,12 @@ The tree composes over an empty root:
 Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
 
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
+
+## Resetting user data
+
+Run `dsh reset`, or `pnpm dsh:reset` from a source checkout, while no Harness app is running. The command prints the resolved `$DSH_HOME`, asks whether to delete chat data or the complete home, and performs no deletion until one final `y/N` confirmation.
+
+The chat-only option removes `sessions`, `attachments`, and `storages`. It preserves `settings.yaml`, `.credentials.yaml`, profiles, skills, model configuration, and API credentials. The complete option removes the entire resolved Harness home. The command refuses to treat a filesystem root, the user home directory, or the current working directory as `$DSH_HOME`.
 
 The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.
 

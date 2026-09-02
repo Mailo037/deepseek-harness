@@ -80,7 +80,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function providerTitle(page: HistoryPage): string | undefined {
   for (let index = page.events.length - 1; index >= 0; index--) {
-    const event = page.events[index]!.event
+    const event = page.events[index].event
     if (event.type !== 'session/title' || !isRecord(event.data)) continue
     const source = event.data.source
     if (typeof event.data.title === 'string' && isRecord(source) && source.kind === 'provider') {
@@ -128,7 +128,7 @@ async function screen(page: Page, name: string): Promise<void> {
 /** First column track (px string) of the frame grid. */
 async function firstTrack(page: Page): Promise<string> {
   return (await page.locator('[class*="frame"]').evaluate(
-    el => getComputedStyle(el).gridTemplateColumns)).split(' ')[0]!
+    el => getComputedStyle(el).gridTemplateColumns)).split(' ')[0]
 }
 
 /** Last column track (details) as a number of pixels. */

@@ -61,7 +61,7 @@ private class AppUpdateChecker(private val context: Context) {
 
     fun checkAndOpenInstaller() {
         val current = ReleaseVersion.parseStableTag("android-v${currentVersionName()}") ?: return
-        val release = latestRelease() ?: return
+        val release = newestAndroidRelease() ?: return
         if (release.version <= current) return
         val apk = download(release) ?: return
         if (!isValidUpdate(apk, release.version)) {
@@ -71,25 +71,35 @@ private class AppUpdateChecker(private val context: Context) {
         openInstaller(apk)
     }
 
-    private fun latestRelease(): ReleaseApk? {
+    private fun newestAndroidRelease(): ReleaseApk? {
         val request = Request.Builder()
-            .url(LATEST_RELEASE_URL)
+            .url(RELEASES_URL)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "Harness-Remote-Android")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body ?: return null
-            val release = JSONObject(body.string())
-            if (release.optBoolean("draft") || release.optBoolean("prerelease")) return null
-            val version = ReleaseVersion.parseStableTag(release.optString("tag_name")) ?: return null
-            val expectedName = "harness-remote-${release.optString("tag_name")}.apk"
-            val assets = release.optJSONArray("assets") ?: return null
-            val asset = assets.firstMatching { it.optString("name") == expectedName } ?: return null
-            val url = asset.optString("browser_download_url")
-            if (!isOfficialReleaseAsset(url)) return null
-            return ReleaseApk(version, url, expectedName)
+            val releases = JSONArray(body.string())
+            var newest: ReleaseApk? = null
+            for (index in 0 until releases.length()) {
+                val candidate = releaseApk(releases.optJSONObject(index)) ?: continue
+                if (newest == null || candidate.version > newest.version) newest = candidate
+            }
+            return newest
         }
+    }
+
+    private fun releaseApk(release: JSONObject?): ReleaseApk? {
+        if (release == null || release.optBoolean("draft") || release.optBoolean("prerelease")) return null
+        val tag = release.optString("tag_name")
+        val version = ReleaseVersion.parseStableTag(tag) ?: return null
+        val expectedName = "harness-remote-$tag.apk"
+        val assets = release.optJSONArray("assets") ?: return null
+        val asset = assets.firstMatching { it.optString("name") == expectedName } ?: return null
+        val url = asset.optString("browser_download_url")
+        if (!isOfficialReleaseAsset(url, tag, expectedName)) return null
+        return ReleaseApk(version, url, expectedName)
     }
 
     private fun download(release: ReleaseApk): File? {
@@ -150,9 +160,9 @@ private class AppUpdateChecker(private val context: Context) {
         return signers?.map { signer -> Base64.encodeToString(signer.toByteArray(), Base64.NO_WRAP) }?.sorted()
     }
 
-    private fun isOfficialReleaseAsset(url: String): Boolean = try {
+    private fun isOfficialReleaseAsset(url: String, tag: String, fileName: String): Boolean = try {
         val parsed = url.toHttpUrlOrNull() ?: return false
-        parsed.isHttps && parsed.host == "github.com" && parsed.encodedPath.startsWith(RELEASE_ASSET_PATH)
+        parsed.isHttps && parsed.host == "github.com" && parsed.encodedPath == "$RELEASE_ASSET_PATH$tag/$fileName"
     } catch (_: IllegalArgumentException) {
         false
     }
@@ -166,7 +176,7 @@ private class AppUpdateChecker(private val context: Context) {
     }
 
     companion object {
-        private const val LATEST_RELEASE_URL = "https://api.github.com/repos/Mailo037/deepseek-harness/releases/latest"
+        private const val RELEASES_URL = "https://api.github.com/repos/Mailo037/deepseek-harness/releases?per_page=100"
         private const val RELEASE_ASSET_PATH = "/Mailo037/deepseek-harness/releases/download/"
         private const val UPDATE_DIRECTORY = "updates"
         private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
