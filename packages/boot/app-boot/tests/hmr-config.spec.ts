@@ -9,11 +9,17 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { describe, expect, it, vi } from 'vitest'
 
-async function bootHmr(dir: string, root: string[] = [], usePolling?: boolean): Promise<Context> {
+async function bootHmr(
+  dir: string,
+  root: string[] = [],
+  usePolling?: boolean,
+  beforeHmr?: () => void,
+): Promise<Context> {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   await ctx.plugin(Loader)
   await ctx.plugin(Timer)
+  beforeHmr?.()
   await ctx.plugin(Hmr, {
     root,
     ignored: [],
@@ -32,6 +38,24 @@ async function eventually(test: () => boolean, message: string): Promise<void> {
 }
 
 describe('HMR exact config paths', () => {
+  it('starts without a script argument in an embedded host', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-embedded-'))
+    const previousMainPath = process.argv[1]
+    try {
+      const ctx = await bootHmr(dir, [], undefined, () => {
+        Reflect.deleteProperty(process.argv, '1')
+      })
+      await ctx.fiber.dispose()
+    } finally {
+      if (previousMainPath === undefined) {
+        Reflect.deleteProperty(process.argv, '1')
+      } else {
+        process.argv[1] = previousMainPath
+      }
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('observes module changes when its watch base is a filesystem alias', { timeout: 30_000 }, async () => {
     const target = mkdtempSync(join(tmpdir(), 'dsh-hmr-module-canonical-'))
     const alias = `${target}-alias`

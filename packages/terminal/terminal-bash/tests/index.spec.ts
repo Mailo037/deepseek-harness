@@ -391,7 +391,7 @@ describe('BashTerminalBackend startup rollback', () => {
         const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : 'PowerShell 7.6.4\n',
+            viewport: second ? 'dsh> ' : '',
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -409,6 +409,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     await backend.spawn(spec(agent(ctx)))
     expect(sends).toHaveLength(2)
+    expect(sends[0]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
     expect(sends[1]).toMatchObject({ text: '', submit: false })
     expect(session.motd).toBe('dsh> ')
   })

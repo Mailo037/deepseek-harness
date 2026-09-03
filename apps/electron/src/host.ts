@@ -10,9 +10,9 @@
  * @module @deepseek-ai/dsh-electron/host
  */
 
-import { writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -37,6 +37,24 @@ const NAME = 'dsh-electron'
 /** Absolute path of this app's package.json, resolved via self-reference so it works in both source and built layouts. */
 const _require = createRequire(import.meta.url)
 const INSTALL_ANCHOR = _require.resolve('@deepseek-ai/dsh-electron/package.json')
+
+/**
+ * Return the physical package manifest used as the profile module-link anchor.
+ * Electron resolves JavaScript through `app.asar`, but OS junctions cannot
+ * target that virtual archive path; packaged dependencies therefore live in
+ * the builder's matching `app.asar.unpacked` tree.
+ * @param anchor - resolved application package manifest.
+ * @returns the source anchor, or its packaged physical counterpart.
+ */
+export function physicalInstallAnchor(anchor: string): string {
+  const archiveSegment = `${sep}app.asar${sep}`
+  if (!anchor.includes(archiveSegment)) return anchor
+  const physical = anchor.replace(archiveSegment, `${sep}app.asar.unpacked${sep}`)
+  if (!existsSync(physical)) {
+    throw new Error(`${NAME}: packaged runtime anchor unavailable: ${physical}`)
+  }
+  return physical
+}
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = join(dirname(INSTALL_ANCHOR), 'config', 'agent-presets')
@@ -110,7 +128,7 @@ export interface WebHost {
  */
 export async function bootWebHost(options: BootWebHostOptions = {}): Promise<WebHost> {
   const environment = loadLayeredEnv(NAME)
-  healProfilesModuleFallback(INSTALL_ANCHOR)
+  healProfilesModuleFallback(physicalInstallAnchor(INSTALL_ANCHOR))
   const profile = loadProfile(NAME, 'web', INSTALL_ANCHOR)
   // The root is always rewritten: the whole composition is patch layers, and
   // the vendored Loader's tree write-back can bake composed rows into this

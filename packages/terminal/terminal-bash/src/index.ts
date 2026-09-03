@@ -124,13 +124,14 @@ async function startupSession(
     // prompt is actually visible (in the viewport or the retained scrollback
     // when it landed between sends), bounded by the send deadline.
     let viewport = ''
+    let bootstrapSubmitted = false
     for (;;) {
-      const first = viewport.length === 0
       const operation = session.startSend({
-        text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
-        submit: first,
+        text: bootstrapSubmitted ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: !bootstrapSubmitted,
         ...signal !== undefined ? { signal } : {},
       })
+      bootstrapSubmitted = true
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')

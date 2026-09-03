@@ -217,12 +217,11 @@ class Hmr extends Service {
 
     // Collect externals before opening the watcher so every post-ready change
     // is observed by listeners that already have their classification state.
-    const mainUrl = pathToFileURL(resolve(process.argv[1])).href
-    const mainJob = this.internal.loadCache.get(mainUrl)
-    if (mainJob) {
-      this.externals = await loadDependencies(mainJob)
-    } else {
-      this.externals = new Set()
+    const mainPath = process.argv[1]
+    this.externals = new Set()
+    if (typeof mainPath === 'string') {
+      const mainJob = this.internal.loadCache.get(pathToFileURL(resolve(mainPath)).href)
+      if (mainJob) this.externals = await loadDependencies(mainJob)
     }
 
     this.watcher = watch(root, {

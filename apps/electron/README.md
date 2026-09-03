@@ -39,7 +39,7 @@ The desktop app needs a built frontend dist (`apps/web/dist`), which the reposit
 
 `pnpm --filter @deepseek-ai/dsh-electron run package:win` builds the complete official client/runtime graph, then creates an NSIS installer in `apps/electron/release/`. `package:dir` creates the same unpacked Windows application, and `smoke:package` launches that application with the updater disabled and an isolated first-run home, waits for the real Electron window to load, and verifies its clean exit.
 
-`electron-builder.yml` packages the emitted Electron main tree, shipped agent presets, runtime dependencies, and the built `@deepseek-ai/dsh-web-frontend` dist that `dsh-web-app` resolves through its package export. The Windows executable and installer use the committed application id, product name, and `.ico` icon.
+`electron-builder.yml` packages the emitted Electron main tree, shipped agent presets, runtime dependencies, and the built `@deepseek-ai/dsh-web-frontend` dist that `dsh-web-app` resolves through its package export. `apps/electron` declares runtime peers imported by the main process directly because electron-builder does not discover peer-only workspace packages. Runtime packages are placed under `app.asar.unpacked`, and the profile module fallback links to that physical tree because Windows junctions cannot traverse virtual `app.asar` paths. The Windows executable and installer use the committed application id, product name, and `.ico` icon.
 
 Shipped presets resolve from the application's package manifest, independently of the compiled module directory or process working directory. The built-host smoke verifies the `code`, `cordis`, `minimal`, and `standard` roster before serving the GUI.
 
@@ -69,7 +69,7 @@ pnpm --filter @deepseek-ai/dsh-electron run test
 
 After a repository build, the host smoke test boots the real web profile in a plain-Node subprocess (the same boot path the Electron main uses, minus Electron), asserts the served page carries `window.__DSH_BOOT__`, and verifies clean shutdown. Source-only test runs skip this built-runtime test. The packaged smoke uses a readiness file under its isolated temporary home because Windows GUI executables do not reliably forward standard output. Emitted Electron files exclude source and declaration maps from published packages.
 
-`tests/updater.spec.ts` pins the updater's two explicit approvals and error behavior. `tests/distribution.spec.ts` pins the NSIS, resource, signing-verification, and publish configuration. `smoke:package` is the built-product smoke; it does not publish or contact the update feed.
+`tests/updater.spec.ts` pins the updater's two explicit approvals and error behavior. `tests/distribution.spec.ts` pins the NSIS, resource, signing-verification, publish configuration, and complete preset/runtime-peer dependency closure. `smoke:package` is the built-product smoke; it does not publish or contact the update feed.
 
 ## Known limitations
 

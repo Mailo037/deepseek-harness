@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-electron-windows-distribution-and-updates.md
-2026-08-22-electron-windows-distribution-and-updates.md: 33dbf5522fa2ad559c1dcdda6d120b0edabf4965
-2026-08-22-electron-windows-distribution-and-updates.zh.md: 07816d9053f1d5231a8f27887e66d72ea305bc18
+2026-08-22-electron-windows-distribution-and-updates.md: 10a3dd386d483164b716cba59f7156e16ed75723
+2026-08-22-electron-windows-distribution-and-updates.zh.md: 06e95bcd51116082e322ce4e09105d1e783eaa7c

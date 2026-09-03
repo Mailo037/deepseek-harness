@@ -10,7 +10,7 @@ The Electron app ran from a checkout but did not produce a Windows installer, ca
 
 ## Decision
 
-`dsh-electron` uses electron-builder to create an x64 NSIS installer with its emitted main tree, configuration, runtime dependencies, bundled web frontend, application metadata, and Windows icon. The normal package command always passes `--publish never`; the protected tag-bound workflow is the only path that signs and uploads release artifacts.
+`dsh-electron` uses electron-builder to create an x64 NSIS installer with its emitted main tree, configuration, runtime dependencies, bundled web frontend, application metadata, and Windows icon. Main-process runtime peers are direct application dependencies because electron-builder traverses production dependencies but does not include a workspace package reached only through a peer declaration. Runtime packages and the application manifest are unpacked beside the archive; profile module fallback junctions target this physical `app.asar.unpacked` tree because Windows cannot traverse a junction into Electron's virtual `app.asar` filesystem. Packaged GUI startup has no script at `process.argv[1]`, so vendored HMR treats that absence as an empty main-module dependency set while retaining config-file watching. The normal package command always passes `--publish never`; the protected tag-bound workflow is the only path that signs and uploads release artifacts.
 
 electron-builder obtains Windows signing credentials only from `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` in the protected workflow environment. Source configuration contains neither a certificate path nor a credential, and Windows update downloads retain Authenticode verification.
 
@@ -24,9 +24,11 @@ Installed applications use `electron-updater` against the configured GitHub rele
 
 **Keep signing fields in the builder configuration.** Environment-only credentials prevent certificate locations and passwords from entering source, logs, or a published package.
 
+**Keep every runtime package inside `app.asar`.** The Electron loader can read those virtual paths, but OS-level profile junctions cannot; unpacking the runtime dependency tree retains ASAR for application code while giving the junctions real targets.
+
 ## Testing
 
-The updater unit tests cover periodic checks, the two approval points, progress, and errors. Distribution tests pin the NSIS target, icon, shipped resources, verification setting, release provider, and absence of signing material. The package smoke starts the unpacked Electron product with updater traffic disabled, waits for a readiness file written after the real window loads, and observes clean shutdown. A file is required because Windows GUI executables do not reliably forward standard output. The plain-Node host smoke requires built runtime dependencies and is skipped in source-only test lanes. Electron's emitted tree excludes source and declaration maps so npm tarballs satisfy the release archive policy.
+The updater unit tests cover periodic checks, the two approval points, progress, and errors. Distribution tests pin the NSIS target, icon, shipped resources, verification setting, release provider, absence of signing material, and the complete preset/runtime-peer dependency closure. The HMR regression starts the service after removing the embedded host's script argument. The package smoke starts the unpacked Electron product with updater traffic disabled, which also proves that main-process runtime peers entered the packaged dependency graph, waits for a readiness file written after the real window loads, and observes clean shutdown. A file is required because Windows GUI executables do not reliably forward standard output. The plain-Node host smoke requires built runtime dependencies and is skipped in source-only test lanes. Electron's emitted tree excludes source and declaration maps so npm tarballs satisfy the release archive policy.
 
 ## Consequences
 

@@ -11,7 +11,8 @@ files:
   - "!**/*.map"
 asar: true
 asarUnpack:
-  - "**/*.node"
+  - package.json
+  - node_modules/**
 win:
   target:
     - target: nsis

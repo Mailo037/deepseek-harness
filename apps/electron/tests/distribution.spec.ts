@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { verifyRuntimeClosure } from '../../../scripts/verify-runtime-closure.ts'
 import { assertFileUnchanged, distributionPaths, fingerprintFile } from '../scripts/package-paths.mjs'
 
 const BUILDER_CONFIG = fileURLToPath(new URL('../electron-builder.yml', import.meta.url))
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 
 describe('Electron distribution configuration', () => {
   it('builds a signed-when-credentials-exist NSIS artifact with the web runtime resources', () => {
@@ -15,6 +17,8 @@ describe('Electron distribution configuration', () => {
     expect(config).toContain('icon: build/icon.ico')
     expect(config).toContain('lib/types/**')
     expect(config).toContain('config/**')
+    expect(config).toContain('asarUnpack:')
+    expect(config).toContain('node_modules/**')
     expect(config).toContain('verifyUpdateCodeSignature: true')
     expect(config).toContain('provider: github')
     expect(config).toContain('repo: deepseek-harness')
@@ -24,6 +28,13 @@ describe('Electron distribution configuration', () => {
     const config = readFileSync(BUILDER_CONFIG, 'utf8')
 
     expect(config).not.toMatch(/(?:CSC|certificate(?:File|Password)|privateKey)/i)
+  })
+
+  it('ships the complete preset and required-peer runtime closure', async () => {
+    const result = await verifyRuntimeClosure(REPOSITORY_ROOT, 'apps/electron/package.json')
+
+    expect(result.failures).toEqual([])
+    expect(result.workspacePackageCount).toBeGreaterThan(0)
   })
 
   it('pins packaging below apps/electron and guards the source root package manifest', () => {

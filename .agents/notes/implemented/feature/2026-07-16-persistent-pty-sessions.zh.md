@@ -72,7 +72,7 @@ UI 渲染约定精确且不携带位置信息。`terminal_send` 只为前台发�
 
 ### 本地就绪检测
 
-本地后端先识别受控 bash 启动时发出的私有 OSC prompt marker，并且只有在最近一个 marker 后的可打印尾部与受控 `PS1` 完全相等时才声明 prompt 就绪；除此之外，它还运行 3 个有界 fallback 层级。在 data callback 之间保留该尾部，可以适配 marker 与 prompt 被分开交付的情况；如果回显的输入或输出跟在延迟到达的先前 prompt 之后，要求尾部完全相等会拒绝该 prompt，使其无法完成当前 send。marker 在输出到达模型前被移除，使两个平台上的普通 shell 命令都无需固定等待静默阈值。尚未发布的 startup 不会把零输出静默视为就绪；timeout 会拒绝 spawn。若调用方取消在 startup 期间胜出，后端会关闭私有会话并原样抛出 `AbortSignal.reason`；尚不可观察的前台 PGID 不会再用查找错误覆盖取消原因。所有时间参数都是经校验的配置字段：`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs` 和 `timeoutMs`。
+本地后端先识别受控 bash 启动时发出的私有 OSC prompt marker，并且只有在最近一个 marker 后的可打印尾部与受控 `PS1` 完全相等时才声明 prompt 就绪；除此之外，它还运行 3 个有界 fallback 层级。在 data callback 之间保留该尾部，可以适配 marker 与 prompt 被分开交付的情况；如果回显的输入或输出跟在延迟到达的先前 prompt 之后，要求尾部完全相等会拒绝该 prompt，使其无法完成当前 send。即使缓慢的 pwsh 进程在推断空闲观察前尚未产生可打印输出，bootstrap 也只提交一次；后续 startup 观察不再提交输入，避免重复的 prompt setup 进入命令队列。marker 在输出到达模型前被移除，使两个平台上的普通 shell 命令都无需固定等待静默阈值。尚未发布的 startup 不会把零输出静默视为就绪；timeout 会拒绝 spawn。若调用方取消在 startup 期间胜出，后端会关闭私有会话并原样抛出 `AbortSignal.reason`；尚不可观察的前台 PGID 不会再用查找错误覆盖取消原因。所有时间参数都是经校验的配置字段：`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs` 和 `timeoutMs`。
 
 在 Linux 上，检查器从 `/proc/<shellPid>/stat` 读取 shell 的终端前台 PGID，枚举该进程组中的每个进程与线程，并检查它们当前的 syscall。Tier 1 只有观察到 stdin 等待才返回正结果：直接 `read(0)`、获准读取且含 fd 0 的 `select`/`pselect6` 或 `poll`/`ppoll` 参数，或者含 fd 0 的 epoll interest list。终端输入前就已存在的等待并不代表写入后就绪：必须先观察到同一 PGID 脱离该等待，之后再次进入等待才能使该次 send 完成；前台 PGID 发生变化则构成新的证据。无法读取的进程内存和未识别的 syscall 都是 miss，绝不作为正向猜测。架构表只包含对应 Linux UAPI 定义的 syscall number；不支持的架构跳过 Tier 1。
 

@@ -37,7 +37,7 @@ pnpm run dev:electron   # tsc -b && electron .
 
 `pnpm --filter @deepseek-ai/dsh-electron run package:win` 会构建完整的官方客户端/运行时依赖图，然后在 `apps/electron/release/` 创建 NSIS 安装包。`package:dir` 创建同一 Windows 应用的解包版本，`smoke:package` 会在禁用更新器并使用隔离的首次运行主目录的情况下启动该应用，等待真实 Electron 窗口加载，并验证其干净退出。
 
-`electron-builder.yml` 会打包已生成的 Electron 主进程树、随附的 agent preset、运行时依赖，以及由 `dsh-web-app` 通过 package export 解析的已构建 `@deepseek-ai/dsh-web-frontend` dist。Windows 可执行文件和安装包使用已提交的应用 id、产品名称和 `.ico` 图标。
+`electron-builder.yml` 会打包已生成的 Electron 主进程树、随附的 agent preset、运行时依赖，以及由 `dsh-web-app` 通过 package export 解析的已构建 `@deepseek-ai/dsh-web-frontend` dist。`apps/electron` 会直接声明主进程导入的运行时 peer，因为 electron-builder 不会发现仅作为 peer 存在的 workspace package。运行时 package 位于 `app.asar.unpacked` 下，而 profile 模块 fallback 会链接到该物理目录，因为 Windows junction 无法遍历虚拟 `app.asar` 路径。Windows 可执行文件和安装包使用已提交的应用 id、产品名称和 `.ico` 图标。
 
 随附预设从应用的包 manifest 解析，不依赖编译后模块目录或进程工作目录。已构建宿主冒烟测试会在提供 GUI 前验证 `code`、`cordis`、`minimal` 和 `standard` 预设列表。
 
@@ -67,7 +67,7 @@ pnpm --filter @deepseek-ai/dsh-electron run test
 
 仓库构建后，宿主冒烟测试在普通 Node 子进程中启动真实 Web 配置（与 Electron 主进程使用相同的启动路径，但不启动 Electron），断言所提供的页面包含 `window.__DSH_BOOT__`，并验证干净关闭。仅源码测试会跳过此已构建运行时测试。已打包应用的冒烟测试使用其隔离临时主目录中的就绪文件，因为 Windows GUI 可执行文件不能可靠地转发标准输出。生成的 Electron 文件不包含发布包中的源码映射和声明映射。
 
-`tests/updater.spec.ts` 固定更新器的两次明确批准和错误行为。`tests/distribution.spec.ts` 固定 NSIS、资源、签名验证和发布配置。`smoke:package` 是已构建产品的冒烟测试；它不会发布，也不会联系更新 feed。
+`tests/updater.spec.ts` 固定更新器的两次明确批准和错误行为。`tests/distribution.spec.ts` 固定 NSIS、资源、签名验证、发布配置，以及完整的 preset/运行时 peer 依赖闭包。`smoke:package` 是已构建产品的冒烟测试；它不会发布，也不会联系更新 feed。
 
 ## 已知限制
 

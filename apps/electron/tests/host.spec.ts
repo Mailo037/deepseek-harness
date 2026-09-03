@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { physicalInstallAnchor } from '../src/host.ts'
 
 /**
  * Boots the real web profile in a plain-Node subprocess (the same path the
@@ -13,6 +14,29 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
  */
 
 const SMOKE_ENTRY = fileURLToPath(new URL('../lib/types/smoke.js', import.meta.url))
+
+describe('Electron installation anchor', () => {
+  it('keeps source paths and maps packaged archive paths to physical dependencies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-electron-anchor-'))
+    try {
+      const source = join(root, 'package.json')
+      expect(physicalInstallAnchor(source)).toBe(source)
+
+      const archived = join(root, 'resources', 'app.asar', 'package.json')
+      const unpacked = join(root, 'resources', 'app.asar.unpacked', 'package.json')
+      mkdirSync(join(root, 'resources', 'app.asar.unpacked'), { recursive: true })
+      writeFileSync(unpacked, '{}\n')
+      expect(physicalInstallAnchor(archived)).toBe(unpacked)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a packaged build without its physical runtime anchor', () => {
+    const archived = join(tmpdir(), 'missing-dsh-electron', 'app.asar', 'package.json')
+    expect(() => physicalInstallAnchor(archived)).toThrow('packaged runtime anchor unavailable')
+  })
+})
 
 // The assembled Loader resolves package exports from built lib/ artifacts.
 // Clean-tree unit lanes leave this artifact-plane smoke to the build/release lane.
