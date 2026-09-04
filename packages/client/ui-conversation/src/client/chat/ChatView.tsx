@@ -26,6 +26,7 @@ import {
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { AssistantReasoningSeat } from './AssistantReasoningSeat.tsx'
 import { ToolCallGroup } from './ToolCallGroup.tsx'
 import { TurnWorkSummary } from './TurnWorkSummary.tsx'
 import { formatRunDuration } from './message-chrome.ts'
@@ -224,6 +225,13 @@ function isThinkOnly(node: ChatConversationViewNode): boolean {
     || (block.kind === 'text' && (block.text ?? '').trim() === ''))
 }
 
+/** Non-interrupted reasoning belongs to the work run even when prose follows it. */
+function hasGroupedReasoning(node: ChatConversationViewNode): boolean {
+  if (node.kind !== 'assistant-step') return false
+  const { blocks, status } = node.data as AssistantMeta
+  return status !== 'interrupted' && blocks?.some(block => block.kind === 'reasoning') === true
+}
+
 
 /** Wire tool names whose calls mutate files. */
 const EDIT_TOOL_NAMES = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'str_replace'])
@@ -401,6 +409,13 @@ export function ChatView({
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
+  // The node store keeps its identity during streaming. Observe placement and
+  // activity changes without subscribing the whole flow to every text delta.
+  useSession(s => s.chat.order.map((key) => {
+    const node = s.chat.nodes.get(key)
+    if (node === undefined) return ''
+    return `${Number(isThinkOnly(node))}${Number(hasGroupedReasoning(node))}${Number(runIsActive([node]))}`
+  }).join(':'))
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -698,8 +713,9 @@ export function ChatView({
   // renders as the bare row (no window chrome). Think-only steps join the
   // surrounding run the same way tool calls do — their reasoning belongs to
   // the tool-role window, not to the answer text in flow. Steps with visible
-  // text render in flow and split the run. An interrupted step stays in flow
-  // because its Stopped marker must never hide behind a work-summary fold.
+  // text keep their reasoning in the preceding run; prose splits the run.
+  // An interrupted step stays in flow because its Stopped marker must never
+  // hide behind a work-summary fold.
   interface FlowElement { readonly el: ReactNode; readonly fold: boolean }
   const foldableNode = (node: ChatConversationViewNode, closingSeq: number | null): boolean => {
     if (node.kind === 'tool-call' || node.kind === 'model-retry' || node.kind === 'context' || isThinkOnly(node)) return true
@@ -745,8 +761,17 @@ export function ChatView({
     }
     for (const key of keys) {
       const node = nodeStore.get(key)
+      if (node !== undefined && hasGroupedReasoning(node)) {
+        if (run === null) run = { toolKey: key, children: [], nodes: [] }
+        run.children.push(<AssistantReasoningSeat key={`reasoning:${key}`} nodeKey={key} useSession={useSession} t={t} />)
+        run.nodes.push(node)
+        if (isThinkOnly(node)) continue
+        flushRun()
+        out.push({ el: seat(key, true), fold: foldableNode(node, closingSeq) })
+        continue
+      }
       if (node !== undefined && (node.kind === 'tool-call' || node.kind === 'model-retry'
-        || node.kind === 'context' || isThinkOnly(node))) {
+        || node.kind === 'context')) {
         if (run === null) {
           run = { toolKey: key, children: [], nodes: [] }
         }

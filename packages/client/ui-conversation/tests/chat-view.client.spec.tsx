@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useEffect } from 'react'
 import type {
   AssistantMessageNode, CommandNode, CompactionSummaryNode, ConversationNode, ConversationSnapshot,
-  ModelRetryNode, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
+  ModelRetryNode, PartialAssistant, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
   TurnMaxTokensNode, UserMessageNode, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -594,6 +594,62 @@ describe('ChatView', () => {
     expect(scroll?.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeNull()
     // The answer text sits outside the group as before.
     expect(view.container.querySelector('[data-chat-flow-key="fixture:assistant:5"]')).toBeTruthy()
+  })
+
+  it('keeps trailing reasoning inside its group when the same step starts answering', () => {
+    const nodes = [user(1, 'go'), settledTool(2, 'a'), settledTool(3, 'b')]
+    let chat = chatSnapshotFixture({ nodes, partial: { turn: 1, step: 2, blocks: [] } })
+    const h = makeHarness({
+      chat,
+      running: true,
+    })
+    const stream = (partial: PartialAssistant): void => {
+      // Keep order, timeline, and store identity stable, as real text deltas do.
+      chat = { ...chatSnapshotFixture({ nodes, partial }, chat), timeline: chat.timeline }
+      h.set({ chat })
+    }
+    const view = render(<h.ChatView {...h.props} />)
+    const group = view.container.querySelector('[data-tool-group]') as HTMLElement
+    fireEvent.click(group.querySelector('button') as HTMLElement)
+    const tool = view.getByTestId('tool-seat-a')
+    act(() => {
+      stream({ turn: 1, step: 2, blocks: [{ kind: 'reasoning', text: 'checking' }] })
+    })
+    const think = view.getByRole('button', { name: /Think.*checking/u })
+    expect(think.closest('[data-tool-group]')).toBe(group)
+    fireEvent.click(think)
+    act(() => {
+      stream({ turn: 1, step: 2, blocks: [
+        { kind: 'reasoning', text: 'checking' }, { kind: 'text', text: 'The answer' },
+      ] })
+    })
+    expect(view.container.querySelector('[data-variant="think"]')?.closest('[data-tool-group]')).toBe(group)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    expect(think.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('The answer').closest('[data-tool-group]')).toBeNull()
+    expect(view.getByTestId('tool-seat-a')).toBe(tool)
+    fireEvent.click(group.querySelector('button') as HTMLElement)
+    expect(view.container.querySelector('[data-variant="think"]')).toBeNull()
+    expect(view.getByText('The answer')).toBeTruthy()
+    act(() => {
+      stream({ turn: 1, step: 2, blocks: [
+        { kind: 'reasoning', text: 'checking' }, { kind: 'text', text: 'The answer continues' },
+      ] })
+    })
+    expect(group.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('keeps settled mixed-step reasoning with preceding tools and answer text outside', () => {
+    const mixed = { ...assistant(4, ''), blocks: [
+      { kind: 'reasoning', text: 'checked' }, { kind: 'text', text: 'Done' },
+    ] } as AssistantMessageNode
+    const h = makeHarness({ nodes: [user(1, 'go'), settledTool(2, 'a'), settledTool(3, 'b'), mixed] })
+    const view = render(<h.ChatView {...h.props} />)
+    const group = view.container.querySelector('[data-tool-group]') as HTMLElement
+    expect(view.container.querySelector('[data-variant="think"]')).toBeNull()
+    fireEvent.click(group.querySelector('button') as HTMLElement)
+    expect(group.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    expect(view.getByText('Done').closest('[data-tool-group]')).toBeNull()
   })
 
   it('keeps an INTERRUPTED Think step in flow — the Stopped marker never joins the tool group', () => {

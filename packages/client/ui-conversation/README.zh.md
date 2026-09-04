@@ -50,6 +50,8 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会在该轮产生的所有 Assistant、Think、工具、重试与终态行之后物化一个有序的 `turn-tail` Conversation Node，稍后的 steering 消息仍位于已完成 footer 下方。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有 slot；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此从 cordis.yml 中移除该插件即可关闭该功能，而空 slot 以零成本渲染为空。收尾正文受同一个开关控制：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词条，并把结果接入 MarkdownText 的 `fileMentions` 扩展点——service 缺席时正文保持死文本。
 
+工具组会在同一助手步骤开始输出回答文本时保留相邻的 Think 行。推理仍位于前面的工作组内，文本和图片则在组外渲染；被中断的步骤保留可见的停止标记。流式输出的位置和活动状态变化会更新分组，但不会重新展开读者手动折叠的组（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-05-think-tool-group-placement.zh.md)）。
+
 ## 模型体验
 
 无。会话 UI 在浏览器中渲染会话历史与流；这里没有任何内容进入模型请求。

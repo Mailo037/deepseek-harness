@@ -50,6 +50,8 @@ The chat stats line takes its token accounting from the generic token-meter `tok
 
 A finished turn materializes one ordered `turn-tail` Conversation Node after every Assistant, Think, tool, retry, and terminal row produced by that turn, while a later steering message remains below the completed footer. Its engine-owned `TurnLocation` supplies the closing Assistant and Turn data; the renderer places the `conversation.chat.turnTail` chain before that node's IconActions and dispatches `TurnTailOwnerProps` containing the Turn, closing seq, and `openFile`. This package owns only the hole; `@deepseek-ai/dsh-client-ui-deliverables` accumulates mutation-tool `locations` into Turn data and owns the produced-files row, chip cap, and copy, so composing that plugin out of cordis.yml turns the feature off while the hole renders empty at zero cost. The closing prose participates through the same switch: the chat view asks the optional `chatFileMentions` service (ctx.get; provided by the same plugin) for a closing message's inline-code terms and threads the result into MarkdownText's `fileMentions` extension point — an absent service leaves the prose inert.
 
+Tool groups retain adjacent Think rows when the same assistant step starts emitting answer text. The reasoning remains inside the preceding work group, while text and images render outside it; interrupted steps retain their visible stopped marker. Streaming placement and activity changes update the group without reopening a reader's manual collapse ([decision](../../../.agents/notes/implemented/bug-fix/2026-09-05-think-tool-group-placement.md)).
+
 ## Model Experience
 
 None, as the conversation UI renders session history and streams in the browser; nothing here reaches a model request.

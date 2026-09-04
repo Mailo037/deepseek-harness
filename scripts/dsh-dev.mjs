@@ -3,7 +3,7 @@
  * dsh-dev — one-shot build & run helper for the Harness Remote flow.
  *
  *   node scripts/dsh-dev.mjs web [--trusted-host <ip>] [--full] [-- <dsh flags>]
- *       Build the web frontend, then serve the host GUI on the LAN so the
+ *       Build the harness and web frontend, then serve the host GUI on the LAN so the
  *       Android thin client can reach it, passing --trusted-host through.
  *       The LAN IP is auto-detected when --trusted-host is omitted.
  *   node scripts/dsh-dev.mjs build [--apk]
@@ -49,7 +49,7 @@ async function help() {
   console.log(`dsh-dev — build & run helper for Harness Remote
 
   web [--trusted-host <ip>] [--full] [-- <dsh flags>]
-      Build the web frontend, then serve the host GUI on the LAN.
+      Build the harness and web frontend, then serve the host GUI on the LAN.
       The LAN IP is auto-detected unless --trusted-host is given; extra
       flags after "--" go to the dsh invocation.
 
@@ -60,18 +60,14 @@ async function help() {
 Examples:
   pnpm dsh:web --trusted-host 192.168.1.5
   pnpm dsh:web                                # uses the detected LAN IP
-  pnpm dsh:web --full                          # also rebuild the harness
+  pnpm dsh:web --full                          # same complete build (optional)
   pnpm dsh:build --apk`)
 }
 
 async function main() {
   if (command === 'web') {
     const trustedHost = valueOf('--trusted-host') ?? detectedLanIp()
-    if (flag('--full')) {
-      await run(['build'])
-    } else {
-      await run(['build:web'])
-    }
+    await run(['build'])
     await run(['dsh', '--profile', 'web', '--trusted-host', trustedHost, ...passthrough()])
   } else if (command === 'build') {
     await run(['mobile:typecheck'])

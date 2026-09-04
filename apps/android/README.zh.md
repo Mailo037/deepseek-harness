@@ -75,16 +75,16 @@ App 会把匹配的 asset 下载到私有缓存，检查其 package id、version
 远程设备流程通常先构建 App，再提供 GUI 让手机访问（`dsh --profile web` 加 `--trusted-host`）。`dsh-dev` 辅助工具用一个命令完成两项工作：
 
 ```sh
-pnpm dsh:web --trusted-host 192.168.1.5   # build the web frontend, then serve the GUI on the LAN
+pnpm dsh:web --trusted-host 192.168.1.5   # build the harness and web frontend, then serve the GUI on the LAN
 pnpm dsh:web                              # --trusted-host defaults to the detected LAN IP
-pnpm dsh:web --full                       # also rebuild the harness before serving
+pnpm dsh:web --full                       # same complete build (optional)
 pnpm dsh:web -- --profile web --port 3080 # extra flags after "--" pass through to dsh
 
 pnpm dsh:build                            # typecheck + build the Android app web assets
 pnpm dsh:build --apk                      # ... also sync Capacitor and build the debug APK
 ```
 
-`dsh:web` 运行 `pnpm build:web`，然后执行 `pnpm dsh --profile web --trusted-host <ip>`，加入上述配对步骤所需的 trusted-host 围栏；除非显式传入 `--trusted-host`，否则会自动检测 LAN IP。
+`dsh:web` 先运行 `pnpm build`，生成主机插件、客户端模块和 Web 前端，再启动 `pnpm dsh --profile web --trusted-host <ip>`。构建失败会阻止启动。除非显式传入 `--trusted-host`，否则会自动检测 LAN IP；每次调用都会构建全部必需产物，因此 `--full` 是可选的。执行 `pnpm install` 后，即使仓库中没有构建产物，也可以使用此命令。直接运行 `pnpm dsh web` 则需要先执行 `pnpm build`。
 
 ## 首次配对
 

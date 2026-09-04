@@ -110,19 +110,16 @@ the phone can reach it (`dsh --profile web` plus `--trusted-host`). The
 `dsh-dev` helper does both from one command:
 
 ```sh
-pnpm dsh:web --trusted-host 192.168.1.5   # build the web frontend, then serve the GUI on the LAN
+pnpm dsh:web --trusted-host 192.168.1.5   # build the harness and web frontend, then serve the GUI on the LAN
 pnpm dsh:web                              # --trusted-host defaults to the detected LAN IP
-pnpm dsh:web --full                       # also rebuild the harness before serving
+pnpm dsh:web --full                       # same complete build (optional)
 pnpm dsh:web -- --profile web --port 3080 # extra flags after "--" pass through to dsh
 
 pnpm dsh:build                            # typecheck + build the Android app web assets
 pnpm dsh:build --apk                      # ... also sync Capacitor and build the debug APK
 ```
 
-`dsh:web` runs `pnpm build:web` and then
-`pnpm dsh --profile web --trusted-host <ip>`, adding the trusted-host fence
-from the pairing steps above; the LAN IP is auto-detected unless you pass
-`--trusted-host` explicitly.
+`dsh:web` runs `pnpm build` to generate the host plugins, client modules, and web frontend before starting `pnpm dsh --profile web --trusted-host <ip>`. A failed build stops startup. The LAN IP is auto-detected unless you pass `--trusted-host` explicitly; `--full` is optional because every invocation builds all required artifacts. After `pnpm install`, this command also works in a checkout without build output. Direct `pnpm dsh web` requires a prior `pnpm build`.
 
 ## Pairing the first time
 
