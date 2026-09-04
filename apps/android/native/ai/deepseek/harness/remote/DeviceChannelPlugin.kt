@@ -37,6 +37,11 @@ import org.json.JSONArray
 )
 class DeviceChannelPlugin : Plugin() {
 
+    override fun load() {
+        super.load()
+        activePlugin = this
+    }
+
     @PluginMethod
     fun start(call: PluginCall) {
         val wsUrls = call.getArray("wsUrls")
@@ -109,6 +114,15 @@ class DeviceChannelPlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun getLaunchSession(call: PluginCall) {
+        val data = JSObject()
+        val session = pendingSessionId
+        pendingSessionId = null
+        if (session != null) data.put("sessionId", session)
+        call.resolve(data)
+    }
+
     override fun handleOnDestroy() {
         if (activePlugin === this) activePlugin = null
         super.handleOnDestroy()
@@ -127,6 +141,22 @@ class DeviceChannelPlugin : Plugin() {
         /** The live plugin instance [DeviceChannelService] reports state through. */
         @Volatile
         private var activePlugin: DeviceChannelPlugin? = null
+
+        @Volatile
+        private var pendingSessionId: String? = null
+
+        /**
+         * Record a launch intent's session and notify active JS listeners.
+         */
+        @JvmStatic
+        fun handleIntent(intent: Intent?) {
+            val sessionId = intent?.getStringExtra("sessionId") ?: return
+            pendingSessionId = sessionId
+            val plugin = activePlugin ?: return
+            val data = JSObject()
+            data.put("sessionId", sessionId)
+            plugin.notifyListeners("openSession", data)
+        }
 
         /**
          * Report a channel-state change to JS listeners. Called by the

@@ -277,3 +277,14 @@ describe('the tab bar', () => {
     expect(selected(en.pairingHeading)).toBe(true)
   })
 })
+
+describe('the remote notice', () => {
+  it('renders a notice when isLoopback is false and skips device calls', () => {
+    const spies = renderSection({ isLoopback: false })
+    expect(screen.getByText(en.configureInWebGuiTitle)).toBeTruthy()
+    expect(screen.getByText(en.remoteDevicesRemoteDescription)).toBeTruthy()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(spies.listDevices).not.toHaveBeenCalled()
+    expect(spies.getAccessToken).not.toHaveBeenCalled()
+  })
+})

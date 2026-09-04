@@ -12,3 +12,23 @@ export function embeddedConnectionStateOf(value: unknown): EmbeddedConnectionSta
   if (message.type !== 'dsh/client-connection-state' || message.version !== 1) return null
   return message.state === 'connected' || message.state === 'reconnecting' ? message.state : null
 }
+
+/** Message sent to the embedded GUI to navigate to a specific session. */
+export interface OpenSessionMessage {
+  type: 'dsh/open-session'
+  version: 1
+  sessionId: string
+}
+
+/**
+ * Format an open-session message for the embedded GUI.
+ * @param sessionId - Session to open.
+ * @returns Serialized postMessage payload.
+ */
+export function openSessionMessageOf(sessionId: string): OpenSessionMessage {
+  return {
+    type: 'dsh/open-session',
+    version: 1,
+    sessionId,
+  }
+}

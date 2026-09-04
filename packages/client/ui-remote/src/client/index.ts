@@ -8,7 +8,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { RemoteDeviceId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle, RemoteDeviceId } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   RemoteSettingsSection,
   type RemoteSettingsSectionInjected,
@@ -87,12 +87,16 @@ export function apply(ctx: ClientContext): void {
     if (!result.ok) return { ok: false, reason: 'error' }
     return { ok: true }
   }
+  const connection = ctx.get('connection') as ConnectionHandle | undefined
+  const isLoopback = connection?.isLoopback ?? true
+
   const injected = (): RemoteSettingsSectionInjected => ({
     createPairing,
     listDevices,
     revokeDevice,
     getAccessToken,
     sendTailscaleSetup,
+    isLoopback,
   })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
@@ -106,7 +110,7 @@ export function apply(ctx: ClientContext): void {
 
   // ── Access restrictions section ──
   const fsDenyScope = ctx.settingsScope.bind<FsDenySettings>({ namespace: 'fs-deny' })
-  const fsDenyInjected = (): FsDenySectionInjected => ({ settingsScope: fsDenyScope })
+  const fsDenyInjected = (): FsDenySectionInjected => ({ settingsScope: fsDenyScope, isLoopback })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'fs-deny',

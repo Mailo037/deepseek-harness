@@ -36,6 +36,8 @@ export interface DeepSeekOnboardingInjected {
   requestWorkspace: (onSettled: (completed: boolean) => void) => boolean
   /** Feature copy. */
   t: (key: keyof typeof en) => string
+  /** Whether the connection is to loopback host (false when remote). */
+  isLoopback?: boolean | undefined
 }
 
 /** Slot owner props plus the feature's injected dependencies. */
@@ -47,6 +49,8 @@ function assertNever(_value: never): never {
   throw new Error('unexpected DeepSeek onboarding state')
 }
 
+import { shouldSuppressOnboarding } from './WelcomeNotice.tsx'
+
 /**
  * Prompt a first-run user for the official DeepSeek credential while no
  * provider can serve requests and that credential is writable. Unrepairable
@@ -56,6 +60,20 @@ function assertNever(_value: never): never {
  * @returns the onboarding modal or null when onboarding needs no intervention.
  */
 export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): ReactNode {
+  const { isLoopback, complete } = props
+  const suppress = shouldSuppressOnboarding(isLoopback)
+
+  useEffect(() => {
+    if (suppress) {
+      complete()
+    }
+  }, [suppress, complete])
+
+  if (suppress) return null
+  return <DeepSeekOnboardingDialogContent {...props} />
+}
+
+function DeepSeekOnboardingDialogContent(props: DeepSeekOnboardingDialogProps): ReactNode {
   const {
     complete, openSection, controller, useModels, useWorkspaces, api, schema, requestWorkspace, t,
   } = props

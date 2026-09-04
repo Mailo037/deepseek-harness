@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { embeddedConnectionStateOf } from '../src/ShellProtocol.ts'
+import { embeddedConnectionStateOf, openSessionMessageOf } from '../src/ShellProtocol.ts'
 
 describe('embeddedConnectionStateOf', () => {
   it('accepts the two version-one connection states', () => {
@@ -22,5 +22,13 @@ describe('embeddedConnectionStateOf', () => {
     expect(embeddedConnectionStateOf({
       type: 'dsh/client-connection-state', version: 1, state: 'offline',
     })).toBeNull()
+  })
+
+  it('formats open-session message with version 1 and target session', () => {
+    expect(openSessionMessageOf('session-123')).toEqual({
+      type: 'dsh/open-session',
+      version: 1,
+      sessionId: 'session-123',
+    })
   })
 })

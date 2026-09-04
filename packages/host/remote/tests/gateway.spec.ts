@@ -39,6 +39,7 @@ async function harness(): Promise<{
     pairingTtlSeconds: 300,
     notifyOnError: true,
     notifyOnCompleted: true,
+    notifyOnAttention: true,
     printPairingQr: false,
   })
   const gateway = ctx.get('device') as RemoteGateway

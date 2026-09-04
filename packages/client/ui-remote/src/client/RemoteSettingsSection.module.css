@@ -172,3 +172,28 @@
 .statusOffline {
   background: var(--dsw-alias-border-l2);
 }
+
+.remoteNotice {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+  border: 1px solid var(--dsw-alias-border-l2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.remoteNoticeTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.remoteNoticeDescription {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}

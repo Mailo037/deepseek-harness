@@ -13,6 +13,8 @@ export interface FsDenySettings {
 export interface FsDenySectionInjected {
   /** Bound settings scope for the fs-deny namespace. */
   settingsScope: SettingsScope<FsDenySettings>
+  /** Whether the connection is to loopback host (false when remote). */
+  isLoopback?: boolean | undefined
 }
 
 /** Section component props assembled by the slot renderer. */
@@ -28,7 +30,23 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error'
  * one deny pattern per line. Saving writes the `patterns` field through the
  * settings scope (the host fs-deny policy reads the same namespace).
  */
-export function FsDenySection({ t, settingsScope }: FsDenySectionProps): ReactNode {
+export function FsDenySection(props: FsDenySectionProps): ReactNode {
+  const { t, isLoopback } = props
+  if (isLoopback === false) {
+    return (
+      <div className={css.section}>
+        <SectionHeading title={t('fsDenyHeading')} description={t('fsDenyHint')} />
+        <div className={css.remoteNotice}>
+          <p className={css.remoteNoticeTitle}>{t('configureInWebGuiTitle')}</p>
+          <p className={css.remoteNoticeDescription}>{t('fsDenyRemoteDescription')}</p>
+        </div>
+      </div>
+    )
+  }
+  return <FsDenySectionContent {...props} />
+}
+
+function FsDenySectionContent({ t, settingsScope }: FsDenySectionProps): ReactNode {
   const [text, setText] = useState<string>('')
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [initialText, setInitialText] = useState<string>('')

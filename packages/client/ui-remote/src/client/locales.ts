@@ -47,6 +47,9 @@ export const zh = {
   fsDenySaved: '已保存',
   fsDenyDiscard: '放弃',
   fsDenyError: '保存失败。',
+  configureInWebGuiTitle: '请在电脑端 Web GUI 中配置',
+  fsDenyRemoteDescription: '请在电脑端 Web GUI 中配置。文件系统访问限制只能在电脑端进行配置。',
+  remoteDevicesRemoteDescription: '请在电脑端 Web GUI 中配置。配对新设备与管理连接只能在电脑端进行操作。',
 } satisfies Record<string, string>
 
 /** Remote section locale key union. */
@@ -99,4 +102,7 @@ export const en = {
   fsDenySaved: 'Saved',
   fsDenyDiscard: 'Discard',
   fsDenyError: 'Save failed.',
+  configureInWebGuiTitle: 'Configure this in the PC web GUI',
+  fsDenyRemoteDescription: 'Please configure this in the web GUI. Filesystem access restrictions can only be configured directly on the PC.',
+  remoteDevicesRemoteDescription: 'Please configure this in the web GUI. Pairing new devices and managing connections can only be done directly on the PC.',
 } satisfies Record<RemoteLocaleKey, string>

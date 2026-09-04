@@ -5,7 +5,7 @@
  * feature owns its own settings surface.
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -15,16 +15,23 @@ import {
   NOTIFICATION_SETTINGS_NAMESPACE,
   type NotificationSettings,
 } from '../notification-settings.ts'
-import { NotificationRuntime, type NotificationSnapshot } from './runtime.ts'
+import {
+  defaultNotificationPresenter,
+  NotificationRuntime,
+  openSessionSafely,
+  type NotificationSnapshot,
+  type NotificationTranslator,
+} from './runtime.ts'
 import { NotificationsRow, type NotificationsRowInjected } from './NotificationsRow.tsx'
 import { createNotificationsRowStore } from './settings-store.ts'
 import { createWebAudioPlayer } from './sounds.ts'
 import { en, zh, type NotificationsKey } from './locales.ts'
 
 export type { NotificationsRowComponentProps, NotificationsRowInjected } from './NotificationsRow.tsx'
-export type { NotificationSnapshot } from './runtime.ts'
+export type { NotificationPresenter, NotificationSnapshot, NotificationTranslator } from './runtime.ts'
 export type { NotificationsKey } from './locales.ts'
 export type { NotificationSettings, NotificationSound } from '../notification-settings.ts'
+export { defaultNotificationPresenter, openSessionSafely } from './runtime.ts'
 
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.notifications'
@@ -66,10 +73,27 @@ export const inject = ['slots', 'sessions', 'locale', 'connection', 'remote', 's
  */
 export function apply(ctx: ClientContext): void {
   const host = ctx.settingsScope.bind<NotificationSettings>({ namespace: NOTIFICATION_SETTINGS_NAMESPACE })
-  const notifications = new NotificationRuntime(ctx, host, ctx.sessions, createWebAudioPlayer())
+  const t = ctx.locale.bind(SETTINGS_NS)
+  const translator: NotificationTranslator = { t: (key: string) => t(key as NotificationsKey) }
+  const presenter = defaultNotificationPresenter(ctx.sessions, translator)
+  const notifications = new NotificationRuntime(ctx, host, ctx.sessions, createWebAudioPlayer(), presenter)
   ctx.provide('notifications', notifications)
 
   ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-notifications: settings row dictionaries')
+
+  if (typeof window !== 'undefined') {
+    ctx.effect(() => {
+      const onMessage = (event: MessageEvent<unknown>): void => {
+        const value = event.data
+        if (typeof value !== 'object' || value === null) return
+        const message = value as Record<string, unknown>
+        if (message.type !== 'dsh/open-session' || message.version !== 1 || typeof message.sessionId !== 'string') return
+        openSessionSafely(ctx.sessions, message.sessionId as SessionId)
+      }
+      window.addEventListener('message', onMessage)
+      return () => { window.removeEventListener('message', onMessage) }
+    }, 'ui-notifications: shell open-session message')
+  }
 
   const store = createNotificationsRowStore()
   let bound: BoundActions<typeof store> | undefined

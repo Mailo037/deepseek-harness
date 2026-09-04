@@ -267,6 +267,27 @@ describe('ModelsSection', () => {
     expect(document.body.textContent).toBe('')
   })
 
+  it('renders a remote notice when isLoopback is false and avoids calling controller.load', async () => {
+    const controller = new ModelsSettingsStore(
+      { settings: { describe: () => Promise.reject(new Error('settings are unavailable in this browser')) } } as never,
+      settingsSchema,
+      new SettingsDescribeMirror({ settings: { describe: () => Promise.reject(new Error('no')) } } as never),
+    )
+    const loadSpy = vi.spyOn(controller, 'load')
+    const uninjected = {
+      controller,
+      useSnapshot: bindSnapshotSelector(controller.store),
+      api: {} as never,
+      schema: settingsSchema,
+      t,
+      isLoopback: false,
+    } as ModelsSectionProps
+    render(<ModelsSection {...uninjected} />)
+    expect(screen.getByText(en.configureInWebGuiTitle)).toBeTruthy()
+    expect(screen.getByText(en.configureInWebGuiDescription)).toBeTruthy()
+    expect(loadSpy).not.toHaveBeenCalled()
+  })
+
   it('renders the unkeyed whole-section provider as an open setup card in the first-run posture', async () => {
     await mountFirstRun()
     // Nothing is reachable yet, and DeepSeek has no configured credential and

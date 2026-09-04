@@ -34,7 +34,9 @@ interface DeviceChannelPlugin {
   setNotificationPermission(): Promise<void>
   getChannelState(): Promise<ChannelState>
   getNetworkState(): Promise<{ vpnActive: boolean }>
+  getLaunchSession(): Promise<{ sessionId?: string }>
   addListener(eventName: 'channelState', cb: (state: ChannelState) => void): Promise<{ remove: () => void }>
+  addListener(eventName: 'openSession', cb: (data: { sessionId: string }) => void): Promise<{ remove: () => void }>
 }
 
 const plugin = registerPlugin<DeviceChannelPlugin>('DeviceChannel')
@@ -73,4 +75,17 @@ export async function isVpnActive(): Promise<boolean> {
 /** Subscribe to native channel-state changes (connect, drop, origin migration). */
 export function onChannelState(cb: (state: ChannelState) => void): Promise<{ remove: () => void }> {
   return plugin.addListener('channelState', cb)
+}
+
+/** Read the pending session id from a launch intent, if any. */
+export async function getLaunchSession(): Promise<string | undefined> {
+  const result = await plugin.getLaunchSession().catch(() => ({ sessionId: undefined }))
+  return result.sessionId
+}
+
+/** Subscribe to session open requests from notification taps. */
+export function onOpenSession(cb: (sessionId: string) => void): Promise<{ remove: () => void }> {
+  return plugin.addListener('openSession', (data) => {
+    if (data.sessionId) cb(data.sessionId)
+  })
 }

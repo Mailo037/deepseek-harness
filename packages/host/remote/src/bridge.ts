@@ -8,13 +8,14 @@ import type { RemoteNotification } from './types.ts'
 export interface BridgeConfig {
   readonly notifyOnError: boolean
   readonly notifyOnCompleted: boolean
+  readonly notifyOnAttention?: boolean
 }
 
 /**
  * Subscribes to durable session events and forwards noteworthy events
- * (turn/end errors, completed turns) as notifications to connected devices.
- * Messages identify the session by its latest durable title, falling back to
- * the session id before a title exists.
+ * (turn/end errors, completed turns, user attention requests) as
+ * notifications to connected devices. Messages identify the session by its
+ * latest durable title, falling back to the session id before a title exists.
  */
 export class NotificationBridge {
   private readonly dispose: () => void
@@ -36,9 +37,30 @@ export class NotificationBridge {
   }
 
   private onSessionEvent(session: Session, event: SessionEvent): void {
+    const sessionLabel = foldSessionTitle(session.events)?.title ?? session.id
+    const rawEvent = event as unknown as { type: string; data?: unknown; time: number }
+    if (rawEvent.type === 'approval/asked' && (this.config.notifyOnAttention ?? true)) {
+      const notification: RemoteNotification = {
+        kind: 'attention',
+        sessionId: session.id,
+        message: `${sessionLabel} needs your approval`,
+        time: new Date(rawEvent.time).toISOString(),
+      }
+      this.channel.broadcast(notification)
+      return
+    }
+    if (rawEvent.type === 'tool/call' && (rawEvent.data as { name?: string } | undefined)?.name === 'ask_user_question' && (this.config.notifyOnAttention ?? true)) {
+      const notification: RemoteNotification = {
+        kind: 'attention',
+        sessionId: session.id,
+        message: `${sessionLabel} has a question for you`,
+        time: new Date(rawEvent.time).toISOString(),
+      }
+      this.channel.broadcast(notification)
+      return
+    }
     if (event.type !== 'turn/end') return
     const reason = event.data.reason
-    const sessionLabel = foldSessionTitle(session.events)?.title ?? session.id
     if (reason.kind === 'error' && this.config.notifyOnError) {
       const notification: RemoteNotification = {
         kind: 'turn-error',

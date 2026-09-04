@@ -3,7 +3,7 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'notifications.title': '通知音效',
-  'notifications.enable': '完成或需要关注时播放提示音',
+  'notifications.enable': '完成或需要关注时发送通知与提示音',
   'notifications.event.done': '任务完成',
   'notifications.event.attention': '需要确认',
   'notifications.event.error': '发生错误',
@@ -20,7 +20,7 @@ export type NotificationsKey = keyof typeof zh
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'notifications.title': 'Notification sounds',
-  'notifications.enable': 'Play a sound when work finishes or needs you',
+  'notifications.enable': 'Notify and play a sound when work finishes or needs you',
   'notifications.event.done': 'Work finished',
   'notifications.event.attention': 'Needs your attention',
   'notifications.event.error': 'Error occurred',

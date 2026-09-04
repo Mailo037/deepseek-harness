@@ -16,8 +16,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Network } from '@capacitor/network'
 import { guiUrlOf, persistAccessToken, persistLastSuccessful, type DeviceConfig } from './DeviceStorage.ts'
 import { isTailscaleEndpoint, selectCandidates } from './EndpointSelection.ts'
-import { getChannelState, isVpnActive, onChannelState, startNotificationService } from './NotificationService.ts'
-import { embeddedConnectionStateOf, type EmbeddedConnectionState } from './ShellProtocol.ts'
+import {
+  getChannelState, getLaunchSession, isVpnActive, onChannelState, onOpenSession, startNotificationService,
+} from './NotificationService.ts'
+import {
+  embeddedConnectionStateOf, openSessionMessageOf, type EmbeddedConnectionState,
+} from './ShellProtocol.ts'
 import { CloudOffIcon, EyeIcon, LogoMark, MonitorXIcon, PowerOffIcon, RefreshIcon } from './components/Brand.tsx'
 
 interface ConnectedScreenProps {
@@ -86,6 +90,18 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
     }, new URL(guiUrl).origin)
   }, [guiUrl])
 
+  const pendingSessionRef = useRef<string | null>(null)
+
+  /** Ask the embedded web GUI to navigate to a specific session. */
+  const openSessionInIframe = useCallback((sessionId: string): void => {
+    const frame = iframeRef.current
+    if (frame?.contentWindow && guiReady) {
+      frame.contentWindow.postMessage(openSessionMessageOf(sessionId), new URL(guiUrl).origin)
+    } else {
+      pendingSessionRef.current = sessionId
+    }
+  }, [guiUrl, guiReady])
+
   /** Switch the GUI to a working origin and persist it as last-successful. */
   const adopt = useCallback((candidate: string): void => {
     if (candidate === originRef.current) return
@@ -118,15 +134,19 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
     setEmbeddedConnectionState('reconnecting')
   }, [origin, accessToken])
 
-  // Accept only state reports from the current embedded GUI document. The
-  // payload carries presentation state only; the source/origin checks also
-  // prevent a different frame from changing the Android chrome.
   useEffect(() => {
     const expectedOrigin = new URL(guiUrl).origin
     const onMessage = (event: MessageEvent<unknown>): void => {
       if (event.source !== iframeRef.current?.contentWindow || event.origin !== expectedOrigin) return
       const next = embeddedConnectionStateOf(event.data)
-      if (next !== null) setEmbeddedConnectionState(next)
+      if (next !== null) {
+        setEmbeddedConnectionState(next)
+        if (next === 'connected' && pendingSessionRef.current && iframeRef.current.contentWindow) {
+          const sessionId = pendingSessionRef.current
+          pendingSessionRef.current = null
+          iframeRef.current.contentWindow.postMessage(openSessionMessageOf(sessionId), expectedOrigin)
+        }
+      }
     }
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }
@@ -219,6 +239,30 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
       void listener.then((activeListener) => { activeListener.remove() })
     }
   }, [adopt])
+
+  // Listen for session open requests from launch intents and notifications.
+  useEffect(() => {
+    void getLaunchSession().then((session) => {
+      if (session) openSessionInIframe(session)
+    })
+    const listener = onOpenSession((sessionId) => {
+      openSessionInIframe(sessionId)
+    })
+    return () => {
+      void listener.then((l) => {
+        l.remove()
+      })
+    }
+  }, [openSessionInIframe])
+
+  // Flush any pending session navigation once the iframe document is ready.
+  useEffect(() => {
+    if (guiReady && pendingSessionRef.current && iframeRef.current?.contentWindow) {
+      const sessionId = pendingSessionRef.current
+      pendingSessionRef.current = null
+      iframeRef.current.contentWindow.postMessage(openSessionMessageOf(sessionId), new URL(guiUrl).origin)
+    }
+  }, [guiReady, guiUrl])
 
   // While offline (and the device itself online), re-probe every 10 s; a
   // successful probe flips straight back to the online state with a fresh
@@ -395,6 +439,11 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
             onLoad={(event) => {
               setGuiReady(true)
               announceShell(event.currentTarget)
+              if (pendingSessionRef.current) {
+                const sessionId = pendingSessionRef.current
+                pendingSessionRef.current = null
+                event.currentTarget.contentWindow?.postMessage(openSessionMessageOf(sessionId), new URL(guiUrl).origin)
+              }
             }}
           />
           {!guiReady && (

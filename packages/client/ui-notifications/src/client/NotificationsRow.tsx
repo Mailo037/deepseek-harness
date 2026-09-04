@@ -68,7 +68,13 @@ export function NotificationsRow({
           aria-checked={state.enabled}
           aria-label={t('notifications.enable')}
           className={css.switch}
-          onClick={() => { setEnabled(!state.enabled) }}
+          onClick={() => {
+            const next = !state.enabled
+            setEnabled(next)
+            if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+              void Notification.requestPermission()
+            }
+          }}
         />
       </div>
       {state.enabled && EVENTS.map(({ kind, labelKey }) => (

@@ -150,6 +150,11 @@ export const en = {
   onboardingTaskDescription: 'Step 3 of 3: your provider and workspace are ready. Describe what you want to build in the composer.',
   onboardingStartTask: 'Start first task',
   keyRequired: 'Enter an API key to continue.',
+  configureInWebGuiTitle: 'Configure this in the PC web GUI',
+  configureInWebGuiDescription: 'Please configure this in the web GUI. Model settings and API keys can only be configured directly on the PC.',
+  onboardingRemoteTitle: 'Configure this in the PC web GUI',
+  onboardingRemoteDescription: 'Please configure this in the web GUI. Model providers and API keys must be configured on the host PC.',
+  onboardingRemoteAction: 'OK',
 }
 
 /** The settings.models namespace key union. */
@@ -303,4 +308,9 @@ export const zh: { [Key in keyof typeof en]: string } = {
   onboardingTaskDescription: '第 3 步（共 3 步）：提供方和工作区已就绪。请在输入框中描述你想构建的内容。',
   onboardingStartTask: '开始第一个任务',
   keyRequired: '请输入 API 密钥后继续。',
+  configureInWebGuiTitle: '请在电脑端 Web GUI 中配置',
+  configureInWebGuiDescription: '请在电脑端 Web GUI 中配置。模型设置与 API Key 只能在电脑端进行配置。',
+  onboardingRemoteTitle: '请在电脑端 Web GUI 中配置',
+  onboardingRemoteDescription: '请在电脑端 Web GUI 中配置。模型提供方与 API Key 须在电脑端配置后方可使用。',
+  onboardingRemoteAction: '知道了',
 }

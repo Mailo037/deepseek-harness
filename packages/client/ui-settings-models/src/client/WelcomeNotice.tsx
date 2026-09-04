@@ -20,6 +20,8 @@ export interface WelcomeNoticeInjected {
   controller: WelcomeNoticeStore
   /** Onboarding copy. */
   t: (key: keyof typeof en) => string
+  /** Whether the connection is loopback (false when remote/Android). */
+  isLoopback?: boolean | undefined
 }
 
 /** Coordinator owner props plus this step's injected face. */
@@ -27,12 +29,33 @@ export type WelcomeNoticeProps =
   PropsRuntime<'settings.onboarding'> & InjectFace<WelcomeNoticeInjected>
 
 /**
+ * Whether the client is running on Android or remotely, where host onboarding
+ * and tutorials are suppressed in favor of configuring on the PC Web GUI.
+ * @param isLoopback - Whether the current connection is loopback.
+ * @returns true if onboarding should be suppressed.
+ */
+export function shouldSuppressOnboarding(isLoopback?: boolean): boolean {
+  if (isLoopback === false) return true
+  if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) return true
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('dsh_client') === 'android') return true
+    } catch {
+      // ignore
+    }
+  }
+  return false
+}
+
+/**
  * Render the current notice until its exact copy version is acknowledged.
  * @param props - settings-shell owner state and welcome dependencies.
  * @returns the welcome modal or null while the step decides not to show.
  */
 export function WelcomeNotice(props: WelcomeNoticeProps): ReactNode {
-  const { complete, controller, useWelcome, t } = props
+  const { complete, controller, useWelcome, t, isLoopback } = props
+  const suppress = shouldSuppressOnboarding(isLoopback)
   const state = useWelcome(snapshot => snapshot)
   const finished = useRef(false)
   const finish = useCallback((): void => {
@@ -42,14 +65,18 @@ export function WelcomeNotice(props: WelcomeNoticeProps): ReactNode {
   }, [complete])
 
   useEffect(() => {
+    if (suppress) {
+      finish()
+      return
+    }
     if (state.status === 'idle') void controller.load()
-  }, [controller, state.status])
+  }, [suppress, finish, controller, state.status])
 
   useEffect(() => {
-    if (state.acknowledged) finish()
-  }, [finish, state.acknowledged])
+    if (!suppress && state.acknowledged) finish()
+  }, [suppress, finish, state.acknowledged])
 
-  if (state.status === 'idle' || state.status === 'loading' || state.acknowledged) return null
+  if (suppress || state.status === 'idle' || state.status === 'loading' || state.acknowledged) return null
 
   const acknowledge = async (): Promise<void> => {
     if (await controller.acknowledge()) finish()

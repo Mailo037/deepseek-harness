@@ -61,6 +61,8 @@ export interface RemoteConfig {
   readonly notifyOnError: boolean
   /** Notify connected devices when a turn completes. */
   readonly notifyOnCompleted: boolean
+  /** Notify connected devices when a session needs user attention. */
+  readonly notifyOnAttention: boolean
   /** Print a pairing QR code to stdout after activation. */
   readonly printPairingQr: boolean
 }
@@ -70,6 +72,7 @@ export const Config: z<RemoteConfig> = z.object({
   pairingTtlSeconds: z.natural().min(10).max(86400).default(300),
   notifyOnError: z.boolean().default(true),
   notifyOnCompleted: z.boolean().default(true),
+  notifyOnAttention: z.boolean().default(true),
   printPairingQr: z.boolean().default(false),
 })
 
@@ -147,6 +150,7 @@ export class RemoteGateway extends TypertRemoteService {
     this.bridge = new NotificationBridge(this.ctx, {
       notifyOnError: this.config.notifyOnError,
       notifyOnCompleted: this.config.notifyOnCompleted,
+      notifyOnAttention: this.config.notifyOnAttention,
     }, this.channel)
     this.ctx.effect(() => () => { this.bridge.close() }, 'host-remote: notification bridge')
 

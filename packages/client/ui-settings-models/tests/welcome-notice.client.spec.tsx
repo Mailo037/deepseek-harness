@@ -45,6 +45,7 @@ function mount(
   version?: string,
   mutateImpl: () => Promise<unknown> = () =>
     Promise.resolve(response(welcomeView({ [WELCOME_NOTICE_ACK_FIELD]: WELCOME_NOTICE_VERSION }, 1))),
+  isLoopback?: boolean,
 ) {
   const appRoot = document.createElement('div')
   appRoot.id = 'root'
@@ -81,6 +82,7 @@ function mount(
     controller,
     useWelcome: bindSnapshotSelector(controller.store),
     t: key => zh[key],
+    isLoopback,
   }
   return { ...render(<WelcomeNotice {...props} />), complete, controller, mirror, mutate, appRoot }
 }
@@ -154,5 +156,11 @@ describe('WelcomeNotice', () => {
     })
     expect((await screen.findByRole('alert')).textContent).toBe(zh.welcomeError)
     expect(h.complete).not.toHaveBeenCalled()
+  })
+
+  it('suppresses itself on remote clients without rendering a dialog', () => {
+    const h = mount(undefined, undefined, false)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(h.complete).toHaveBeenCalledOnce()
   })
 })

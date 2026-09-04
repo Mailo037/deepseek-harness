@@ -183,10 +183,18 @@ class DeviceChannelService : Service() {
         }
     }
 
-    private fun openAppIntent(): PendingIntent {
-        val intent = packageManager.getLaunchIntentForPackage(packageName)
+    private fun openAppIntent(sessionId: String? = null): PendingIntent {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            ?: Intent(this, MainActivity::class.java)
+        val intent = launchIntent.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (!sessionId.isNullOrEmpty()) {
+                putExtra("sessionId", sessionId)
+            }
+        }
+        val requestCode = if (!sessionId.isNullOrEmpty()) (sessionId.hashCode() and 0x7fffffff) + 100 else 0
         return PendingIntent.getActivity(
-            this, 0, intent,
+            this, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -291,16 +299,22 @@ class DeviceChannelService : Service() {
 
     private fun postAttentionNotification(kind: String, message: String, sessionId: String) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val title = if (kind == "turn-error") "Harness Remote — error" else "Harness Remote"
+        val title = when (kind) {
+            "turn-error" -> "Harness Remote — Error"
+            "attention" -> "Harness Remote — Needs Attention"
+            "turn-completed" -> "Harness Remote — Completed"
+            else -> "Harness Remote"
+        }
+        val notificationId = if (sessionId.isNotEmpty()) (sessionId.hashCode() and 0x7fffffff) + 100 else 100
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent(sessionId))
             .setAutoCancel(true)
             .build()
-        manager.notify(NOTIFICATION_ID, notification)
+        manager.notify(notificationId, notification)
     }
 
     private fun scheduleReconnect() {

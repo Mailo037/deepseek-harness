@@ -1,5 +1,6 @@
 package ai.deepseek.harness.remote;
 
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebSettings;
@@ -14,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DeviceChannelPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
         super.onCreate(savedInstanceState);
+        DeviceChannelPlugin.handleIntent(getIntent());
         // Make the WebView follow the system dark/light setting on Android 10
         // and 11 (API 29-30); from Android 12 the WebView follows
         // prefers-color-scheme automatically.
@@ -21,5 +23,12 @@ public class MainActivity extends BridgeActivity {
             && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             getBridge().getWebView().getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        DeviceChannelPlugin.handleIntent(intent);
     }
 }

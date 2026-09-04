@@ -79,6 +79,7 @@ export function apply(ctx: ClientContext): void {
     api: connection.api,
     schema,
     t,
+    isLoopback: connection.isLoopback,
   })
   const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
     controller,
@@ -91,6 +92,7 @@ export function apply(ctx: ClientContext): void {
       return requests.request(onSettled)
     },
     t,
+    isLoopback: connection.isLoopback,
   })
   // The scope's own memory mode is what keeps a remote browser browser-local,
   // so the store needs no isLoopback branch of its own.
@@ -102,6 +104,7 @@ export function apply(ctx: ClientContext): void {
     controller: welcomeController,
     hooks: { welcome: welcomeController.store },
     t,
+    isLoopback: connection.isLoopback,
   })
 
   // Pushed invalidations converge every open surface without polling. The

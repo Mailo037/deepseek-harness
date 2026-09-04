@@ -41,6 +41,8 @@ export interface RemoteSettingsSectionInjected {
    * a usable ordinary session (none open, or the current route is a subagent).
    */
   sendTailscaleSetup: () => Promise<TailscaleSendOutcome>
+  /** Whether the connection is to loopback host (false when remote). */
+  isLoopback?: boolean | undefined
 }
 
 /** Section component props assembled by the slot renderer. */
@@ -98,7 +100,22 @@ function rowsOf(snapshot: RemoteDevicesSnapshot): DeviceRowState[] {
  * Panels stay mounted and hide, so pairing state and the device snapshot
  * survive switching.
  */
-export function RemoteSettingsSection({
+export function RemoteSettingsSection(props: RemoteSettingsSectionProps): ReactNode {
+  const { t, isLoopback } = props
+  if (isLoopback === false) {
+    return (
+      <div className={css.section}>
+        <div className={css.remoteNotice}>
+          <p className={css.remoteNoticeTitle}>{t('configureInWebGuiTitle')}</p>
+          <p className={css.remoteNoticeDescription}>{t('remoteDevicesRemoteDescription')}</p>
+        </div>
+      </div>
+    )
+  }
+  return <RemoteSettingsSectionContent {...props} />
+}
+
+function RemoteSettingsSectionContent({
   t,
   close,
   createPairing,

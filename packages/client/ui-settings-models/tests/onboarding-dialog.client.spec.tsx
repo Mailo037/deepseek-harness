@@ -359,4 +359,15 @@ describe('DeepSeekOnboardingDialog', () => {
     await screen.findByRole('dialog', { name: en.onboardingWorkspaceTitle })
     expect(h.complete).not.toHaveBeenCalled()
   })
+
+  it('suppresses onboarding dialog completely on remote clients and completes without showing a dialog', () => {
+    const h = harness()
+    const loadSpy = vi.spyOn(h.controller, 'load')
+    const view = render(<DeepSeekOnboardingDialog {...h.props} isLoopback={false} />)
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(h.complete).toHaveBeenCalledOnce()
+    expect(loadSpy).not.toHaveBeenCalled()
+    view.unmount()
+  })
 })

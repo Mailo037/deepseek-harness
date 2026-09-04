@@ -9,7 +9,10 @@ import {
 import {
   DEFAULT_NOTIFICATION_SETTINGS, type NotificationSettings,
 } from '../src/notification-settings.ts'
-import { NotificationRuntime } from '../src/client/runtime.ts'
+import {
+  defaultNotificationPresenter, NotificationRuntime, openSessionSafely,
+  type NotificationPresenter,
+} from '../src/client/runtime.ts'
 
 function emptyList(): SessionListState {
   return {
@@ -65,12 +68,15 @@ function fakeHost(section: NotificationSettings | undefined) {
   return { host, set, publish }
 }
 
-async function runtime(section: NotificationSettings | undefined = DEFAULT_NOTIFICATION_SETTINGS) {
+async function runtime(
+  section: NotificationSettings | undefined = DEFAULT_NOTIFICATION_SETTINGS,
+  notify?: NotificationPresenter,
+) {
   const ctx = new Context()
   const list = createSnapshotStore<SessionListState>(emptyList())
   const play = vi.fn()
   const host = fakeHost(section)
-  const service = new NotificationRuntime(ctx, host.host, { list }, play)
+  const service = new NotificationRuntime(ctx, host.host, { list }, play, notify)
   return { ctx, list, play, ...host, service }
 }
 
@@ -140,5 +146,113 @@ describe('NotificationRuntime', () => {
     b.list.set(withRows(row('a', { running: true })))
     b.list.set(withRows(row('a')))
     expect(b.play).toHaveBeenLastCalledWith('bell')
+  })
+
+  it('notifies each event through the presenter when enabled', async () => {
+    const notify = vi.fn()
+    const b = await runtime({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: true }, notify)
+    b.list.set(withRows(row('s1', { running: true }), row('s2', { running: true })))
+    b.list.set(withRows(row('s1'), row('s2', { attention: 'error' })))
+    expect(notify).toHaveBeenCalledTimes(2)
+    expect(notify).toHaveBeenCalledWith(
+      { sessionId: 's1', kind: 'done' },
+      expect.objectContaining({ id: 's1' }),
+    )
+    expect(notify).toHaveBeenCalledWith(
+      { sessionId: 's2', kind: 'error' },
+      expect.objectContaining({ id: 's2' }),
+    )
+
+    // Silent when disabled.
+    notify.mockClear()
+    b.service.setEnabled(false)
+    b.list.set(withRows(row('s1', { running: true })))
+    b.list.set(withRows(row('s1')))
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('openSessionSafely opens immediately or defers until listed', () => {
+    const list = createSnapshotStore<SessionListState>(emptyList())
+    const open = vi.fn()
+    const sessions = { list, open }
+
+    // Case 1: already present.
+    list.set(withRows(row('s1')))
+    openSessionSafely(sessions, 's1' as SessionId)
+    expect(open).toHaveBeenCalledWith('s1')
+
+    // Case 2: deferred until arrival.
+    open.mockClear()
+    list.set({ ...emptyList(), phase: 'pending' })
+    openSessionSafely(sessions, 's2' as SessionId)
+    expect(open).not.toHaveBeenCalled()
+
+    list.set(withRows(row('s2')))
+    expect(open).toHaveBeenCalledWith('s2')
+
+    // Case 3: list settles ready without the session.
+    open.mockClear()
+    list.set({ ...emptyList(), phase: 'pending' })
+    openSessionSafely(sessions, 's3' as SessionId)
+    expect(open).not.toHaveBeenCalled()
+    list.set({ ...emptyList(), phase: 'ready' })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('defaultNotificationPresenter creates Notification and handles click navigation', () => {
+    const list = createSnapshotStore<SessionListState>(withRows(row('s1', { displayTitle: 'My Task' })))
+    const open = vi.fn()
+    const sessions = { list, open }
+    const translator = { t: (k: string) => `trans:${k}` }
+
+    const originalNotification = globalThis.Notification
+    const originalWindow = globalThis.window
+    const focus = vi.fn()
+    globalThis.window = { focus } as unknown as Window & typeof globalThis
+
+    try {
+      interface FakeNotificationInstance {
+        title: string
+        options: unknown
+        onclick?: (() => void) | undefined
+        close: () => void
+      }
+      const instances: FakeNotificationInstance[] = []
+      const fakeNotification = vi.fn(function (this: unknown, title: string, options: unknown) {
+        const inst: FakeNotificationInstance = { title, options, close: vi.fn() }
+        instances.push(inst)
+        return inst
+      }) as unknown as typeof Notification
+      Object.defineProperty(fakeNotification, 'permission', { value: 'granted', configurable: true })
+      globalThis.Notification = fakeNotification
+
+      const presenter = defaultNotificationPresenter(sessions, translator)
+      presenter({ sessionId: 's1' as SessionId, kind: 'done' }, list.getSnapshot().byId['s1' as SessionId])
+
+      expect(instances).toHaveLength(1)
+      const first = instances[0]
+      expect(first).toBeDefined()
+      if (!first) throw new Error('expected notification instance')
+      expect(first.title).toBe('My Task')
+      expect(first.options).toEqual({
+        body: 'trans:notifications.event.done',
+        tag: 'dsh-s1',
+      })
+
+      // Clicking triggers focus and session open.
+      first.onclick?.()
+      expect(focus).toHaveBeenCalled()
+      expect(open).toHaveBeenCalledWith('s1')
+      expect(first.close).toHaveBeenCalled()
+
+      // When permission is not granted, does nothing.
+      instances.length = 0
+      Object.defineProperty(fakeNotification, 'permission', { value: 'denied', configurable: true })
+      presenter({ sessionId: 's1' as SessionId, kind: 'error' }, list.getSnapshot().byId['s1' as SessionId])
+      expect(instances).toHaveLength(0)
+    } finally {
+      globalThis.Notification = originalNotification
+      globalThis.window = originalWindow
+    }
   })
 })

@@ -88,4 +88,13 @@ describe('the fs-deny section', () => {
     expect((box as HTMLTextAreaElement).value).toBe('**/.env')
     expect(screen.queryByText(en.fsDenyDiscard)).toBeNull()
   })
+
+  it('renders a remote notice when isLoopback is false', () => {
+    const s = scope(['**/.env'])
+    const props = { t: (key: keyof typeof en) => en[key], settingsScope: s, isLoopback: false } as unknown as FsDenySectionProps
+    render(<FsDenySection {...props} />)
+    expect(screen.getByText(en.configureInWebGuiTitle)).toBeTruthy()
+    expect(screen.getByText(en.fsDenyRemoteDescription)).toBeTruthy()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
 })

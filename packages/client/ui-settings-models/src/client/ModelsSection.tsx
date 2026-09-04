@@ -44,6 +44,8 @@ export interface ModelsSectionInjected {
   schema: SettingsSchemaOperations
   /** Section copy. */
   t: (key: keyof typeof en) => string
+  /** Whether the connection is to loopback host (false when remote). */
+  isLoopback?: boolean | undefined
 }
 
 /**
@@ -190,11 +192,22 @@ export function providerCopy(template: string, target: ProviderIdentity): string
  * @returns the section, or null while the shell has not injected yet.
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, schema, t } = props
+  const { controller, useSnapshot, api, schema, t, isLoopback } = props
   if (
     controller === undefined || useSnapshot === undefined || api === undefined
     || schema === undefined || t === undefined
   ) return null
+  if (isLoopback === false) {
+    return (
+      <div className={styles['section']}>
+        <SectionHeading title={t('title')} description={t('intro')} />
+        <div className={styles['remoteNotice']}>
+          <p className={styles['remoteNoticeTitle']}>{t('configureInWebGuiTitle')}</p>
+          <p className={styles['remoteNoticeDescription']}>{t('configureInWebGuiDescription')}</p>
+        </div>
+      </div>
+    )
+  }
   return <Loaded injected={{ controller, useSnapshot, api, schema, t }} />
 }
 

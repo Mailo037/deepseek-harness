@@ -107,7 +107,7 @@ export interface RejectedMessage {
 
 /** One attention notification pushed to a connected device. */
 export interface RemoteNotification {
-  readonly kind: 'turn-error' | 'turn-completed'
+  readonly kind: 'turn-error' | 'turn-completed' | 'attention'
   /** The session the event belongs to. */
   readonly sessionId: string
   /** Host-rendered summary, using the durable session title when available. */

@@ -7,7 +7,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  ObservableSnapshot, SessionListState, SettingsScope,
+  ObservableSnapshot, SessionId, SessionListState, SessionSummary, SettingsScope,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   ATTENTION_SOUND_FIELD, DEFAULT_NOTIFICATION_SETTINGS, DONE_SOUND_FIELD, ENABLED_FIELD,
@@ -15,7 +15,7 @@ import {
   type NotificationSettings, type NotificationSound,
 } from '../notification-settings.ts'
 import type { SoundPlayer } from './sounds.ts'
-import { listEvents, type NotificationEventKind } from './watcher.ts'
+import { listEvents, type NotificationEvent, type NotificationEventKind } from './watcher.ts'
 
 /** Immutable preference state published on every accepted change. */
 export interface NotificationSnapshot extends NotificationSettings {
@@ -40,6 +40,101 @@ export interface SessionsListSource {
   list: ObservableSnapshot<SessionListState>
 }
 
+/** Sessions face supporting list observation and session opening. */
+export interface NotificationSessionsTarget extends SessionsListSource {
+  open(id: SessionId): void
+}
+
+/** Sink for presenting system or browser notifications for session events. */
+export interface NotificationPresenter {
+  /**
+   * Present a notification for one session event.
+   * @param event - Derived notification event.
+   * @param summary - Session summary snapshot, when present in the list.
+   */
+  (event: NotificationEvent, summary: SessionSummary | undefined): void
+}
+
+/** Translation face required by the default notification presenter. */
+export interface NotificationTranslator {
+  /**
+   * Translate one notification copy key.
+   * @param key - Translation key.
+   * @returns Localized string.
+   */
+  t(key: string): string
+}
+
+/**
+ * Open a session if present in the list, or defer until the session arrives.
+ * @param sessions - outward sessions face.
+ * @param sessionId - target session id.
+ */
+export function openSessionSafely(
+  sessions: { open(id: SessionId): void; list: ObservableSnapshot<SessionListState> },
+  sessionId: SessionId,
+): void {
+  const snapshot = sessions.list.getSnapshot()
+  if (snapshot.byId[sessionId] !== undefined) {
+    sessions.open(sessionId)
+    return
+  }
+  const unsubscribe = sessions.list.subscribe(() => {
+    const next = sessions.list.getSnapshot()
+    if (next.byId[sessionId] !== undefined) {
+      unsubscribe()
+      sessions.open(sessionId)
+    } else if (next.phase === 'ready') {
+      unsubscribe()
+    }
+  })
+}
+
+/**
+ * Build the default browser Notification presenter.
+ * When permissions are granted, creates a Notification with the session title and event summary.
+ * Clicking focuses the window and navigates to the session.
+ * @param sessions - outward sessions face with open capability.
+ * @param translator - optional localization translation function.
+ * @returns NotificationPresenter instance.
+ */
+export function defaultNotificationPresenter(
+  sessions: { open(id: SessionId): void; list: ObservableSnapshot<SessionListState> },
+  translator?: NotificationTranslator,
+): NotificationPresenter {
+  return (event, summary) => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    const title = summary?.displayTitle ?? summary?.title ?? String(event.sessionId)
+    let body = ''
+    switch (event.kind) {
+      case 'done':
+        body = translator ? translator.t('notifications.event.done') : 'Work finished'
+        break
+      case 'attention':
+        body = translator ? translator.t('notifications.event.attention') : 'Needs your attention'
+        break
+      case 'error':
+        body = translator ? translator.t('notifications.event.error') : 'Error occurred'
+        break
+    }
+    try {
+      const notification = new Notification(title, {
+        body,
+        tag: `dsh-${event.sessionId}`,
+      })
+      notification.onclick = () => {
+        if (typeof window !== 'undefined' && typeof window.focus === 'function') {
+          window.focus()
+        }
+        openSessionSafely(sessions, event.sessionId)
+        notification.close()
+      }
+    } catch {
+      // In restricted or headless environments, drop silently.
+    }
+  }
+}
+
 /**
  * Preference owner + transition watcher. Writes only through
  * {@link setEnabled}/{@link setSound}; continuous sync only through adoption
@@ -61,12 +156,14 @@ export class NotificationRuntime {
    * @param host - durable preference scope owned by the same plugin.
    * @param sessions - sessions service whose list snapshot feeds the watcher.
    * @param play - sound sink (the Web Audio player in production).
+   * @param notify - optional notification sink for browser/system notifications.
    */
   constructor(
     ctx: Context,
     private readonly host: SettingsScope<NotificationSettings>,
     sessions: SessionsListSource,
     private readonly play: SoundPlayer,
+    private readonly notify?: NotificationPresenter,
   ) {
     this.ctx = ctx
     ctx.effect(() => host.subscribe(() => { this.adopt() }), 'ui-notifications: settings scope adoption')
@@ -147,6 +244,12 @@ export class NotificationRuntime {
       if (moved.has(kind)) {
         this.play(this.soundOf(kind))
         break
+      }
+    }
+    if (this.notify !== undefined) {
+      for (const event of events) {
+        const summary = next.byId[event.sessionId]
+        this.notify(event, summary)
       }
     }
   }

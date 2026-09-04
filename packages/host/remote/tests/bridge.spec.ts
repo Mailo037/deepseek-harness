@@ -15,7 +15,7 @@ import type { NotificationFrame, PairedMessage } from '../src/types.ts'
 const contexts: Context[] = []
 const servers: Server[] = []
 
-async function setup(bridgeConfig: { notifyOnError: boolean; notifyOnCompleted: boolean }) {
+async function setup(bridgeConfig: { notifyOnError: boolean; notifyOnCompleted: boolean; notifyOnAttention?: boolean }) {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(Storage)
@@ -142,6 +142,62 @@ describe('NotificationBridge', () => {
     let received = false
     h.ws.once('message', () => { received = true })
     h.ctx.emit('session/event', session, { type: 'user/message', seq: 1, time: Date.now(), data: { messageId: 'm1', content: [] } } as never)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(received).toBe(false)
+    await h.close()
+  })
+
+  it('broadcasts an attention notification on approval/asked', async () => {
+    const h = await setup({ notifyOnError: true, notifyOnCompleted: true, notifyOnAttention: true })
+    const session = Session.create(SessionId('s-approval'))
+    session.append('session/title', {
+      title: 'Run migration', messageSeqs: [], source: { kind: 'user' },
+    })
+    h.ctx.emit('session/event', session, {
+      type: 'approval/asked',
+      seq: 1,
+      time: Date.now(),
+      data: { id: 'req-1', toolName: 'bash', reason: 'run npm install' },
+    } as never)
+    const frame = await h.next()
+    expect(frame.type).toBe('notification')
+    expect(frame.notification.kind).toBe('attention')
+    expect(frame.notification.sessionId).toBe('s-approval')
+    expect(frame.notification.message).toBe('Run migration needs your approval')
+    await h.close()
+  })
+
+  it('broadcasts an attention notification on ask_user_question tool call', async () => {
+    const h = await setup({ notifyOnError: true, notifyOnCompleted: true, notifyOnAttention: true })
+    const session = Session.create(SessionId('s-question'))
+    session.append('session/title', {
+      title: 'Architecture Review', messageSeqs: [], source: { kind: 'user' },
+    })
+    h.ctx.emit('session/event', session, {
+      type: 'tool/call',
+      seq: 1,
+      time: Date.now(),
+      data: { id: 'c1', name: 'ask_user_question', args: { questions: [] } },
+    } as never)
+    const frame = await h.next()
+    expect(frame.type).toBe('notification')
+    expect(frame.notification.kind).toBe('attention')
+    expect(frame.notification.sessionId).toBe('s-question')
+    expect(frame.notification.message).toBe('Architecture Review has a question for you')
+    await h.close()
+  })
+
+  it('stays silent for attention events when notifyOnAttention is false', async () => {
+    const h = await setup({ notifyOnError: true, notifyOnCompleted: true, notifyOnAttention: false })
+    const session = Session.create(SessionId('s-silent'))
+    let received = false
+    h.ws.once('message', () => { received = true })
+    h.ctx.emit('session/event', session, {
+      type: 'approval/asked',
+      seq: 1,
+      time: Date.now(),
+      data: { id: 'req-2', toolName: 'bash' },
+    } as never)
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(received).toBe(false)
     await h.close()
