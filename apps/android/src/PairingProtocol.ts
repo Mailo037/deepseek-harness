@@ -33,6 +33,8 @@ export interface AuthRequest {
 /** Host reply to a successful `pair`. */
 export interface PairedMessage {
   type: 'paired'
+  /** Computer name suggested for the saved Harness label. */
+  hostName?: string
   deviceId: string
   secret: string
   /** Persistent token for authenticated GUI HTTP and WebSocket requests. */

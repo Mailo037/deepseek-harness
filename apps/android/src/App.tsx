@@ -1,7 +1,7 @@
 /** Android shell with independent saved Harness pairings and notification routing. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { DeviceConfig } from './DeviceStorage.ts'
-import { activeHarnessId, addHarness, loadHarnesses, readHarness, removeHarness, selectHarness, type SavedHarness } from './HarnessStorage.ts'
+import { activeHarnessId, addHarness, loadHarnesses, readHarness, removeHarness, renameHarness, selectHarness, type SavedHarness } from './HarnessStorage.ts'
 import { getLaunchSession, onOpenSession, startNotificationService, stopNotificationService, type SessionTarget } from './NotificationService.ts'
 import { initSystemBars } from './systemBars.ts'
 import { HarnessChooser } from './HarnessChooser.tsx'
@@ -81,6 +81,15 @@ export function App(): ReactNode {
     void startNotificationService(harness).catch(() => { setError('Connected, but background notifications could not start. Reopen the app to retry.') })
   }
 
+  const rename = async (id: string, name: string): Promise<void> => {
+    setBusy(true)
+    try {
+      await renameHarness(id, name)
+      setHarnesses(items => items.map(h => h.id === id ? { ...h, name: name.trim() } : h))
+      setActive(h => h?.id === id ? { ...h, name: name.trim() } : h)
+    } finally { setBusy(false) }
+  }
+
   const forget = async (): Promise<void> => {
     if (!active || busy) return
     setBusy(true)
@@ -102,17 +111,14 @@ export function App(): ReactNode {
     <>
       {error && <div className="harness-error" role="alert">{error}<button className="bar-button" onClick={() => { setError(null) }}>Dismiss</button></div>}
       {pairing ? (
-        <>
-          {active && <button className="bar-button" onClick={() => { setPairing(false) }}>Back to {active.name}</button>}
-          <PairingScreen onPaired={paired} />
-        </>
+        <PairingScreen onPaired={paired} onBack={active ? () => { setPairing(false) } : undefined} backName={active?.name} />
       ) : active ? (
         <ConnectedScreen key={active.id} config={active.config} harnessId={active.id} harnessName={active.name} sessionTarget={target}
           onSwitch={() => { setChooser(true) }} onDisconnect={() => { void forget() }} />
       ) : null}
       {chooser && (
         <HarnessChooser harnesses={harnesses} activeId={active?.id} busy={busy}
-          onChoose={(id) => { void activate(id) }}
+          onRename={rename} onChoose={(id) => { void activate(id) }}
           onAdd={() => { setChooser(false); setPairing(true) }} onClose={() => { setChooser(false) }} />
       )}
     </>

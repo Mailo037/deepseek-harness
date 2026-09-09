@@ -33,3 +33,5 @@ The Android `versionName` comes from `apps/android/package.json`; `native/app.bu
 ## Consequences
 
 Stable Android releases have one tag and asset naming rule, and a transient GitHub failure never interrupts pairing or the remote GUI. The app refuses a release when its APK is signed differently or has an equal or lower version code; Android presents any source-install authorization that remains necessary. Key rotation or a different distribution signer requires a separately coordinated migration because the updater deliberately refuses it.
+
+**Check for updates** is available in the Harness chooser and pairing screen, even when the PC is unreachable. Manual checks bypass the once-per-process startup check and download a newer release again after a failed or cancelled attempt. The control reports current-version, concurrent-check, incompatible-APK and failure results. Android still confirms installation; package, version and certificate validation remain required.

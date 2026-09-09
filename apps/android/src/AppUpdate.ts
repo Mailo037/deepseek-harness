@@ -7,12 +7,12 @@
 import { registerPlugin } from '@capacitor/core'
 
 interface AppUpdatePlugin {
-  check(): Promise<void>
+  check(options: { manual: boolean }): Promise<{ status: 'current' | 'installerOpened' | 'incompatible' | 'busy' | 'skipped' }>
 }
 
 const plugin = registerPlugin<AppUpdatePlugin>('AppUpdate')
 
-/** Check once per process for a newer published Android release. */
-export async function checkForAppUpdate(): Promise<void> {
-  await plugin.check()
+/** Automatic checks run once per process; manual checks allow download and install retries. */
+export async function checkForAppUpdate(manual = false): ReturnType<AppUpdatePlugin['check']> {
+  return plugin.check({ manual })
 }

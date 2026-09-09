@@ -18,6 +18,8 @@ const KEY_ACCESS_TOKEN = 'accessToken'
 
 /** What the app remembers about a paired server. */
 export interface DeviceConfig {
+  /** Computer name supplied when pairing with the host. */
+  hostName?: string
   /** Ordered origins the GUI and channel may use (LAN first, then Tailscale/extras). */
   endpoints: string[]
   /** Last-successful origin; the GUI and channel try this first. */

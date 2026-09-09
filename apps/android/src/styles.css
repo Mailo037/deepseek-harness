@@ -942,3 +942,28 @@ body,
   .bar-button:hover { background: var(--dsw-alias-interactive-bg-hover); }
 }
 .harness-error { padding: 12px; background: var(--bg-raised); color: var(--fg); }
+
+.pairing-back {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  max-width: calc(100% - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  min-height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.screen:has(.pairing-back) {
+  position: relative;
+  padding-top: calc(76px + env(safe-area-inset-top));
+  overflow-y: auto;
+}
+.harness-choice-row { display: flex; align-items: center; gap: 4px; }
+.harness-choice-row > .harness-choice { flex: 1; min-width: 0; }
+.harness-choice-row > .bar-button { min-height: 44px; flex-shrink: 0; }
+.harness-rename { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.harness-rename-actions { display: flex; gap: 8px; }
+.harness-rename-actions > button { min-height: 44px; }
+
+.app-update-control { width: 100%; }
+.app-update-control .hint { margin-top: 8px; }

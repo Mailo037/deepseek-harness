@@ -21,6 +21,8 @@ export type PairingStageListener = (stage: PairingStage) => void
 
 /** Result of a successful pairing attempt. */
 export interface PairingResult {
+  /** Computer name supplied by hosts that advertise it. */
+  hostName?: string
   /** The origin the successful pair went through. */
   serverUrl: string
   /** All usable origins (QR list with loopback aliases dropped; LAN first, then Tailscale/extras). */
@@ -109,7 +111,7 @@ function pairOverWs(
   signal?: AbortSignal,
   onStage?: PairingStageListener,
   serverUrl?: string,
-): Promise<{ deviceId: string; secret: string; accessToken: string }> {
+): Promise<{ deviceId: string; secret: string; accessToken: string; hostName?: string }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl)
     const dispose = (): void => {
@@ -160,6 +162,7 @@ function pairOverWs(
         }
         dispose()
         resolve({
+          ...(typeof paired.hostName === 'string' && paired.hostName.trim() ? { hostName: paired.hostName.trim() } : {}),
           deviceId: paired.deviceId,
           secret: paired.secret,
           accessToken: paired.accessToken,

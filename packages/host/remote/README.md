@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-host-remote
 
+Successful device pairing replies include `hostName`, the operating-system computer name, as the suggested mobile Harness label. The phone can store its own display name independently of host credentials.
+
 English | [中文](README.zh.md)
 
 Remote device plane for the Harness Web GUI: pairs devices (Android, any WebSocket client) via one-time QR codes, keeps a durable device registry, pushes session attention events to connected devices, and enforces instant server-side revocation.

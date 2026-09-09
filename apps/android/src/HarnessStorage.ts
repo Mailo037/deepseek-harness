@@ -29,7 +29,8 @@ export async function readHarness(id: string): Promise<SavedHarness> {
   }
   const token = await Preferences.get({ key: `${keyOf(id)}.token` })
   if (token.value === null) throw new Error('Saved Harness token is missing.')
-  return { id, name: h.name, config: { ...c as DeviceConfig, accessToken: token.value } }
+  const customName = await Preferences.get({ key: `${keyOf(id)}.name` })
+  return { id, name: customName.value ?? h.name, config: { ...c as DeviceConfig, accessToken: token.value } }
 }
 
 /** Load all pairings, migrating the single-Harness installation on first use. */
@@ -54,7 +55,7 @@ async function readHarnesses(): Promise<SavedHarness[]> {
 }
 
 async function writeNewHarness(config: DeviceConfig): Promise<SavedHarness> {
-  const harness = { id: crypto.randomUUID(), name: new URL(config.serverUrl).host, config }
+  const harness = { id: crypto.randomUUID(), name: config.hostName?.trim() || new URL(config.serverUrl).hostname, config }
   await Preferences.set({ key: keyOf(harness.id), value: JSON.stringify(harness) })
   await persistHarnessToken(harness.id, config.accessToken)
   return harness
@@ -85,6 +86,7 @@ export async function removeHarness(id: string): Promise<void> {
   await Preferences.set({ key: INDEX, value: JSON.stringify(items.filter(h => h.id !== id).map(h => h.id)) })
   await Preferences.remove({ key: keyOf(id) })
   await Preferences.remove({ key: `${keyOf(id)}.token` })
+  await Preferences.remove({ key: `${keyOf(id)}.name` })
   if (await activeHarnessId() === id) await Preferences.remove({ key: ACTIVE })
 }
 
@@ -99,4 +101,12 @@ export async function persistHarnessOrigin(id: string, origin: string): Promise<
   harness.config.serverUrl = origin
   if (!harness.config.endpoints.includes(origin)) harness.config.endpoints.push(origin)
   await Preferences.set({ key: keyOf(id), value: JSON.stringify(harness) })
+}
+
+/** Save a local display name independently of endpoint and credential updates. */
+export async function renameHarness(id: string, name: string): Promise<void> {
+  const trimmed = name.trim()
+  if (!trimmed || trimmed.length > 80) throw new Error('Enter a name between 1 and 80 characters.')
+  await readHarness(id)
+  await Preferences.set({ key: `${keyOf(id)}.name`, value: trimmed })
 }

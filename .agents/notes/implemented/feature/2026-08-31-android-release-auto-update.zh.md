@@ -33,3 +33,5 @@ Android `versionName` 来自 `apps/android/package.json`；`native/app.build.gra
 ## Consequences
 
 稳定 Android Release 有一条标签与 asset 命名规则，暂时的 GitHub 失败不会中断配对或远程 GUI。当 APK 的签名不同或 version code 相同或更低时，App 会拒绝 Release；Android 会呈现仍然需要的来源安装授权。密钥轮换或不同分发签名需要单独协调的迁移，因为 updater 有意拒绝它们。
+
+Harness 切换器和配对页面提供 **Check for updates**，即使 PC 不可达也可使用。手动检查不受每进程一次的启动检查限制，失败或取消后可再次下载较新版本。控件显示已是最新版本、检查正在进行、APK 不兼容或失败结果。安装仍由 Android 确认，并保留包名、版本和证书校验。

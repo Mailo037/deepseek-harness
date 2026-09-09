@@ -1,5 +1,7 @@
 # Harness Remote — Android thin client
 
+Choose **Rename** beside a saved Harness to edit its local name. New pairings use the computer name supplied by the host, falling back to the address without its port for older hosts. Custom names also label subsequent notifications and survive endpoint changes. The **Add Harness** back control respects the Android status-bar safe area.
+
 English | [中文](README.zh.md)
 
 The Android app for **DeepSeek Harness Remote** (Phase 2): a QR-code pairing
@@ -188,3 +190,5 @@ in the pairing card.
 - Battery optimization should be disabled for Tailscale ("Unrestricted") and
   for this app ("Never sleep") — otherwise Doze drops the tailnet connection
   and the device WebSocket for minutes at a time.
+
+**Check for updates** is available in the Harness chooser and pairing screen, even when the PC is unreachable. Manual checks bypass the once-per-process startup check and download a newer release again after a failed or cancelled attempt. The control reports current-version, concurrent-check, incompatible-APK and failure results. Android still confirms installation; package, version and certificate validation remain required.

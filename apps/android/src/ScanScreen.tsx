@@ -1,3 +1,4 @@
+import { AppUpdateControl } from './AppUpdateControl.tsx'
 /**
  * Scan screen: shown on first launch (no stored config). The user either
  * scans a QR code from the PC's Settings → Remote page, or enters the
@@ -23,6 +24,8 @@ import { AlertIcon, LogoMark, QrIcon } from './components/Brand.tsx'
 
 interface PairingScreenProps {
   onPaired: (config: DeviceConfig) => Promise<void>
+  onBack?: () => void
+  backName?: string
 }
 
 /** Prefix the endpoint loop uses for its aggregated failure message. */
@@ -43,7 +46,7 @@ function describePairingError(error: unknown): string {
   return text.length > 0 ? text : 'Pairing failed. Generate a new pairing code on the PC and try again.'
 }
 
-export function PairingScreen({ onPaired }: PairingScreenProps): ReactNode {
+export function PairingScreen({ onPaired, onBack, backName }: PairingScreenProps): ReactNode {
   const [pairing, setPairing] = useState<null | { stage: PairingStage }>(null)
   const [manualUrl, setManualUrl] = useState('')
   const [manualToken, setManualToken] = useState('')
@@ -57,6 +60,7 @@ export function PairingScreen({ onPaired }: PairingScreenProps): ReactNode {
 
   const startPairing = async (result: PairingResult, signal: AbortSignal): Promise<void> => {
     const config: DeviceConfig = {
+      ...(result.hostName ? { hostName: result.hostName } : {}),
       serverUrl: result.serverUrl,
       endpoints: result.endpoints,
       deviceId: result.deviceId,
@@ -143,6 +147,7 @@ export function PairingScreen({ onPaired }: PairingScreenProps): ReactNode {
 
   return (
     <div className="screen screen-enter">
+      {onBack && <button className="bar-button pairing-back" type="button" onClick={onBack}>← Back to {backName}</button>}
       <div className="brand">
         <LogoMark size={44} />
         <span className="brand-word">Harness Remote</span>
@@ -206,6 +211,7 @@ export function PairingScreen({ onPaired }: PairingScreenProps): ReactNode {
           Connect
         </button>
       </form>
+      <AppUpdateControl />
     </div>
   )
 }

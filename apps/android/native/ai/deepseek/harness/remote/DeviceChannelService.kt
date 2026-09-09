@@ -85,7 +85,9 @@ class DeviceChannelService : Service() {
 
     private inner class Channel(val params: JSONObject) {
         val id = params.getString("harnessId")
-        private val name = params.getString("name")
+        private val name: String
+            get() = getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+                .getString("harness.$id.name", null) ?: params.getString("name")
         private val urls = params.getJSONArray("wsUrls").let { a -> (0 until a.length()).map { a.getString(it) } }.toMutableList()
         private var socket: WebSocket? = null
         private var index = 0

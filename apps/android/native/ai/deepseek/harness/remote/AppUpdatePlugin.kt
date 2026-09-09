@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Base64
 import androidx.core.content.FileProvider
 import com.getcapacitor.Plugin
+import com.getcapacitor.JSObject
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
@@ -23,29 +24,37 @@ import java.util.concurrent.TimeUnit
  * Checks this repository's stable Android GitHub Release in the background,
  * then opens Android's package installer for a newer, same-signed APK. The
  * installer retains all user confirmation; no browser or GitHub activity is
- * launched. Any unavailable network or invalid release is an ignored update.
+ * launched. Manual checks return a result or a retryable failure.
  */
 @CapacitorPlugin(name = "AppUpdate")
 class AppUpdatePlugin : Plugin() {
 
     @PluginMethod
     fun check(call: PluginCall) {
-        if (!started.compareAndSet(false, true)) {
-            call.resolve()
+        val manual = call.getBoolean("manual", false) == true
+        if (!manual && !started.compareAndSet(false, true)) {
+            call.resolve(JSObject().put("status", "skipped"))
+            return
+        }
+        if (!running.compareAndSet(false, true)) {
+            call.resolve(JSObject().put("status", "busy"))
             return
         }
         Thread {
             try {
-                AppUpdateChecker(context.applicationContext).checkAndOpenInstaller()
+                val status = AppUpdateChecker(context.applicationContext).checkAndOpenInstaller()
+                call.resolve(JSObject().put("status", status))
             } catch (_: Exception) {
-                // Release checks are optional. Network, rate-limit, parsing,
-                // storage, and installer failures leave the app usable.
+                // The caller presents a retry action; startup checks remain optional.
+                call.reject("Could not check or download the update. Check your connection and try again.")
+            } finally {
+                running.set(false)
             }
         }.start()
-        call.resolve()
     }
 
     companion object {
+        private val running = java.util.concurrent.atomic.AtomicBoolean(false)
         private val started = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 }
@@ -59,16 +68,18 @@ private class AppUpdateChecker(private val context: Context) {
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    fun checkAndOpenInstaller() {
-        val current = ReleaseVersion.parseStableTag("android-v${currentVersionName()}") ?: return
-        val release = newestAndroidRelease() ?: return
-        if (release.version <= current) return
-        val apk = download(release) ?: return
+    fun checkAndOpenInstaller(): String {
+        val current = ReleaseVersion.parseStableTag("android-v${currentVersionName()}")
+            ?: error("Installed version is invalid")
+        val release = newestAndroidRelease() ?: error("No Android release available")
+        if (release.version <= current) return "current"
+        val apk = download(release) ?: error("Download failed")
         if (!isValidUpdate(apk, release.version)) {
             apk.delete()
-            return
+            return "incompatible"
         }
         openInstaller(apk)
+        return "installerOpened"
     }
 
     private fun newestAndroidRelease(): ReleaseApk? {
@@ -135,7 +146,8 @@ private class AppUpdateChecker(private val context: Context) {
             setDataAndType(uri, APK_MIME_TYPE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        if (intent.resolveActivity(context.packageManager) != null) context.startActivity(intent)
+        check(intent.resolveActivity(context.packageManager) != null) { "No package installer available" }
+        context.startActivity(intent)
     }
 
     private fun currentVersionName(): String? = context.packageManager.getPackageInfo(context.packageName, 0).versionName

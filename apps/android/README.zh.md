@@ -1,5 +1,7 @@
 # Harness Remote — Android 精简客户端
 
+点击已保存 Harness 旁的 **Rename** 可修改本地名称。新配对默认采用主机提供的计算机名；旧主机则使用不含端口的地址。自定义名称也用于后续通知，并在端点变更后保留。**Add Harness** 页面的返回按钮避开 Android 状态栏安全区域。
+
 [English](README.md) | 中文
 
 DeepSeek Harness Remote 的 Android App（第 2 阶段）：提供二维码配对流程、PC 托管 Web GUI 的 WebView，以及持有到 PC `/remote/device` 通道持久 WebSocket 并在会话需要关注时发布 Android 通知的原生前台服务。
@@ -119,3 +121,5 @@ pnpm dsh:build --apk                      # ... also sync Capacitor and build th
 - Tailscale 检测识别其 `100.64.0.0/10` IPv4 范围、`fd7a:115c:a1e0::/48` IPv6 范围和 `*.ts.net` 名称。Android 会报告是否有网络暴露 `TRANSPORT_VPN`；App 只把该事实用于连接指引，不会将其视作认证。
 - 已认证前台通道在每次重连时返回当前 GUI 令牌。原生服务会把它直接写入 Capacitor Preferences，打开的已连接页面会周期性协调该原生状态，然后再重新加载 iframe。即使 WebView 错过通道事件，这也能修复陈旧令牌状态，无需清除 App 数据或重新配对。
 - 应为 Tailscale（"Unrestricted"）和本 App（"Never sleep"）禁用电池优化，否则 Doze 会让 tailnet 连接和设备 WebSocket 中断数分钟。
+
+Harness 切换器和配对页面提供 **Check for updates**，即使 PC 不可达也可使用。手动检查不受每进程一次的启动检查限制，失败或取消后可再次下载较新版本。控件显示已是最新版本、检查正在进行、APK 不兼容或失败结果。安装仍由 Android 确认，并保留包名、版本和证书校验。

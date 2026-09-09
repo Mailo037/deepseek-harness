@@ -35,3 +35,5 @@ Connection and layout component specs pin the parent state reports, Android over
 ## Consequences
 
 Android has one stable connection affordance whose state matches the embedded carrier, and recovery no longer places a control over conversation content. Endpoint disclosure requires an extra tap, and Tailscale failures give an actionable path. The parent/iframe presentation protocol gains one versioned message, the native plugin gains a read-only network-state method, and real-device behavior still depends on Android exposing Tailscale as `TRANSPORT_VPN`.
+
+Saved Harness display-name overrides use a separate `harness.<id>.name` preference so endpoint persistence cannot overwrite an edit. The native notification service reads that override when posting a notification, without reconnecting its channel. New pairing replies suggest the operating-system computer name; older hosts fall back to the hostname without its port. The pairing back control lives inside the screen safe area.

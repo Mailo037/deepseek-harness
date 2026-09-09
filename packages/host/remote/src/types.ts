@@ -85,6 +85,8 @@ export interface AuthRequest {
 /** Payload the host sends in reply to a `pair` request. */
 export interface PairedMessage {
   readonly type: 'paired'
+  /** Computer name suggested for the saved Harness label. */
+  hostName?: string
   readonly deviceId: RemoteDeviceId
   readonly secret: RemoteDeviceSecret
   /** Persistent token for authenticated GUI HTTP and WebSocket requests. */

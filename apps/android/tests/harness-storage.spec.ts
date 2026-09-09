@@ -34,3 +34,16 @@ it('isolates token renewal, endpoint changes and removal between Harnesses', asy
   expect(await storage.activeHarnessId()).toBe(two.id)
   expect(store.has(`harness.${one.id}.token`)).toBe(false)
 })
+
+it('defaults to the computer name and preserves a custom name across endpoint and token changes', async () => {
+  const one = await storage.addHarness({ ...config('one.local:3080'), hostName: 'Office PC' })
+  expect(one.name).toBe('Office PC')
+  await storage.renameHarness(one.id, '  Work  ')
+  await storage.persistHarnessOrigin(one.id, 'http://one.ts.net')
+  await storage.persistHarnessToken(one.id, 'renewed')
+  expect((await storage.readHarness(one.id)).name).toBe('Work')
+  await expect(storage.renameHarness(one.id, '   ')).rejects.toThrow()
+  expect((await storage.addHarness(config('two.local:3080'))).name).toBe('two.local')
+  await storage.removeHarness(one.id)
+  expect(store.has(`harness.${one.id}.name`)).toBe(false)
+})

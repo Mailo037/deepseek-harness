@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-host-remote
 
+设备配对成功响应包含 `hostName`，即操作系统计算机名，作为移动端 Harness 的建议名称。手机可独立于主机凭据保存自定义显示名称。
+
 [English](README.md) | 中文
 
 Harness Web GUI 的远程设备平面：通过一次性二维码配对设备（Android 或任意 WebSocket 客户端），维护持久化设备注册表，向已连接设备推送会话提醒事件，并立即执行服务器端撤销。

@@ -1,3 +1,4 @@
+import { hostname } from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -108,6 +109,7 @@ export class DeviceChannel {
     this.attach(deviceId, ws)
     this.send(ws, {
       type: 'paired',
+      hostName: hostname(),
       deviceId,
       secret,
       accessToken: this.pairing.guiAccessToken,
