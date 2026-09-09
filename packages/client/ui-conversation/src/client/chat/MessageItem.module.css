@@ -203,12 +203,28 @@
   align-items: center;
   width: fit-content;
   padding: 2px 0;
-  gap: 7px;
+  gap: 6px;
   border-radius: 3px;
   color: inherit;
   cursor: pointer;
   list-style: none;
   user-select: none;
+}
+
+/* Leading refresh glyph: fills the tool-group icon column (16px) so the run's
+   vertical connector line does not show through, and matches the Think/Context
+   row chrome. The base disc occludes the connector under the glyph; the icon
+   inherits the retry row's dim tertiary tone. */
+.retryLeading {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .retrySummary::-webkit-details-marker {
@@ -414,6 +430,10 @@
 /* Inline references use domain glyphs and business-color text without another
    container inside the user bubble. */
 .refChip {
+  max-width: 100%;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--dsw-alias-state-business-tertiary);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -427,3 +447,5 @@
 .refIcon {
   flex: none;
 }
+
+.refLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

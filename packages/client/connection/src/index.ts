@@ -126,6 +126,7 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.remove',
   'host.pickDirectory',
   'host.openPath',
+  'host.linkTitle',
   // The update plane makes the HOST issue network requests (the check's git
   // fetch) and ends the process for every connected client (the apply's
   // quiesce + pull + respawn), so both stay loopback-same-origin like the

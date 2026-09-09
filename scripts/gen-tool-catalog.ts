@@ -58,6 +58,7 @@ import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
+import * as ToolSessionStart from '@deepseek-ai/dsh-tool-session-start'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import * as ToolRebuild from '@deepseek-ai/dsh-tool-rebuild'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
@@ -539,6 +540,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'Host-plane web-only lifecycle control: the call stops the caller\'s running background jobs, records them in the logged result, and arms a post-turn rebuild + restart through the detached self-update helper (`pull: false`). Deployments without the restart capability, `ctx.selfUpdate`, or the web server fail the call, not the load.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-session-start',
+    dir: 'tool-session-start',
+    source: 'packages/host/tool-session-start/src/index.ts',
+    requires: ['ctx.tools', 'ctx.apiProxy', 'ctx.approval', 'ctx.workspaceRegistry (optional)', 'ctx.agentPresets (optional)', 'a top-level calling Agent'],
+    writes: ['tool/call', 'tool/result', 'session/created on the host (the new chat)'],
+    async mount(ctx) {
+      ctx.provide('apiProxy', { sessions: { create: () => Promise.resolve({ rpcId: 'catalog', result: { ok: true as const, value: { sessionId: SessionId('tool-catalog-created') } } }) } } as never)
+      ctx.provide('approval', { request: () => Promise.resolve('allowed-once' as const) } as never)
+      await ctx.plugin(ToolSessionStart)
+    },
+    note:
+      'Host-plane web-only chat lifecycle: the call derives the target from the calling session (its registered workspace, else its cwd, plus its preset), asks the approval seam BEFORE creation, and creates through the gateway\'s `session.create` path, so the browser learns the chat through `host/session-added`. Subagent callers, an absent approval service, or any non-grant outcome fail the call without creating anything. The shipped web-app bundle mounts it; other profiles compose the row themselves.',
   },
   {
     pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',

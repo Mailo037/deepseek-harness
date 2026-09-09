@@ -83,6 +83,19 @@
   line-height: 20px;
 }
 
+.downloadLink {
+  width: fit-content;
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 13px;
+  line-height: 20px;
+  text-underline-offset: 3px;
+}
+
+.downloadLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 3px;
+}
+
 .qrCard {
   display: flex;
   flex-direction: column;

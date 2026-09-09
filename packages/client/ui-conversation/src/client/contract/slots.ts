@@ -453,6 +453,8 @@ export interface ChatNodeOwnerProps {
   sendMessage: (text: string) => void
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
+  /** Cached optional website title lookup for transcript link tokens. */
+  resolveLinkTitle?: ((url: string) => Promise<string | null>) | undefined
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
   /**
    * Assistant renderer omits its reasoning blocks — ChatView shows them as a
@@ -799,6 +801,8 @@ export interface ChatViewInjected {
    */
   openFile: (path: string) => Promise<void>
   loadOlder: () => void
+  /** Reading pause before fetching a page-cut completed turn's missing work. */
+  historyPrefetchDelayMs?: number
   /** Re-run a failed history open (the error-state retry control; a completed open is a no-op). */
   reloadHistory: () => void
   /** Resolve a session-authorized historical image for inline display. */
@@ -830,6 +834,8 @@ export interface ChatViewInjected {
    * the provider in or out takes effect live). Undefined when the service is
    * absent or the turn produced nothing worth linking.
    */
+  /** Cached optional website title lookup for transcript link tokens. */
+  resolveLinkTitle?: ((url: string) => Promise<string | null>) | undefined
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
 }
 

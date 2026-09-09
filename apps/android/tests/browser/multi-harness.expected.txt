@@ -1,0 +1,7 @@
+- dialog "Harnesses":
+  - heading "Harnesses" [level=1]
+  - paragraph: All saved Harnesses stay connected for notifications.
+  - button "Home PC Active" [pressed]
+  - button "Work PC Open"
+  - button "Add Harness"
+  - button "Close"

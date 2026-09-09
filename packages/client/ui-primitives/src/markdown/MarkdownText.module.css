@@ -55,7 +55,7 @@
   margin-bottom: 8px;
 }
 
-.markdown a {
+.markdown a:not([data-link-token]) {
   /* deepsuite markdown.css uses brand-text (blue in newDesign); this sheet
      keeps design-platform brand-text as near-black, so links use the blue
      business-primary alias instead. */
@@ -72,13 +72,13 @@
   margin-right: -3px;
 }
 
-.markdown a:hover,
-.markdown a:focus {
+.markdown a:not([data-link-token]):hover,
+.markdown a:not([data-link-token]):focus {
   outline: none;
   text-decoration: underline var(--dsw-alias-state-business-primary);
 }
 
-.markdown a:focus-visible {
+.markdown a:not([data-link-token]):focus-visible {
   box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
 }
 
@@ -296,10 +296,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
+  border-radius: 5px;
   margin: 0;
-  padding: 0;
+  padding: 1px 5px;
   border: none;
-  background: none;
+  background: var(--dsw-alias-state-business-tertiary);
   font: inherit;
   color: var(--dsw-alias-state-business-primary);
   text-decoration: none;
@@ -308,22 +310,6 @@
 
 .fileMentionIcon {
   flex: none;
-}
-
-/* External link token (chat opt-in via linkFavicons): the site's favicon rides
-   left of the anchor text; a site that answers its favicon with an error swaps
-   to the generic link glyph inside the same box. */
-.linkWithIcon {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.linkIcon {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
 }
 
 .fileMention:hover,

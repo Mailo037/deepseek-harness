@@ -1,8 +1,7 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Reference order target" [disabled]
-  - button "Session log":
-    - text: Session log
+  - button "Session actions for Reference order target":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -14,10 +13,12 @@
   - img
   - text: Session recall Research notes
 - textbox "Message the agent"
-- button "Commands":
+- button "Add attachment":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- button "Select model":
+  - text: Select model
+  - img
+- button "Start voice input":
   - img
 - button "Send message" [disabled]

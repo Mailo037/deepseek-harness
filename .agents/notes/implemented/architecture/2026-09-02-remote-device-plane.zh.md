@@ -10,6 +10,8 @@ Web GUI 按设计绑定 loopback：`dsh --profile web` 会拒绝 `--host 0.0.0.0
 
 ## 决策
 
+Android App 为每个已保存配对分配本地 Harness id。GUI 令牌使用与原生服务共享的按 Harness 分离的 preference 键。一个前台服务持有独立通道的映射；所有通道修改都在主 looper 上运行，并忽略被替换 socket 的回调。切换 GUI 不会停止其他通道。通知身份包含 Harness id 和会话 id，因此独立主机可复用会话 id，而不覆盖彼此的通知。提交新索引前会导入现有单服务器存储。
+
 **设备平面挂载在 web profile 内，通过显式配对保护，而不是开放端口。** `@deepseek-ai/dsh-host-remote` 负责以下事项：
 
 - **配对**：`pairingCreate()` 创建带可配置寿命的一次性 token，并返回含端点列表的二维码 payload。端点包括自动探测到的 LAN IPv4 与额外配置项。JSON payload 使用 `v: 1`，Android 客户端可按顺序尝试多个端点。
@@ -26,9 +28,15 @@ Web GUI 按设计绑定 loopback：`dsh --profile web` 会拒绝 `--host 0.0.0.0
 
 ## 测试
 
+Android iframe 在网络和探测状态变化时保持挂载。活动 GUI 连接优先于通知通道的端点选择，避免不同传输反复导航 iframe。待处理通知目标等待 GUI 连接公告，而不是文档加载或 HTTP 可达性，因为这些事件不能证明会话导航已可用。Android 组件回归测试验证网络中断时 iframe 身份保持不变，以及通知的延迟投递。
+
+Android 配对持有每次尝试的 socket，直到收到响应或终止事件，并在结束时释放回调和定时器。响应前的正常关闭属于失败尝试。端点持久化仅写入端点字段，因为原生通道独立更新 GUI 令牌；回写此前读取的完整配置可能恢复过期令牌。Android 测试覆盖正常关闭后的回退、取消、超时、格式错误消息和端点持久化期间的令牌更新。
+
 `packages/host/remote/tests/` 从四层覆盖该平面：配对单元测试、使用真实 storage-domain 机制的注册表测试、真实 HTTP 与 WebSocket channel 套件，以及挂载在真实 `WebServer`（`127.0.0.1:0`）上的 `RemoteGateway` 套件。它们覆盖一次性 token、拒绝、重连、通知、撤销、广播、基于标题的通知文本、id 回退，以及撤销后 socket 立即终止。客户端包包含 jsdom 组件测试与浏览器插件测试。
 
 ## 曾考虑的替代方案
+
+**只保留一个活动后台连接。** 否决，因为切换可见 GUI 会使其他已保存 Harness 静默。独立通道共享一个前台服务，同时保留各自的凭据、重试和通知目标。
 
 **在 webserver 外使用独立端口。** 否决：第二个 listener 需要自己的 TLS/隧道方案，也无法继承 profile 绑定配置；现有 webserver upgrade registry 已负责 route 生命周期与清理。
 

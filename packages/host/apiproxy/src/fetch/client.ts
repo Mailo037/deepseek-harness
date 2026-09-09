@@ -1,3 +1,4 @@
+import { hostLinkTitleValueSchema } from '../api/host.schema.ts'
 /**
  * Client side of the fetch carrier. AbstractApiClient holds every protocol invariant: rpcId minting,
  * four-quadrant envelope wrap/unwrap, zod parsing, in-process SSE frame decoding, and the payload-direct
@@ -122,6 +123,7 @@ export interface IApiClient {
     pickDirectory(payload: RequestPayload<'host.pickDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.pickDirectory'>>>
     listDirectory(payload: RequestPayload<'host.listDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.listDirectory'>>>
     createDirectory(payload: RequestPayload<'host.createDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.createDirectory'>>>
+    linkTitle(payload: RequestPayload<'host.linkTitle'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.linkTitle'>>>
     openPath(payload: RequestPayload<'host.openPath'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.openPath'>>>
   }
   workspace: {
@@ -209,6 +211,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'subagent.history': subagentHistoryValueSchema,
   'subagent.prompt': subagentPromptValueSchema,
   'subagent.interrupt': subagentInterruptValueSchema,
+  'host.linkTitle': hostLinkTitleValueSchema,
   'host.describe': hostDescribeValueSchema,
   'host.checkUpdate': hostCheckUpdateValueSchema,
   'host.applyUpdate': hostApplyUpdateValueSchema,
@@ -493,6 +496,7 @@ export abstract class AbstractApiClient implements IApiClient {
     ),
     listDirectory: (payload, signal) => this.callUnary('host.listDirectory', payload, signal),
     createDirectory: (payload, signal) => this.callUnary('host.createDirectory', payload, signal),
+    linkTitle: (payload, signal) => this.callUnary('host.linkTitle', payload, signal),
     openPath: (payload, signal) => this.callUnary('host.openPath', payload, signal),
   }
 

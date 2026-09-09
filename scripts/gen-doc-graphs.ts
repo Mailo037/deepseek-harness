@@ -98,6 +98,14 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'launchSettings',
+    pkg: 'client-ui-launch',
+    title: 'Computer startup registration',
+    mode: 'seam',
+    implementations: ['web-app'],
+    note: 'The hosting surface applies durable startup preferences through its OS login-item backend; Electron provides its backend in the app.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

@@ -38,7 +38,7 @@ const PRODUCED = [
 ] as const
 
 /** Build one settled turn whose successful write calls carry ten locations. */
-function producedFixture(): string {
+function producedFixture(older = false): string {
   const session = Session.create(SessionId('produced-files-source'))
   const eventTimeOrigin = new Date().setHours(12, 0, 0, 0)
   session.append('turn/start', { turn: 1 })
@@ -75,6 +75,7 @@ function producedFixture(): string {
     session.append('tool/result', {
       turn: 1,
       step: 1,
+      meta: { diffs: [{ path: call.path, oldText: null, newText: 'created\n' }] },
       message: createToolResultMessage({
         callId: call.callId,
         content: [{ type: 'text', text: `Created ${call.path}` }],
@@ -93,6 +94,22 @@ function producedFixture(): string {
   }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 2 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+  if (older) {
+    for (let turn = 2; turn <= 8; turn += 1) {
+      session.append('turn/start', { turn })
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `Follow-up ${turn}` }], source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      session.append('step/start', { turn, step: 1 })
+      session.append('assistant/message', { turn, step: 1, message: createAssistantMessage({
+        content: [{ type: 'text', text: `No file changes in follow-up ${turn}.` }],
+        source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      }) }, { surfaceOp: 'append' })
+      session.append('step/end', { turn, step: 1 })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
+  }
 
   return [
     JSON.stringify({
@@ -115,6 +132,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
     await seedSession(scaffold, producedFixture(), SEED_ID)
+    await seedSession(scaffold, producedFixture(true), `${SEED_ID}-older`)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     // Keep the responsive sidebar available while selecting the cold seed;
@@ -135,23 +153,26 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
   })
 
   async function openSeededSession(): Promise<void> {
+    await page.setViewportSize({ width: 1280, height: 900 })
     const sessionRow = page.locator(`[role="treeitem"][data-drag-id="s:${SEED_ID}"]`)
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
   }
 
-  it.skipIf(MODE === 'record')('keeps a narrow ten-file summary on one line with +8 and a folder action', async () => {
+  it.skipIf(MODE === 'record')('keeps a narrow ten-file summary on one line with a counted remainder and folder action', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-produced-files'))
     await openSeededSession()
     await page.setViewportSize({ width: 780, height: 900 })
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
-    const chips = row.getByRole('button')
-    await expect.poll(() => chips.count()).toBe(2)
+    const chips = row.getByRole('button').filter({ hasNotText: /^\+ / })
+    const remainder = row.getByRole('button', { name: /^\+ \d+ files$/ })
+    await remainder.waitFor()
+    expect(await chips.count()).toBeGreaterThan(0)
     expect(await chips.nth(0).innerText()).toBe('关于我.md')
     expect(await chips.nth(1).innerText()).toBe('index.html')
-    expect(await row.getByText('+ 8 files', { exact: true }).count()).toBe(1)
+    expect(Number((await remainder.innerText()).match(/\d+/)?.[0]) + await chips.count()).toBe(10)
     const showFolder = page.getByRole('button', { name: 'Show in folder', exact: true })
     expect(await showFolder.count()).toBe(1)
     expect(await page.getByText('Produced', { exact: true }).count()).toBe(1)
@@ -174,7 +195,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     }
 
     const tops = await row.locator(':scope > *').evaluateAll(elements =>
-      elements.map(element => element.getBoundingClientRect().top))
+      elements.map(element => element.getBoundingClientRect().top + element.getBoundingClientRect().height / 2))
     expect(new Set(tops.map(top => Math.round(top))).size).toBe(1)
     const geometry = await row.evaluate(element => ({
       clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
@@ -202,8 +223,23 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'session-files.expected.md'])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 90_000)
+  it.skipIf(MODE === 'record')('shows files from unloaded turns immediately after opening a session', async () => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.locator(`[role="treeitem"][data-drag-id="s:${SEED_ID}-older"]`).click()
+    await page.getByText('No file changes in follow-up 8.', { exact: true }).waitFor()
+    expect(await page.locator('[data-produced-files-row]').count()).toBe(0)
+    await page.getByRole('button', { name: '10 files changed, +10 lines and -0 lines', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '10 files changed, +10 lines and -0 lines', exact: true })
+    expect(await dialog.getByRole('listitem').count()).toBe(10)
+    await compareOrRefreshGolden(
+      fileURLToPath(new URL('./snapshots/produced-files/session-files.expected.md', import.meta.url)),
+      await dialog.ariaSnapshot(), MODE,
+    )
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
 })

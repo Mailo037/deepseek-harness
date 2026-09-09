@@ -1,8 +1,10 @@
 /**
  * Notification-sounds preference row registered into the General section item
  * slot — the notifications feature owns its own settings surface. Master
- * opt-in switch first; the per-event sound pickers (with preview) show once
- * enabled. Selection follows the persisted preference.
+ * opt-in switch first; the live browser permission status follows (the row
+ * reports whether system notifications are allowed or blocked, never a bare
+ * on/off of the browser capability), then the per-event sound pickers with
+ * preview once enabled. Selection follows the persisted preference.
  */
 import clsx from 'clsx'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
@@ -12,10 +14,11 @@ import {
 } from '../notification-settings.ts'
 import type { NotificationsKey } from './locales.ts'
 import type { createNotificationsRowStore, NotificationsRowState } from './settings-store.ts'
+import type { NotificationPermissionState as PermissionState } from './runtime.ts'
 import type { NotificationEventKind as EventKind } from './watcher.ts'
 import css from './NotificationsRow.module.css'
 
-/** Injected business face: preference writes and sound preview (t rides the standard locale seat). */
+/** Injected business face: preference writes, permission gesture, and sound preview. */
 export interface NotificationsRowInjected {
   /** Switch the master opt-in. */
   setEnabled: (enabled: boolean) => void
@@ -23,6 +26,8 @@ export interface NotificationsRowInjected {
   setSound: (kind: EventKind, sound: NotificationSound) => void
   /** Play one event kind's currently assigned sound. */
   preview: (kind: EventKind) => void
+  /** Ask the browser to grant notification permission (a user gesture). */
+  requestPermission: () => void
 }
 
 /** Full component props: runtime share + store share + locale seat + injected face. */
@@ -44,6 +49,14 @@ const SOUND_LABEL_KEYS: Record<NotificationSound, NotificationsKey> = {
   pulse: 'notifications.sound.pulse',
 }
 
+/** Status copy per browser permission state. */
+const PERMISSION_LABEL_KEYS: Record<PermissionState, NotificationsKey> = {
+  granted: 'notifications.browser.granted',
+  default: 'notifications.browser.default',
+  denied: 'notifications.browser.denied',
+  unsupported: 'notifications.browser.unsupported',
+}
+
 /** The row store mirrors the snapshot flat (`doneSound`, …); pick the field an event kind names. */
 function soundOf(state: NotificationsRowState, kind: EventKind): NotificationSound {
   return kind === 'done' ? state.doneSound : kind === 'attention' ? state.attentionSound : state.errorSound
@@ -55,7 +68,7 @@ function soundOf(state: NotificationsRowState, kind: EventKind): NotificationSou
  * @returns the row element tree.
  */
 export function NotificationsRow({
-  t, useStore, setEnabled, setSound, preview,
+  t, useStore, setEnabled, setSound, preview, requestPermission,
 }: NotificationsRowComponentProps) {
   const state = useStore(s => s)
   return (
@@ -71,12 +84,30 @@ export function NotificationsRow({
           onClick={() => {
             const next = !state.enabled
             setEnabled(next)
-            if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-              void Notification.requestPermission()
-            }
+            if (next) requestPermission()
           }}
         />
       </div>
+      {state.enabled && (
+        <>
+          <div className={css.browserRow}>
+            <span className={clsx(css.stateDot, css[state.permission])} aria-hidden="true" />
+            <span className={css.browserLabel}>{t(PERMISSION_LABEL_KEYS[state.permission])}</span>
+            {state.permission === 'default' && (
+              <button
+                type="button"
+                className={css.request}
+                onClick={requestPermission}
+              >
+                {t('notifications.browser.request')}
+              </button>
+            )}
+          </div>
+          {state.permission === 'denied' && (
+            <p className={css.browserHint}>{t('notifications.browser.deniedHint')}</p>
+          )}
+        </>
+      )}
       {state.enabled && EVENTS.map(({ kind, labelKey }) => (
         <div key={kind} className={css.eventRow}>
           <span className={css.eventLabel}>{t(labelKey)}</span>

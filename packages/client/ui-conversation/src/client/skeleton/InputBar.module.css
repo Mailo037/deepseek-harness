@@ -516,21 +516,21 @@
   -webkit-text-fill-color: transparent;
 }
 
-/* The styled pill overlays its host's raw span absolutely. It is allowed to be
-   wider than the span (icon plus padding) because the advance above owns the
-   geometry; anchored to the span start so the caret docked at the range start
-   sits on its left cap, with overflow extending into the following whitespace.
-   A token long enough to soft-wrap degrades to a single-line pill at its first
-   fragment; the invisible advance still wraps exactly like the textarea. */
+/* Keep the visible token inside the raw text advance so arguments and hints
+   retain the textarea's geometry without being covered by the label. */
 .tokenPill {
   position: absolute;
   top: 0;
   left: 0;
   height: 100%;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 1px 3px;
+  padding: 1px 4px;
   border-radius: 999px;
   background-color: transparent;
   color: var(--dsw-alias-state-business-primary);
@@ -585,6 +585,10 @@
 }
 
 .tokenLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8125em;
   display: inline-block;
   white-space: pre;
 }

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-08-history-turn-prefetch.md
+2026-09-08-history-turn-prefetch.md: 9bdd6d6199f42986b8e1ce59f4a7dfe96d68d2c5
+2026-09-08-history-turn-prefetch.zh.md: 74116ec176504f5254d5898446ef6d06a023ad2a

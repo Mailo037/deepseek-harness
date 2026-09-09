@@ -108,6 +108,33 @@ describe('the guided Tailscale setup', () => {
 })
 
 describe('the pairing card', () => {
+  it('links Android releases and lets a failed pairing request be retried', async () => {
+    const err = silenceConsole()
+    const createPairing = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(PAIRING)
+    renderSection({ createPairing })
+    expect(screen.getByRole('link', { name: en.androidDownload }).getAttribute('href'))
+      .toBe('https://github.com/Mailo037/deepseek-harness/releases?q=android-v&expanded=true')
+    fireEvent.click(screen.getByRole('button', { name: en.pairingGenerate }))
+    await screen.findByText(en.pairingError)
+    fireEvent.click(screen.getByRole('button', { name: en.pairingGenerate }))
+    await screen.findByRole('button', { name: en.pairingRegenerate })
+    fireEvent.click(screen.getByRole('button', { name: en.pairingRegenerate }))
+    await waitFor(() => { expect(createPairing).toHaveBeenCalledTimes(3) })
+    err.mockRestore()
+  })
+
+  it('refreshes devices after a failed initial load', async () => {
+    const err = silenceConsole()
+    const listDevices = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ devices: [] })
+    renderSection({ listDevices })
+    openTab(en.devicesHeading)
+    await screen.findByText(en.devicesError)
+    fireEvent.click(screen.getByRole('button', { name: en.devicesRefresh }))
+    await screen.findByText(en.devicesEmpty)
+    expect(listDevices).toHaveBeenCalledTimes(2)
+    err.mockRestore()
+  })
+
   it('generates a code, reveals the payload, and copies it', async () => {
     vi.useFakeTimers()
     useClipboard(() => Promise.resolve())

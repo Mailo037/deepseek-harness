@@ -17,21 +17,28 @@ import css from './ChatView.module.css'
  * @returns the duration line with its separator, plus the work when open.
  */
 export const TurnWorkSummary = memo(function TurnWorkSummary({
-  label, children,
+  label, children, anchorKey, onExpand,
 }: {
   /** The run-duration text (locale-formatted). */
   label: string
+  /** Stable scroll anchor while older work enters the closed group. */
+  anchorKey?: string
+  /** Prioritize missing history when the reader opens the group. */
+  onExpand?: (() => void) | undefined
   /** The turn's foldable windows and seats, in flow order. */
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <section className={css.turnSummaryBlock} data-turn-summary>
+    <section className={css.turnSummaryBlock} data-turn-summary data-chat-anchor-key={anchorKey}>
       <button
         type="button"
         className={css.turnSummary}
         aria-expanded={open}
-        onClick={() => { setOpen(value => !value) }}
+        onClick={() => {
+          if (!open) onExpand?.()
+          setOpen(value => !value)
+        }}
       >
         <span>{label}</span>
         <IconChevronDownOutline14 className={clsx(css.turnSummaryChevron, open && css.turnSummaryChevronOpen)} />

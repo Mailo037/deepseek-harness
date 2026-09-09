@@ -54,6 +54,7 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  launchSettings: 'client-modules.md',
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
@@ -156,6 +157,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the API',
   modelDirectories: 'client-side interface-typed browser service — packages/client/ui-model-selection/README.md owns the API',
   modules: 'client-side interface-typed browser service — packages/client/modules/README.md owns the API',
+  launch: 'client-side startup preference service — packages/client/ui-launch/README.md owns the API',
   notifications: 'client-side notification runtime service — packages/client/ui-notifications/README.md owns the API',
   remote: 'client-side interface-typed gateway accessor (ClientRemote) — packages/api/gateway/README.md owns the API',
   sessionLogDownload: 'client-side browser download controller — packages/session-query/session-log-export/README.md owns the API',
@@ -215,6 +217,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
   'command/executed': 'client-face local command acknowledgment — packages/client/ui-commands/README.md owns the API',
   'connection/reset': 'client-face transport signal — packages/client/runtime/README.md owns the API',
   'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the API',
+  'launch/change': 'client-face startup preference invalidation — packages/client/ui-launch/README.md owns the API',
   'notifications/change': 'client-face notification invalidation signal — packages/client/ui-notifications/README.md owns the API',
   'slash/input-begin-command': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',

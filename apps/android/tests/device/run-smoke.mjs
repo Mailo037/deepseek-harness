@@ -198,7 +198,13 @@ async function main() {
       await shot(cdp, 'connected')
     } else if (PHASE === 'seed-stale-token') {
       record('starts from connected screen', (await waitFor(cdp, `${SCREEN}.includes('connected')`, 10_000, 'connected screen')) === true)
-      const seeded = await cdp.evaluate(`window.Capacitor.Plugins.Preferences.set({ key: 'accessToken', value: 'GUIACCESS12' }).then(() => true)`)
+      const seeded = await cdp.evaluate(`(async () => {
+        const prefs = window.Capacitor.Plugins.Preferences;
+        const { value: id } = await prefs.get({ key: 'activeHarness' });
+        if (!id) throw new Error('No active Harness');
+        await prefs.set({ key: 'harness.' + id + '.token', value: 'GUIACCESS12' });
+        return true;
+      })()`)
       record('stored GUI token made stale', seeded === true)
     } else if (PHASE === 'persisted') {
       record('relaunch lands on connected screen', (await waitFor(cdp, `${SCREEN}.includes('connected')`, 20_000, 'connected screen')) === true)

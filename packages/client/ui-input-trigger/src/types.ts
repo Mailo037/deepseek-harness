@@ -38,6 +38,13 @@ export interface InputTriggerCandidate {
   readonly description?: string
   readonly icon?: string
   readonly hint?: string
+  /**
+   * Reference domain of the candidate, when it names one. The menu renders the
+   * domain's glyph in place of the former text prefix; the same union labels
+   * {@link ReferenceInsert.appearance} chips, so a row and the token it
+   * inserts speak the same vocabulary.
+   */
+  readonly appearance?: 'session' | 'file' | 'folder'
   /** Optional visual heading shared by adjacent candidates; sectioned groups omit their source-title row. */
   readonly section?: string
   /** Opaque source-owned pick payload. */

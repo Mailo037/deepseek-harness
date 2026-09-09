@@ -20,7 +20,7 @@ describe('link favicons (linkFavicons opt-in)', () => {
     const { container } = render(<MarkdownText text={'[safe](https://example.com)'} />)
     const anchor = container.querySelector('a')!
     expect(anchor).not.toBeNull()
-    expect(anchor.className).not.toContain('linkWithIcon')
+    expect(anchor.hasAttribute('data-link-token')).toBe(false)
     expect(anchor.querySelector('img')).toBeNull()
   })
 
@@ -30,10 +30,10 @@ describe('link favicons (linkFavicons opt-in)', () => {
     const anchors = [...container.querySelectorAll('a')]
     expect(anchors).toHaveLength(2)
     // The text anchor carries the favicon image inside the token anchor.
-    expect(anchors[0]!.className).toContain('linkWithIcon')
+    expect(anchors[0]!.getAttribute('data-link-token')).toBe('website')
     expect(anchors[0]!.querySelector('img[src="https://example.com/favicon.ico"]')).not.toBeNull()
     // A linked image stays bare: the favicon would sit beside a thumbnail.
-    expect(anchors[1]!.className).not.toContain('linkWithIcon')
+    expect(anchors[1]!.hasAttribute('data-link-token')).toBe(false)
     expect(anchors[1]!.querySelector('img[src="https://example.com/favicon.ico"]')).toBeNull()
   })
 
@@ -242,10 +242,10 @@ describe('MarkdownText', () => {
     // Initially renders the fallback link SVG icon while loading in background
     expect(container.querySelector('svg')).not.toBeNull()
     const img = container.querySelector('img')!
-    expect(img.style.display).toBe('none')
+    expect(img.hidden).toBe(true)
     fireEvent.load(img)
     // After load, image is visible and SVG fallback is unmounted
-    expect(img.style.display).toBe('')
+    expect(img.hidden).toBe(false)
     expect(container.querySelector('svg')).toBeNull()
   })
 

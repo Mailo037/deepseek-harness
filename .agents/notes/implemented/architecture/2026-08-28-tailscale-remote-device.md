@@ -10,7 +10,7 @@ The Android remote app stored exactly one server origin. On a phone that moves b
 
 ## Decision
 
-**Multi-endpoint persistence with one pure selection module.** The app stores the full normalized endpoint list from the QR payload (loopback aliases dropped — from the phone they can only mean the phone's own loopback) plus the last-successful origin. `EndpointSelection.ts` owns selection as pure functions (`endpointsOf`, `selectCandidates`); the GUI probe and the `NotificationService` both derive their candidate order from it, and the Kotlin service receives the already-ordered `wsUrls` list, so the selection logic exists once. Priority is last-successful → stored order (LAN → Tailscale → extras). A GUI probe success or a channel `authed` writes the winning origin back (`persistLastSuccessful` on both the TS and plugin side), so both planes converge on the same endpoint.
+**Multi-endpoint persistence with one pure selection module.** The app stores the full normalized endpoint list from the QR payload (loopback aliases dropped — from the phone they can only mean the phone's own loopback) plus the last-successful origin. `EndpointSelection.ts` owns selection as pure functions (`endpointsOf`, `selectCandidates`); the GUI probe and the `NotificationService` both derive their candidate order from it, and the Kotlin service receives the already-ordered `wsUrls` list, so the selection logic exists once. Priority is last-successful → stored order (LAN → Tailscale → extras). The GUI stores a working origin through `persistHarnessOrigin`; each native channel keeps its successful endpoint first in memory. A connected GUI retains its own endpoint rather than following another transport.
 
 **HTTP over the tailnet instead of `tailscale serve`.** `tailscale serve` proxies to `127.0.0.1`, so the Harness would see every access as loopback and `isLoopbackRequest` would bypass the GUI access-token guard — the defense-in-depth between tailnet membership and GUI auth would collapse to one layer. Direct `http://`/`ws://` over the encrypted tailnet keeps `100.x.y.z` non-loopback, so the guard still applies. No TLS, no certificates, no MagicDNS requirement; `usesCleartextTraffic` was already required for LAN.
 
@@ -20,11 +20,11 @@ The Android remote app stored exactly one server origin. On a phone that moves b
 
 ## One deliberate deviation from the design sketch
 
-The `BootReceiver` sketch read the persisted candidates with `SharedPreferences.getStringSet`, but a `Set` destroys candidate order — the whole point of the last-successful-first priority. The channel parameters are stored as a JSON array string under the same keys (`last_ws_urls`, `last_secret`, `last_device_id`), and `loadChannelParams` is the single reader used by both the `BootReceiver` and sticky restarts (a sticky restart redelivers a null intent and recovers from the same store).
+Channel parameters are stored as a JSON object per local Harness id, including an ordered `wsUrls` array. `loadChannels` serves both boot and sticky restarts. JSON arrays preserve candidate order; `SharedPreferences.getStringSet` would destroy the last-successful-first priority.
 
 ## Testing
 
-`apps/android/tests/` adds vitest unit specs (Node, no emulator): endpoint selection (normalize, loopback filtering, dedupe, candidate ordering) and device-storage migration (legacy single-URL config → `endpoints` + last-successful, identity fields preserved, `persistLastSuccessful` append semantics). The emulator-based device lane under `tests/device/` is untouched. Network-transition behavior (Wi-Fi ↔ mobile, Doze, boot) remains a real-device manual matrix; the selection logic that decides those transitions is the part under unit test.
+`apps/android/tests/` adds vitest unit specs (Node, no emulator): endpoint selection (normalize, loopback filtering, dedupe, candidate ordering) and device-storage migration (legacy single-URL config → `endpoints` + last-successful, identity fields preserved, `persistLastSuccessful` append semantics). Network-transition behavior (Wi-Fi ↔ mobile, Doze, boot) remains a real-device manual matrix; the selection logic that decides those transitions is the part under unit test.
 
 ## Alternatives considered
 
@@ -42,4 +42,4 @@ A `Set` destroys candidate order, which the last-successful-first priority depen
 
 ## Consequences
 
-The app now converges on one ordered endpoint list, so a Wi-Fi ↔ mobile switch or Doze exit recovers without restarting the channel or losing the GUI connection. The cost accepted: cleartext HTTP/WS over the tailnet carries no TLS or certificates (relying on the encrypted tunnel rather than adding a new trust layer), and network-transition behavior stays a real-device manual matrix rather than an automated test.
+Each Harness retains its own ordered endpoint list and retry state. A Wi-Fi ↔ mobile switch or Doze exit can retry without re-pairing; the visible GUI stays mounted during temporary connection loss. The cost accepted: cleartext HTTP/WS over the tailnet carries no TLS or certificates (relying on the encrypted tunnel rather than adding a new trust layer), and network-transition behavior stays a real-device manual matrix rather than an automated test.

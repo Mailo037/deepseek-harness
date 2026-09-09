@@ -25,6 +25,7 @@ Electron main process
 - The app takes an **OS-assigned port** (`--port 0`), so it never collides with a `dsh web` instance on 3080.
 - Sessions, settings, credentials, and the `web` profile under `$DSH_HOME` are shared with `dsh web` — the same chats appear in both.
 - A `DSH_ELECTRON_GRACE_MS` environment variable overrides the 5-second default.
+- The main process provides the **launch backend** (`launchSettings` service): the General-settings "Start at computer startup" switch applies through `app.setLoginItemSettings` — Windows registry Run key always, macOS LaunchAgent for packaged apps only, unsupported on Linux where Electron offers no login-item API.
 
 ## Run
 
@@ -78,3 +79,4 @@ After a repository build, the host smoke test boots the real web profile in a pl
 - **Per-chat processes** are not implemented: all sessions run in one host process in the Electron main. The grace window protects against window close; a hard kill of the whole process still ends the host (sessions are persisted, so chats resume from their last checkpoint on the next launch).
 - **macOS** keeps the app alive after the last window closes by platform convention; the grace timer does not fire there.
 - **No tray icon**: while every window is closed during the grace window, the app is only reachable by relaunching it (single-instance lock routes to the running instance).
+- **Login items are preference-driven, not read back**: the settings switch stores the preference and the main process applies it on the next boot and on every change; an entry removed outside the app (Task Manager, System Settings) is re-asserted on the next app start when the preference says so.

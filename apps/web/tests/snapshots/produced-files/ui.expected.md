@@ -6,9 +6,6 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- navigation "Conversation navigation":
-  - button "Jump to this message"
-  - button "Jump to this message"
 - text: Create the site files. {{clock}}
 - button "Copy":
   - img
@@ -56,5 +53,7 @@
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
+- button "Start voice input":
+  - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} · Tool call {{duration}}
+- text: 1 turns · 1 steps LLM {{duration}} · Tool call {{duration}} 10 files · +10 · -0

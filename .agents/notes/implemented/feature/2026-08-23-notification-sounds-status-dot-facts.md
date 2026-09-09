@@ -20,7 +20,7 @@ Sounds are synthesized from Web Audio oscillators and gain envelopes, so no audi
 
 **Deriving events inside ui-workspace's tree derivation.** Rejected: that derivation is render-scoped (folded groups skip row projection), would miss exactly the background sessions notifications exist for, and sound output is not presentation state.
 
-**Browser desktop notifications.** Deferred: they need a permission flow and per-OS presentation; sounds already cover the window-open-but-unfocused case. Recorded under the package README's known limitations.
+**Browser desktop notifications.** Deferred at this note's decision; the permission flow and in-app presentation shipped later through the [notification status display decision](2026-09-02-notification-status-and-launch-at-login.md) — this note's sounds surface stays unchanged.
 
 ## Consequences
 

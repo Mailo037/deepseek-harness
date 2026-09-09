@@ -898,6 +898,10 @@ function sessionStatsOf(log: readonly SessionEvent[]): {
   ttftSteps: number
   decodeMs: number
   decodeTokens: number
+  filesEdited: number
+  linesAdded: number
+  linesRemoved: number
+  fileChanges: { path: string; added: number; removed: number }[]
 } {
   const value = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }
   let lastTurn: number | null = null
@@ -955,7 +959,31 @@ function sessionStatsOf(log: readonly SessionEvent[]): {
         break
     }
   }
-  return value
+  const files = new Map<string, { path: string; added: number; removed: number }>()
+  const calls = new Set<string>()
+  const lineCount = (text: string): number => text === '' ? 0 : (text.endsWith('\n') ? text.slice(0, -1) : text).split('\n').length
+  for (const event of log) {
+    if (event.type === 'turn/end') calls.clear()
+    if (event.type === 'tool/call') calls.add(event.data.callId)
+    if (event.type !== 'tool/result' || !calls.delete(event.data.message.source.callId)
+      || event.data.message.content[0].isError === true) continue
+    const meta = event.data.meta
+    if (typeof meta !== 'object' || meta === null || Array.isArray(meta) || !Array.isArray(meta.diffs)) continue
+    for (const diff of meta.diffs) {
+      if (typeof diff !== 'object' || diff === null || Array.isArray(diff)
+        || typeof diff.path !== 'string' || typeof diff.newText !== 'string'
+        || (diff.oldText !== null && typeof diff.oldText !== 'string')) continue
+      const added = lineCount(diff.newText)
+      const removed = diff.oldText === null ? 0 : lineCount(diff.oldText)
+      if (added === 0 && removed === 0) continue
+      const previous = files.get(diff.path)
+      files.set(diff.path, { path: diff.path, added: (previous?.added ?? 0) + added, removed: (previous?.removed ?? 0) + removed })
+    }
+  }
+  const fileChanges = [...files.values()]
+  return { ...value, fileChanges, filesEdited: files.size,
+    linesAdded: fileChanges.reduce((sum, file) => sum + file.added, 0),
+    linesRemoved: fileChanges.reduce((sum, file) => sum + file.removed, 0) }
 }
 
 interface FixtureRequestContext {
@@ -2654,6 +2682,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       interrupt: request => Promise.resolve(ok(request, { accepted: true as const })),
     },
     host: {
+      linkTitle: request => ok(request, { title: null }),
       describe: request => ok(request, {
         version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
         repository: {
@@ -3361,6 +3390,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
+      case 'host.linkTitle': return this.api.host.linkTitle(request, new AbortController().signal)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)

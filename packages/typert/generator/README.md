@@ -6,6 +6,8 @@ TypeScript project analyzer and model-driven Typert generator. It converts the d
 
 The analyzer can use independent `ts.Program` instances seeded from `tsconfig.host.json` or `tsconfig.client.json`. Direct project references establish compiler-face membership, while package subpaths establish Typert runtime-face contributions: an ordinary single-project package declaring `dsh.client` may contribute both Host and Client runtime models, and only a split project explicitly referenced through `tsconfig.host.json` or `tsconfig.client.json` is restricted to that corresponding face. `package.json#exports` establishes every cross-package public boundary, and source imports or re-exports are the only allowed cross-face edges. Types owned by NPM dependencies, including global declarations from `@types` packages, remain `external` references instead of being expanded.
 
+Dual-face package analysis starts from the public exports for the selected face, not every file in the shared project. Explicit imports remain reachable; unrelated browser declarations cannot enter a Host program through the project include list.
+
 ## Analysis Model
 
 Each face contains package exports, Cordis services and events, explicitly tagged objects and schemas, and a type graph for their reachable declarations. The graph preserves declaration identity, generic parameters and applications, explicit inheritance, conditional and mapped types, import attributes, abstract modifiers, and source JSDoc. Service and `@typert object` APIs expose public instance members only; constructors, static members, and non-public members are excluded.

@@ -1,0 +1,12 @@
+- dialog "10 files changed, +10 lines and -0 lines":
+  - list:
+    - listitem "关于我.md": 关于我.md +1 -0
+    - listitem "index.html": index.html +1 -0
+    - listitem "long-generated-experience-specification-for-produced-files-overflow.md": long-generated-experience-specification-for-produced-files-overflow.md +1 -0
+    - listitem "styles.css": styles.css +1 -0
+    - listitem "app.ts": app.ts +1 -0
+    - listitem "schema.json": schema.json +1 -0
+    - listitem "README.md": README.md +1 -0
+    - listitem "preview.svg": preview.svg +1 -0
+    - listitem "notes.txt": notes.txt +1 -0
+    - listitem "manifest.yaml": manifest.yaml +1 -0

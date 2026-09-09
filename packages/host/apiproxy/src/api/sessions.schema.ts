@@ -240,10 +240,19 @@ export const imageLimitsProjectionSchema = z.object({
   mediaTypes: z.array(z.string()),
 }) as unknown as z.ZodType<ImageAttachmentLimits>
 
+/** Logged bounds of completed work omitted before a history page. */
+export const historyTurnSchema = z.object({
+  turn: z.number().int().nonnegative(),
+  startSeq: z.number().int().nonnegative(),
+  startTime: z.number(),
+  endTime: z.number(),
+})
+
 /** session.history response value (projections rides the tail page only). */
 export const sessionHistoryValueSchema: z.ZodType<Wire<ResponseValue<'session.history'>>> = z.object({
   events: z.array(historyEntrySchema),
   hasMore: z.boolean(),
+  headTurn: historyTurnSchema.optional(),
   projections: sessionProjectionsBlockSchema.optional(),
 })
 

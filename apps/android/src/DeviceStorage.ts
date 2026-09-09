@@ -82,7 +82,10 @@ export async function persistLastSuccessful(origin: string): Promise<void> {
   if (config === null) return
   config.serverUrl = origin
   if (!config.endpoints.includes(origin)) config.endpoints = [...config.endpoints, origin]
-  await saveConfig(config)
+  // The native channel independently renews credentials; endpoint selection
+  // must not write back the token or identity from this earlier read.
+  await Preferences.set({ key: KEY_ENDPOINTS, value: JSON.stringify(config.endpoints) })
+  await Preferences.set({ key: KEY_SERVER_URL, value: origin })
 }
 
 /** Persist a GUI token refreshed by the authenticated native device channel. */

@@ -10,6 +10,8 @@ Constructing Zod and reflection text directly from the TypeScript AST couples ty
 
 The host and client are independent TypeScript projects; placing both in one `ts.Program` merges conflicting Cordis `Context` and `Events` declarations. At the same time, client types still need to reference host types explicitly, so neither complete isolation nor duplicating types on both sides can express the actual dependencies.
 
+Dual-face packages seed each analysis from that face's public export entrypoints. Seeding every file in their shared tsconfig would merge unrelated browser and Host context declarations; explicit imports are the supported way to make additional declarations reachable.
+
 ## Decision
 
 [`dsh-typert-generator`](../../../../packages/typert/generator/README.md) builds separate `ts.Program` instances from the host and client projects and uses compiler nodes, symbols, and checkers only as extraction tools. After analysis, every generator and scanner consumes only Typert's own `WorkspaceModel`, `FaceModel`, and `TypeGraph`; the model retains no AST or checker objects. The generator has no dependency on `@deepseek-ai/dsh-typert-registry`.

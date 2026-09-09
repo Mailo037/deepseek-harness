@@ -14,8 +14,11 @@ import {
   IconAgentPresetOutline16,
   IconArchiveOutline20,
   IconBranchOutline16,
+  IconBrowseOutline16,
+  IconChatOutline16,
   IconCodeOutline16,
   IconDownloadOutline16,
+  IconFolderClose16,
   IconGoalOutline16,
   IconLikeOutline16,
   IconListPenOutline16,
@@ -65,6 +68,15 @@ function commandIcon(name: string): React.ReactNode {
       return <IconQuestionOutline14 size={14} />
     default:
       return <IconCodeOutline16 size={14} />
+  }
+}
+
+/** Visual leading icon for one reference domain (the @ menu's row glyphs). */
+function referenceIcon(appearance: 'session' | 'file' | 'folder'): React.ReactNode {
+  switch (appearance) {
+    case 'file': return <IconBrowseOutline16 size={14} />
+    case 'folder': return <IconFolderClose16 size={14} />
+    case 'session': return <IconChatOutline16 size={14} />
   }
 }
 
@@ -137,9 +149,11 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
                   const active = highlight !== null && highlight.source === group.source && highlight.index === index
                   const icon = item.icon !== undefined
                     ? item.icon
-                    : (group.source === 'command' || group.source === 'commands')
-                      ? commandIcon(item.name)
-                      : undefined
+                    : item.appearance !== undefined
+                      ? referenceIcon(item.appearance)
+                      : (group.source === 'command' || group.source === 'commands')
+                        ? commandIcon(item.name)
+                        : undefined
                   return (
                     <Fragment key={optionId(group.source, index)}>
                       {item.section !== undefined && item.section !== group.items[index - 1]?.section

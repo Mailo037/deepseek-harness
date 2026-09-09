@@ -1,5 +1,7 @@
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 /** Registers the conversation components, shared store, and service callbacks. */
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   resolveWorkspacePath, type ISessions, type SessionId,
@@ -114,10 +116,29 @@ function selectApproval({ interactions }: ComposerChainProps): ApprovalWait | nu
   return interactions.find((i): i is ApprovalWait => i.kind === 'approval') ?? null
 }
 
+/** Browser history prefetch timing, configurable on the conversation plugin row. */
+export const Config = z.object({
+  historyPrefetchDelayMs: z.natural().default(400),
+})
+
 /** Mounts the conversation plugin.
  * @param ctx - Client root context.
+ * @param config - validated history prefetch timing.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config = Config()): void {
+  const linkTitles = new Map<string, Promise<string | null>>()
+  const resolveLinkTitle = (url: string): Promise<string | null> => {
+    const cached = linkTitles.get(url)
+    if (cached) return cached
+    const pending = (ctx.get('connection') as ConnectionHandle).api.host.linkTitle({ url }).then(result =>
+      result.result.ok ? result.result.value.title : null).catch(() => null)
+    if (linkTitles.size >= 256) {
+      const oldest = linkTitles.keys().next()
+      if (!oldest.done) linkTitles.delete(oldest.value)
+    }
+    linkTitles.set(url, pending)
+    return pending
+  }
   const sessions = ctx.sessions
   const workspaces = ctx.workspaces
   const layout = ctx.layout
@@ -423,12 +444,14 @@ export function apply(ctx: Context): void {
           actions.select(target)
           layout.openDetails()
         },
+        resolveLinkTitle,
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
           return workspaces.openPath(resolveWorkspacePath(cwd, path))
         },
         loadOlder: () => { void scoped.loadOlder() },
+        historyPrefetchDelayMs: config.historyPrefetchDelayMs,
         reloadHistory: () => { void scoped.reloadHistory() },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),
         // Unregistered 'trajectory' id is safe: the tab ring falls back to

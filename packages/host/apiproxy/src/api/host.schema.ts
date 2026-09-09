@@ -113,3 +113,8 @@ export const hostOpenPathRequestSchema = z.object({
 export const hostOpenPathValueSchema = z.object({
   opened: z.literal(true),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.openPath'>>>
+
+/** Public-page preview request, with a bounded URL. */
+export const hostLinkTitleRequestSchema = z.object({ url: z.string().max(8192) }) satisfies z.ZodType<Wire<RequestPayload<'host.linkTitle'>>>
+/** A missing or refused page title retains the client's link label. */
+export const hostLinkTitleValueSchema = z.object({ title: z.string().nullable() }) satisfies z.ZodType<Wire<ResponseValue<'host.linkTitle'>>>

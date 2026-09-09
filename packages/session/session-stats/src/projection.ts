@@ -67,7 +67,7 @@ interface SessionStatsState extends SessionStatsTotals {
   /** Dispatch times of tool calls whose result has not landed, by callId. */
   pendingCalls: Record<string, number>
   /** Paths already counted toward `filesEdited`, so an edit never double-counts a file. */
-  editedPaths: Record<string, true>
+  editedPaths: Record<string, { added: number; removed: number }>
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -75,6 +75,11 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     sessionStats: SessionStatsState
   }
 }
+
+const fileLineCountsSchema = z.object({
+  added: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+})
 
 const sessionStatsSchema = z.object({
   turns: z.number().int().nonnegative(),
@@ -88,6 +93,7 @@ const sessionStatsSchema = z.object({
   filesEdited: z.number().int().nonnegative(),
   linesAdded: z.number().int().nonnegative(),
   linesRemoved: z.number().int().nonnegative(),
+  fileChanges: z.array(fileLineCountsSchema.extend({ path: z.string() })),
 }).strict()
 
 /**
@@ -96,7 +102,7 @@ const sessionStatsSchema = z.object({
  * The view is a strict subset of the state, so this schema extends
  * `sessionStatsSchema` (the wire output boundary) with the boundary fields.
  */
-const sessionStatsStateSchema = sessionStatsSchema.extend({
+const sessionStatsStateSchema = sessionStatsSchema.omit({ fileChanges: true }).extend({
   lastTurn: z.number().int().nonnegative().nullable(),
   openStep: z.object({
     turn: z.number().int().nonnegative(),
@@ -105,7 +111,7 @@ const sessionStatsStateSchema = sessionStatsSchema.extend({
     firstTokenTime: z.number().nonnegative().nullable(),
   }).nullable(),
   pendingCalls: z.record(z.string(), z.number().nonnegative()),
-  editedPaths: z.record(z.string(), z.literal(true)),
+  editedPaths: z.record(z.string(), fileLineCountsSchema),
 })
 
 /**
@@ -146,7 +152,7 @@ function sideLineCount(text: string): number {
  */
 function foldMetaDiffs(
   meta: unknown,
-  editedPaths: Record<string, true>,
+  editedPaths: Record<string, { added: number; removed: number }>,
   counters: { added: number; removed: number },
 ): boolean {
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return false
@@ -167,7 +173,11 @@ function foldMetaDiffs(
     if (added === 0 && removed === 0) continue
     counters.added += added
     counters.removed += removed
-    if (editedPaths[path] === undefined) editedPaths[path] = true
+    const previous = Object.hasOwn(editedPaths, path) ? editedPaths[path] : undefined
+    Object.defineProperty(editedPaths, path, {
+      value: { added: (previous?.added ?? 0) + added, removed: (previous?.removed ?? 0) + removed },
+      enumerable: true, configurable: true, writable: true,
+    })
     changed = true
   }
   return changed
@@ -176,7 +186,7 @@ function foldMetaDiffs(
 /** The `sessionStats` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const sessionStatsProjectionDefinition = {
   key: 'sessionStats',
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: sessionStatsStateSchema,
   init: () => ({
     turns: 0,
@@ -252,7 +262,7 @@ export const sessionStatsProjectionDefinition = {
         // applied change); count them whole-log so paging cannot hide them.
         const counters = { added: 0, removed: 0 }
         const editedPaths = { ...next.editedPaths }
-        if (foldMetaDiffs(event.data.meta, editedPaths, counters)) {
+        if (event.data.message.content[0].isError !== true && foldMetaDiffs(event.data.meta, editedPaths, counters)) {
           next.linesAdded += counters.added
           next.linesRemoved += counters.removed
           next.filesEdited = Object.keys(editedPaths).length
@@ -291,6 +301,7 @@ export const sessionStatsProjectionDefinition = {
       filesEdited: state.filesEdited,
       linesAdded: state.linesAdded,
       linesRemoved: state.linesRemoved,
+      fileChanges: Object.entries(state.editedPaths).map(([path, counts]) => ({ path, ...counts })),
     }),
   },
 } satisfies ProjectionDefinition<'sessionStats', SessionStatsState>

@@ -24,6 +24,9 @@
       "path": "../../boot/cmdline"
     },
     {
+      "path": "../../client/ui-launch"
+    },
+    {
       "path": "../../host/frontend-static"
     },
     {

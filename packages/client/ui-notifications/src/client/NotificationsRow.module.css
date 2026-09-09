@@ -66,6 +66,64 @@
   }
 }
 
+/* Live browser permission status: one state dot plus localized copy, and an
+ * inline request affordance while the browser would still show its prompt. */
+.browserRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stateDot {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.stateDot.default {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.stateDot.denied {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.stateDot.unsupported {
+  background: var(--dsw-alias-border-l1);
+}
+
+.browserLabel {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.request {
+  box-sizing: border-box;
+  padding: 2px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.request:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.browserHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .eventRow {
   display: flex;
   align-items: center;

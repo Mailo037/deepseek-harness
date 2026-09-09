@@ -72,6 +72,7 @@ function scriptedApi(overrides: {
       ...overrides.subagents,
     },
     host: {
+      linkTitle: r => ok(r, { title: null }),
       describe: r => ok(r, {
         version: '0-test', cwd: '/t', attachedSessions: 0, home: '/h', canOpenPath: true,
         repository: null, canRestart: false, surface: 'web',

@@ -164,6 +164,11 @@ function catalogProviders(): Map<string, Provider> {
           ...template,
           id: 'b.ai',
           name: 'B.AI',
+          // The clone must carry B.AI's own endpoint, not the template's: the
+          // provider-level `baseUrl` is the fallback for a model the b.ai
+          // catalog does not describe, and letting openrouter's address stand
+          // would route such a model to OpenRouter with a B.AI key.
+          baseUrl: 'https://api.b.ai/v1',
         })
       }
     }

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-统一的 Web `@file` 与 `@session` source。对于未加引号的 token，浏览器会同时启动 `fileReferences/list` 和 `sessionReferenceResolver/candidates` Remote 调用，以确定性顺序把文件排在会话之前，并使用注册在 locale 字典中的文件夹、文件与会话标签；各行分别渲染在不可选择的文件与会话分组标题下，不显示重复的原始 `reference` source 标题。任一候选领域的失败都会独立降级。尚未闭合的 `@"…` token 只搜索文件。
+统一的 Web `@file` 与 `@session` source。对于未加引号的 token，浏览器会同时启动 `fileReferences/list` 和 `sessionReferenceResolver/candidates` Remote 调用，以确定性顺序把文件排在会话之前；各行分别渲染在不可选择的文件与会话分组标题下，不显示重复的原始 `reference` source 标题，并以领域图标（文件夹、文件、聊天气泡）替代原有的文字前缀。任一候选领域的失败都会独立降级。尚未闭合的 `@"…` token 只搜索文件。
 
 选择文件会把共享 `@path` 语法所定义的自然文本保留为隐藏的序列化与剪贴板形式。文件会关闭补全，并显示为文件图标加业务色文件名、无胶囊容器的原子行内引用。目录仍是带文件夹图标的可编辑路径纯文本，并让菜单在尾部斜杠处保持活跃，用户可以继续进入下一层。包含空白的路径使用 `@"path with spaces"`，用户显式打开的引号会继续保留。
 

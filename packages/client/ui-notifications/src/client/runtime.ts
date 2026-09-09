@@ -21,6 +21,24 @@ import { listEvents, type NotificationEvent, type NotificationEventKind } from '
 export interface NotificationSnapshot extends NotificationSettings {
   /** Monotonic change counter (local writes and Host adoptions). */
   revision: number
+  /**
+   * Live browser permission for system notifications, re-read on demand —
+   * the row projects this instead of the preference switch alone, so a
+   * browser-blocked site reads as blocked even while the opt-in is on.
+   */
+  permission: NotificationPermissionState
+}
+
+/** Browser notification-permission states the row projects. */
+export type NotificationPermissionState = 'unsupported' | 'default' | 'granted' | 'denied'
+
+/**
+ * Read the browser's notification-permission state.
+ * @returns the current permission, or `unsupported` where no Notification API exists.
+ */
+export function readBrowserPermission(): NotificationPermissionState {
+  if (typeof Notification === 'undefined') return 'unsupported'
+  return Notification.permission
 }
 
 /** Settings field carrying an event kind's sound. */
@@ -43,6 +61,20 @@ export interface SessionsListSource {
 /** Sessions face supporting list observation and session opening. */
 export interface NotificationSessionsTarget extends SessionsListSource {
   open(id: SessionId): void
+}
+
+/** Browser permission face the row's status line and request gesture go through. */
+export interface PermissionFace {
+  /**
+   * Read the current permission state.
+   * @returns the browser's live permission.
+   */
+  read: () => NotificationPermissionState
+  /**
+   * Ask the browser to grant notification permission.
+   * @returns settlement with the state the browser answered.
+   */
+  request: () => Promise<NotificationPermissionState>
 }
 
 /** Sink for presenting system or browser notifications for session events. */
@@ -147,9 +179,11 @@ export class NotificationRuntime {
   private attentionSound = DEFAULT_NOTIFICATION_SETTINGS.attentionSound
   private errorSound = DEFAULT_NOTIFICATION_SETTINGS.errorSound
   private revision = 0
-  private snapshot: NotificationSnapshot = { ...DEFAULT_NOTIFICATION_SETTINGS, revision: 0 }
+  private snapshot: NotificationSnapshot = { ...DEFAULT_NOTIFICATION_SETTINGS, permission: 'unsupported', revision: 0 }
   /** The previous list observation; undefined until the constructor seeds it. */
   private prev: SessionListState | undefined
+  /** Last observed browser permission; refreshed on demand, never assumed. */
+  private permission: NotificationPermissionState = 'unsupported'
 
   /**
    * @param ctx - owning context (change events are emitted on it; scope/store listeners release through ctx.effect on dispose).
@@ -164,10 +198,18 @@ export class NotificationRuntime {
     sessions: SessionsListSource,
     private readonly play: SoundPlayer,
     private readonly notify?: NotificationPresenter,
+    private readonly permissions: PermissionFace = {
+      read: readBrowserPermission,
+      request: () => {
+        if (typeof Notification === 'undefined') return Promise.resolve('unsupported')
+        return Notification.requestPermission()
+      },
+    },
   ) {
     this.ctx = ctx
     ctx.effect(() => host.subscribe(() => { this.adopt() }), 'ui-notifications: settings scope adoption')
     ctx.effect(() => sessions.list.subscribe(() => { this.observe(sessions.list) }), 'ui-notifications: session list observation')
+    this.permission = this.permissions.read()
     this.adopt()
     // Seed the baseline without announcing: a fresh boot never replays the
     // states every row already carries.
@@ -218,6 +260,36 @@ export class NotificationRuntime {
     this.play(this.soundOf(kind))
   }
 
+  /**
+   * Re-read the browser permission state and republish when it moved — the
+   * user can grant or block in the browser's site settings while this page
+   * stays open, and no event announces that.
+   */
+  refreshPermission(): void {
+    const next = this.permissions.read()
+    if (next === this.permission) return
+    this.permission = next
+    this.publish()
+  }
+
+  /**
+   * Ask the browser to grant notification permission. Only meaningful from a
+   * user gesture while the state is `default`; republishes whatever the
+   * browser answered. A `denied` browser never re-prompts — the row's hint
+   * names the browser site settings instead.
+   */
+  async requestPermission(): Promise<void> {
+    if (this.permission !== 'default') return
+    const before = this.permission
+    try {
+      this.permission = await this.permissions.request()
+    } catch {
+      // A dismissed or failed prompt is not an error; the browser's state
+      // stays authoritative and the comparison below publishes it.
+    }
+    if (this.permission !== before) this.publish()
+  }
+
   private soundOf(kind: NotificationEventKind): NotificationSound {
     return kind === 'done' ? this.doneSound : kind === 'attention' ? this.attentionSound : this.errorSound
   }
@@ -261,6 +333,7 @@ export class NotificationRuntime {
       doneSound: this.doneSound,
       attentionSound: this.attentionSound,
       errorSound: this.errorSound,
+      permission: this.permission,
       revision: this.revision,
     }
     this.ctx.emit('notifications/change', this.snapshot)

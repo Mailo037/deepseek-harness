@@ -74,6 +74,7 @@ function faceOf(slots: SlotRegistry) {
     setEnabled: (enabled: boolean) => void
     setSound: (kind: 'done' | 'attention' | 'error', sound: string) => void
     preview: (kind: 'done' | 'attention' | 'error') => void
+    requestPermission: () => void
   })(instance.actions)
   return { entry, instance, face }
 }
@@ -121,6 +122,10 @@ describe('ui-notifications apply', () => {
 
     face.setSound('error', 'bell')
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalled() })
+
+    // The permission request face routes to the runtime service.
+    face.requestPermission()
+    expect(b.ctx.get('notifications') as NotificationRuntime).toBeInstanceOf(NotificationRuntime)
 
     // The watcher rides the same service: a transition on an enabled scope plays.
     const notifications = b.ctx.get('notifications') as NotificationRuntime

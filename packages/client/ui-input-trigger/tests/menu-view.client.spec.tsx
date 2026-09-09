@@ -117,9 +117,9 @@ describe('MenuView', () => {
         source: 'reference',
         status: 'ready',
         items: [
-          { name: 'Folder · src/', section: '文件与文件夹' },
-          { name: 'File · README.md', section: '文件与文件夹' },
-          { name: 'Session · Research', section: 'Session 对话' },
+          { name: 'src/', appearance: 'folder', section: '文件与文件夹' },
+          { name: 'README.md', appearance: 'file', section: '文件与文件夹' },
+          { name: 'Research', appearance: 'session', section: 'Session 对话' },
         ],
       }],
       highlight: { source: 'reference', index: 0 },
@@ -129,10 +129,12 @@ describe('MenuView', () => {
     expect(screen.getAllByText('Session 对话')).toHaveLength(1)
     const options = screen.getAllByRole('option')
     expect(options.map(option => option.textContent)).toEqual([
-      'Folder · src/',
-      'File · README.md',
-      'Session · Research',
+      'src/',
+      'README.md',
+      'Research',
     ])
+    // Each reference domain renders its own leading glyph (folder/file/chat).
+    expect(options.map(option => option.querySelector('svg'))).not.toContain(null)
     fireEvent.mouseDown(options[2]!)
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })

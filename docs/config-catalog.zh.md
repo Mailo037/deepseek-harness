@@ -896,6 +896,8 @@ export interface RemoteConfig {
   readonly notifyOnError: boolean
   /** Notify connected devices when a turn completes. */
   readonly notifyOnCompleted: boolean
+  /** Notify connected devices when a session needs user attention. */
+  readonly notifyOnAttention: boolean
   /** Print a pairing QR code to stdout after activation. */
   readonly printPairingQr: boolean
 }
@@ -2914,6 +2916,26 @@ export interface Config {
 
 来源：[`packages/session-query/tool-session-query/src/index.ts:35`](../packages/session-query/tool-session-query/src/index.ts)
 
+<a id="deepseek-aidsh-tool-session-start"></a>
+
+## `@deepseek-ai/dsh-tool-session-start`
+
+需要：`tools` · `apiProxy`
+
+```ts config-catalog
+/** Configures the tool. All fields are optional; the defaults are the shipped behavior. */
+export interface Config {
+  /**
+   * Whether the calling agent's preset is reused for the new chat. `false`
+   * composes the deployment default.
+   * @default true
+   */
+  inheritPreset?: boolean
+}
+```
+
+来源：[`packages/host/tool-session-start/src/index.ts:29`](../packages/host/tool-session-start/src/index.ts)
+
 <a id="deepseek-aidsh-tool-skill"></a>
 
 ## `@deepseek-ai/dsh-tool-skill`
@@ -3432,6 +3454,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-goal`（[`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-input-trigger`（[`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-jobs`（[`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-launch`（[`packages/client/ui-launch/src/index.ts`](../packages/client/ui-launch/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-layout`（[`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-message-feedback`（[`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-model-selection`（[`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts)）

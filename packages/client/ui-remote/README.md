@@ -8,6 +8,8 @@ The section drives the host `device` Remote namespace (`@deepseek-ai/dsh-host-re
 
 ## Registration
 
+Pairing starts with a link to the Android releases and instructions to install the APK and scan from Harness Remote. Pairing codes can be regenerated, failed pairing and Tailscale actions can be retried, and the device list has a manual refresh action.
+
 The browser half registers one `settings.section` entry (`id: 'remote'`, `order: 15`) with the “Remote devices” label, localized in `zh`/`en` under the `settings.remote` namespace, plus the fs-deny entry (`id: 'fs-deny'`). The section lays its contents over three tabs — pairing code (with the access token), paired devices, and the Tailscale setup — following the Plugins section's tablist pattern; panels stay mounted and hide, so pairing state and the device snapshot survive switching.
 
 ## Model Experience
@@ -29,6 +31,6 @@ Append-only: the task text lands once as an ordinary user turn and stays in the 
 ## Known Limitations and Deferred Work
 
 - The QR code is generated client-side from the host pairing payload (`qrcode` package); the payload text and the GUI access token are masked behind explicit show/hide toggles and stay copyable while masked.
-- The device list is a point-in-time snapshot (loaded on mount and after each revoke); live push of device state changes to the section is future work.
+- The device list is a point-in-time snapshot (loaded on mount, on manual refresh, and after each revoke); live push of device state changes to the section is future work.
 - The Tailscale handoff targets the current session and refuses a subagent route; it cannot create a dedicated setup session (no sanctioned cross-plugin session-create route today).
 - The handoff cannot confirm completion: after a host restart (the skill's fallback path) the session resumes only when the user returns to it.

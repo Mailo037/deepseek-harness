@@ -28,7 +28,9 @@ import { createWebAudioPlayer } from './sounds.ts'
 import { en, zh, type NotificationsKey } from './locales.ts'
 
 export type { NotificationsRowComponentProps, NotificationsRowInjected } from './NotificationsRow.tsx'
-export type { NotificationPresenter, NotificationSnapshot, NotificationTranslator } from './runtime.ts'
+export type {
+  NotificationPermissionState, NotificationPresenter, NotificationSnapshot, NotificationTranslator,
+} from './runtime.ts'
 export type { NotificationsKey } from './locales.ts'
 export type { NotificationSettings, NotificationSound } from '../notification-settings.ts'
 export { defaultNotificationPresenter, openSessionSafely } from './runtime.ts'
@@ -93,6 +95,18 @@ export function apply(ctx: ClientContext): void {
       window.addEventListener('message', onMessage)
       return () => { window.removeEventListener('message', onMessage) }
     }, 'ui-notifications: shell open-session message')
+    // The browser can grant or block notifications in its site settings while
+    // this page stays open; no event announces that. Re-read on visibility and
+    // focus so the row's status line follows without a reload.
+    ctx.effect(() => {
+      const refresh = (): void => { notifications.refreshPermission() }
+      document.addEventListener('visibilitychange', refresh)
+      window.addEventListener('focus', refresh)
+      return () => {
+        document.removeEventListener('visibilitychange', refresh)
+        window.removeEventListener('focus', refresh)
+      }
+    }, 'ui-notifications: browser permission refresh')
   }
 
   const store = createNotificationsRowStore()
@@ -110,6 +124,7 @@ export function apply(ctx: ClientContext): void {
       setEnabled: (enabled) => { notifications.setEnabled(enabled) },
       setSound: (kind, sound) => { notifications.setSound(kind, sound) },
       preview: (kind) => { notifications.preview(kind) },
+      requestPermission: () => { void notifications.requestPermission() },
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({

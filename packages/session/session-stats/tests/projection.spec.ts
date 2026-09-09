@@ -51,7 +51,7 @@ function appendEmptyAssistantMessage(session: Session, turn: number, step: numbe
 function totals(overrides: Partial<SessionStatsProjection> = {}): SessionStatsProjection {
   return {
     turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
-    filesEdited: 0, linesAdded: 0, linesRemoved: 0,
+    filesEdited: 0, linesAdded: 0, linesRemoved: 0, fileChanges: [],
     ...overrides,
   }
 }
@@ -215,7 +215,7 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
 
   it('pairs tool wall time by callId, ignores orphan results, and prunes leftovers at turn/end', () => {
     const result = (callId: string): unknown =>
-      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } } })
+      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', isError: false }] } })
     const paired = fold([
       at(1_000, 'step/start', { turn: 1, step: 1 }),
       at(1_100, 'tool/call', { turn: 1, step: 1, callId: 'a', name: 'read', arguments: '{}' }),
@@ -240,7 +240,7 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
 
   it('pairs only own pendingCalls keys: a prototype-name callId without a recorded call stays unmatched', () => {
     const result = (callId: string): unknown =>
-      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } } })
+      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', isError: false }] } })
     // Crash recovery (TOOL_NOT_STARTED) emits results with no preceding
     // tool/call; a provider-minted callId colliding with an Object prototype
     // property must read as absent, not as an inherited function that would
@@ -293,7 +293,7 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
 
   it('counts distinct edited files and added/removed lines from result-time diffs', () => {
     const resultWithMeta = (callId: string, meta: unknown): unknown =>
-      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } }, meta })
+      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', isError: false }] }, meta })
     const fileDiff = (path: string, oldText: string | null, newText: string): unknown =>
       ({ path, oldText, newText })
     expect(fold([
@@ -315,12 +315,31 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(4_000, 'step/end', { turn: 1, step: 1 }),
     ])).toEqual(totals({
       turns: 1, steps: 1, toolMs: 1_400, filesEdited: 2, linesAdded: 8, linesRemoved: 3,
+      fileChanges: [{ path: 'a.ts', added: 6, removed: 3 }, { path: 'b.ts', added: 2, removed: 0 }],
     }))
+  })
+
+  it('excludes failed edits and preserves paths that name object prototype properties', () => {
+    const events = ['constructor', '__proto__', 'failed.ts'].flatMap((path, index) => [
+      at(index * 10, 'tool/call', { turn: 1, step: 1, callId: path, name: 'write', arguments: '{}' }),
+      at(index * 10 + 1, 'tool/result', {
+        turn: 1, step: 1,
+        message: { source: { kind: 'tool', callId: path }, content: [{ type: 'tool-result', isError: path === 'failed.ts' }] },
+        meta: { diffs: [{ path, oldText: null, newText: 'line' }] },
+      }),
+    ])
+    expect(fold(events)).toEqual(totals({
+      toolMs: 3, filesEdited: 2, linesAdded: 2,
+      fileChanges: [{ path: 'constructor', added: 1, removed: 0 }, { path: '__proto__', added: 1, removed: 0 }],
+    }))
+    const unit = sessionStatsProjectionDefinition
+    expect(unit.stateSchema.safeParse({ ...unit.init(), editedPaths: { 'old.ts': true } }).success).toBe(false)
+    expect(unit.wire.viewSchema.safeParse({ ...totals(), fileChanges: [{ path: 'bad.ts', added: -1, removed: 0 }] }).success).toBe(false)
   })
 
   it('counts only edits whose result pairs a recorded call, and ignores result-time diffs without a call', () => {
     const resultWithMeta = (callId: string, meta: unknown): unknown =>
-      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId } }, meta })
+      ({ turn: 1, step: 1, message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', isError: false }] }, meta })
     // Crash recovery: a result with a diff but no recorded call pairs nothing,
     // so its edit counts do not accrue (consistent with toolMs).
     expect(fold([

@@ -306,7 +306,10 @@ export class WorkspaceAnalyzer {
         }
         const aggregatePath = resolve(this.options.root, face === 'host' ? this.options.hostConfig : this.options.clientConfig)
         const aggregate = this.caches.config(aggregatePath)
-        const rootNames = [...new Set(registrations.flatMap(registration => registration.config.parsed.fileNames))]
+        const rootNames = [...new Set(registrations.flatMap(registration =>
+          registration.exportSubpaths === undefined
+            ? registration.config.parsed.fileNames
+            : this.entrySourcePaths(registration)))]
         const options: ts.CompilerOptions = {
           ...aggregate.parsed.options,
           composite: false,

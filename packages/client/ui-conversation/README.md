@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+Completed turns with work before the loaded page appear immediately as collapsed duration rows. The browser plugin config `historyPrefetchDelayMs` (default 400 ms, non-negative integer) delays each automatic prefix fetch; expanding a row starts the next fetch immediately. Backfill preserves the row and its disclosure state. Unmounting cancels the pending timer, and failed reads wait for a reader retry.
+
 Conversation domain: skeleton (header/tabs/composer/empty state), chat view (grouped step-summary flow, streaming tail isolation, and turn status), composer dock (session stats sticky with the input), input dock (queue rows plus the todo plan strip), details shell, and scope-addressed ConversationController. Tool presentation belongs to [`ui-tool`](../ui-tool/README.md).
 
 While a Session window replays, ChatView keeps the transcript's assistant-left/user-right rhythm with local loading lines inside the existing assistant and user-bubble geometry. The preview announces only the localized loading status, fabricates neither Conversation Nodes nor message text, and removes its pulse under reduced motion. A failed history open replaces the flow with the localized reason and a retry control that re-runs the open through the scoped conversation service.
@@ -71,3 +73,7 @@ None; this package neither assembles nor sends a provider request.
 - **TodoPanel truncates long item text to one ellipsized line** — the figma strip has no wrap or expand affordance; full text is not readable inline.
 - **Queue edit is text-only** — rows containing non-text blocks still show a flattened preview, but their edit control is disabled because the composer-side edit submits one text replacement and cannot preserve those blocks. A text row's edit loads into the composer; Enter saves in place, Escape restores the stashed draft.
 - **Queue strict steer preserves complete messages** — while the Agent is running, the steer action atomically transfers the addressed Queue occurrence into the current next-step window. Mixed-content rows remain eligible because the action forwards the immutable message instead of the text projection. The placement-aware Host snapshot renders pending steering at the conversation tail until the consumed `user/message` folds into the durable transcript, so immediate display, reconnect, and replay share one linear authority.
+
+Composer command tokens use command-specific icons, matching the slash menu. Their visible labels stay within the raw text advance, with ellipsis for labels that do not fit, so argument hints and typed text remain unobscured.
+
+User and assistant transcript links share compact website/file tokens. The conversation owner caches up to 256 title requests per plugin instance; failed lookups preserve readable labels. Link previews do not alter logged message text or copied source text.

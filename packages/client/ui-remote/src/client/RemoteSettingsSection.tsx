@@ -274,10 +274,17 @@ function RemoteSettingsSectionContent({
           >
             {tab === 'pairing' && (
               <>
+                <div className={css.subGroup}>
+                  <h2 className={css.subTitle}>{t('androidHeading')}</h2>
+                  <p className={css.hint}>{t('androidHint')}</p>
+                  <a className={css.downloadLink} href="https://github.com/Mailo037/deepseek-harness/releases?q=android-v&expanded=true" target="_blank" rel="noopener noreferrer">
+                    {t('androidDownload')}
+                  </a>
+                </div>
                 <p className={css.hint}>{t('pairingHint')}</p>
                 <div className={css.qrCard}>
-                  {pairing.status === 'idle' && (
-                    <Button onClick={() => { void handleGenerate() }}>{t('pairingGenerate')}</Button>
+                  {pairing.status !== 'loading' && (
+                    <Button onClick={() => { void handleGenerate() }}>{pairing.status === 'ready' ? t('pairingRegenerate') : t('pairingGenerate')}</Button>
                   )}
                   {pairing.status === 'loading' && <p className={css.hint}>{t('pairingLoading')}</p>}
                   {pairing.status === 'error' && <p className={css.hint}>{t('pairingError')}</p>}
@@ -329,6 +336,11 @@ function RemoteSettingsSectionContent({
             )}
             {tab === 'devices' && (
               <>
+                <div>
+                  <Button disabled={devices.status === 'loading' || rows.some(row => row.revoking)} onClick={() => { void refreshDevices() }}>
+                    {t('devicesRefresh')}
+                  </Button>
+                </div>
                 {devices.status === 'loading' && <p className={css.hint}>{t('devicesLoading')}</p>}
                 {devices.status === 'error' && <p className={css.hint}>{t('devicesError')}</p>}
                 {devices.status === 'ready' && rows.length === 0 && (
@@ -369,7 +381,7 @@ function RemoteSettingsSectionContent({
             {tab === 'tailscale' && (
               <>
                 <p className={css.hint}>{t('tailscaleHint')}</p>
-                {tailscale.status === 'idle' && (
+                {tailscale.status !== 'sending' && (
                   <div>
                     <Button onClick={() => { void handleTailscaleSetup() }}>{t('tailscaleAction')}</Button>
                   </div>

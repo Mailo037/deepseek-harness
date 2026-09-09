@@ -17,6 +17,9 @@
       "path": "../../packages/host/webserver"
     },
     {
+      "path": "../../packages/client/ui-launch"
+    },
+    {
       "path": "../../vendor/cordis"
     },
     {

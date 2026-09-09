@@ -122,12 +122,12 @@ async function composerSegments(page: Page): Promise<string> {
     const backdrop = document.querySelector('[data-input-backdrop]')
     const textarea = document.querySelector('textarea')
     if (backdrop === null || textarea === null) return 'composer absent'
-    const rows = [...backdrop.childNodes].map((node) => {
+    const rows = [...backdrop.childNodes].filter(node => !(node instanceof HTMLElement) || node.dataset['decoration'] !== undefined).map((node) => {
       if (!(node instanceof HTMLElement)) return `plain    ${JSON.stringify(node.textContent ?? '')}`
       const decoration = node.dataset['decoration'] ?? 'unknown'
       const appearance = node.dataset['referenceAppearance']
       const icons = node.querySelectorAll('svg').length
-      return `${decoration.padEnd(8)} ${JSON.stringify(node.textContent ?? '')}`
+      return `${decoration.padEnd(8)} ${JSON.stringify(node.querySelector('[data-pill-advance]')?.textContent ?? node.textContent ?? '')}`
         + `${appearance === undefined ? '' : ` appearance=${appearance}`} icons=${icons}`
     })
     return [`draft ${JSON.stringify(textarea.value)}`, ...rows].join('\n')
@@ -142,6 +142,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
+    scaffold.workspaceCwd = scaffold.workspaceCwd.replaceAll('\\', '/')
     await seedSession(scaffold, sourceSessionFixture(), SOURCE_SESSION_ID)
     await seedSession(scaffold, targetSessionFixture(), TARGET_SESSION_ID)
     browser = await chromium.launch()
@@ -149,6 +150,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await page.getByRole('button', { name: 'Skip for now' }).click()
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'reference.txt'), 'reference fixture\n')
   }, 120_000)
@@ -170,21 +172,21 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(snapshot).toContain('Files & folders')
     expect(snapshot).toContain('Session conversations')
     expect(snapshot).not.toContain('text: reference Files & folders')
-    expect(snapshot).toContain('File \u00b7 reference.txt')
-    expect(snapshot).toContain('Session \u00b7 Research notes')
+    expect(snapshot).toContain('reference.txt')
+    expect(snapshot).toContain('Research notes')
     expect(snapshot).not.toContain('text: Subagents')
 
     await input.fill('@reference')
-    await menu.getByRole('option', { name: /File \u00b7 reference\.txt/ }).click()
+    await menu.getByRole('option', { name: /reference\.txt/ }).click()
     const fileReference = page.locator('[data-reference-appearance="file"]')
-    await expect.poll(() => fileReference.textContent()).toBe('@reference.txt')
+    await expect.poll(() => fileReference.locator('[data-pill-advance]').textContent()).toBe('@reference.txt')
     await expect.poll(() => fileReference.locator('svg').count()).toBe(1)
     await expect.poll(() => input.inputValue()).toBe('@reference.txt ')
 
     await input.fill('@Research')
-    await menu.getByRole('option', { name: /Session \u00b7 Research notes/ }).click()
+    await menu.getByRole('option', { name: /Research notes/ }).click()
     const sessionReference = page.locator('[data-reference-appearance="session"]')
-    await expect.poll(() => sessionReference.textContent()).toBe('@Research notes')
+    await expect.poll(() => sessionReference.locator('[data-pill-advance]').textContent()).toBe('@Research notes')
     await expect.poll(() => sessionReference.locator('svg').count()).toBe(1)
     await expect.poll(() => input.inputValue()).toBe('@Research notes ')
 
@@ -199,7 +201,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     const sessionReference = page.locator('[data-reference-appearance="session"]')
 
     await input.fill('@Research')
-    await menu.getByRole('option', { name: /Session \u00b7 Research notes/ }).click()
+    await menu.getByRole('option', { name: /Research notes/ }).click()
     await expect.poll(() => input.inputValue()).toBe('@Research notes ')
 
     // Only the caret is placed programmatically; both edits below are real key
@@ -209,7 +211,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await input.press('@')
     await expect.poll(() => input.inputValue()).toBe('@@Research notes ')
     await expect.poll(() => sessionReference.count()).toBe(1)
-    await expect.poll(() => sessionReference.textContent()).toBe('@Research notes')
+    await expect.poll(() => sessionReference.locator('[data-pill-advance]').textContent()).toBe('@Research notes')
     await expect.poll(() => sessionReference.locator('svg').count()).toBe(1)
 
     // The decoration layer is aria-hidden, so the accessibility tree cannot see
@@ -222,7 +224,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await input.press('Backspace')
     await expect.poll(() => input.inputValue()).toBe('@Research notes ')
     await expect.poll(() => sessionReference.count()).toBe(1)
-    await expect.poll(() => sessionReference.textContent()).toBe('@Research notes')
+    await expect.poll(() => sessionReference.locator('[data-pill-advance]').textContent()).toBe('@Research notes')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -230,13 +232,11 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
   it('renders the durable direct-message then recall order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
-    const group = page.getByRole('treeitem', { name: /Ungrouped/ })
-    await group.waitFor({ timeout: 15_000 })
-    if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
-    const target = page.getByRole('treeitem').filter({ hasText: /^dsh-web-e2e-ws-/ }).first()
+    const target = page.locator(`[data-drag-id="s:${TARGET_SESSION_ID}"]`)
     await target.waitFor({ timeout: 15_000 })
     await target.click()
     await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Select model, current DeepSeek-V4-Flash' }).waitFor()
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(TARGET_SESSION_ID).join('{{targetId}}')

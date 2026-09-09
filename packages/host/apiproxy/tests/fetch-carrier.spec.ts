@@ -141,6 +141,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
     },
     host: {
+      async linkTitle(request) { return { rpcId: request.rpcId, result: { ok: true, value: { title: null } } } },
       async describe(request) {
         return {
           rpcId: request.rpcId,

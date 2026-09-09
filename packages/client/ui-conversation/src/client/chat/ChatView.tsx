@@ -405,7 +405,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, reloadHistory, loadImage, inspectCall,
-  chatScroll, forkAt, sendMessage, fileMentions, t,
+  chatScroll, forkAt, sendMessage, fileMentions, resolveLinkTitle, historyPrefetchDelayMs = 400, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -417,6 +417,7 @@ export function ChatView({
     return `${Number(isThinkOnly(node))}${Number(hasGroupedReasoning(node))}${Number(runIsActive([node]))}`
   }).join(':'))
   const timeline = useSession(s => s.chat.timeline)
+  const historyTurns = useSession(s => s.historyTurns)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
@@ -425,6 +426,14 @@ export function ChatView({
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
+  const pendingHistoryTurn = historyTurns?.find(turn => !turn.loaded)
+  // The short reading pause lets the compact transcript paint before backfill.
+  // Only successful pages replace historyTurns, so a failed read waits for a gesture.
+  useEffect(() => {
+    if (openState !== 'open' || !hasMore || pendingHistoryTurn === undefined) return
+    const timer = setTimeout(() => { loadOlderAnchored() }, historyPrefetchDelayMs)
+    return () => { clearTimeout(timer) }
+  }, [historyTurns, openState, hasMore, historyPrefetchDelayMs])
   const selectedCallId = useStore(s => s.selection?.callId)
   const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
@@ -664,7 +673,7 @@ export function ChatView({
   // above by the follow logic). The clientHeight guard keeps jsdom tests off
   // this path (no layout exports), leaving scroll-driven paging to drive them.
   useLayoutEffect(() => {
-    if (openState !== 'open' || !hasMore || loadingOlder) return
+    if (openState !== 'open' || !hasMore || loadingOlder || pendingHistoryTurn !== undefined) return
     const local = listRef.current
     if (local === null) return
     const el = scrollerOf(local)
@@ -702,6 +711,7 @@ export function ChatView({
       sendMessage={sendMessage}
       renderMessageImages={renderMessageImages}
       fileMentions={fileMentions}
+      resolveLinkTitle={resolveLinkTitle}
       {...(hideAssistantReasoning === undefined ? {} : { hideAssistantReasoning })}
       renderSlot={renderSlot}
       t={t}
@@ -835,7 +845,9 @@ export function ChatView({
   for (const segment of built) {
     if (segment.closedTurn === undefined) continue
     const turn = timeline.turns.get(segment.closedTurn)
-    if (turn?.start?.time === undefined || turn.end?.time === undefined) continue
+    const historyTurn = historyTurns?.find(item => item.turn === segment.closedTurn)
+    if ((turn?.start?.time ?? historyTurn?.startTime) === undefined
+      || (turn?.end?.time ?? historyTurn?.endTime) === undefined) continue
     foldTotals.set(
       segment.closedTurn,
       (foldTotals.get(segment.closedTurn) ?? 0) + segment.actionCount,
@@ -849,7 +861,13 @@ export function ChatView({
   for (const segment of built) {
     const turnId = segment.closedTurn
     const total = turnId === undefined ? undefined : foldTotals.get(turnId)
-    const folding = turnId !== undefined && total !== undefined && total >= 10
+    const historyTurn = historyTurns?.find(item => item.turn === turnId)
+    const folding = turnId !== undefined && ((total !== undefined && total >= 10) || historyTurn !== undefined)
+    if (folding && historyTurn !== undefined && !historyTurn.loaded && !foldSlots.has(turnId)) {
+      foldBodies.set(turnId, [])
+      foldSlots.set(turnId, flow.length)
+      flow.push(null)
+    }
     for (const element of segment.elements) {
       if (folding && element.fold) {
         let body = foldBodies.get(turnId)
@@ -867,15 +885,26 @@ export function ChatView({
   }
   for (const [turnId, slot] of foldSlots) {
     const turn = timeline.turns.get(turnId)
-    const startTime = turn?.start?.time
-    const endTime = turn?.end?.time
+    const historyTurn = historyTurns?.find(item => item.turn === turnId)
+    const startTime = turn?.start?.time ?? historyTurn?.startTime
+    const endTime = turn?.end?.time ?? historyTurn?.endTime
     /* v8 ignore next -- foldTotals records only turns with both times, so a slot cannot exist without them. */
     if (startTime === undefined || endTime === undefined) continue
     flow[slot] = (
       <TurnWorkSummary
         key={`turn-work:${turnId}`}
+        anchorKey={`turn-work:${turnId}`}
         label={t('message.ranFor', { duration: formatRunDuration(endTime - startTime, t) })}
+        onExpand={historyTurn?.loaded === false ? loadOlderAnchored : undefined}
       >
+        {historyTurn?.loaded === false && (
+          <div aria-busy={loadingOlder}>
+            <HistoryLoadingLines widths={[72, 48]} />
+            <button type="button" disabled={loadingOlder} onClick={loadOlderAnchored}>
+              {loadingOlder ? t('chat.loadingHistory') : t('chat.loadOlder')}
+            </button>
+          </div>
+        )}
         {foldBodies.get(turnId) ?? []}
       </TurnWorkSummary>
     )

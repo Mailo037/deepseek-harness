@@ -13,7 +13,8 @@ Function plugin registering the `sessionStats` projection unit: whole-log conver
 - `decodeMs`/`decodeTokens` sum first token → assembled message and the provider-reported output tokens, only over steps carrying both.
 - `toolMs` sums `tool/call` → `tool/result` pairs matched by callId; unresolved calls are dropped at `turn/end` (results land within their turn).
 - `filesEdited`/`linesAdded`/`linesRemoved` fold the result-time diffs a mutation tool attaches to `tool/result` `meta` (`dsh-tool-fs` writes `{ diffs: [{ path, oldText, newText }] }`): files are deduplicated across the whole log, and line counts use the same terminator rule as the client diff card. Only results paired with a recorded call contribute, matching `toolMs`.
-- Every field is 0 until its first contributing event. A composed registry always serves the key, so clients read the value, never key presence.
+- `fileChanges` carries each edited path with cumulative `added` and `removed` counts, without diff text. Failed results contribute no file changes. The projection cache uses state version 3 and rebuilds older checkpoints from the log.
+- Numeric fields are 0 and `fileChanges` is empty until its first contributing event. A composed registry always serves the key, so clients read the value, never key presence.
 
 ## Composition
 

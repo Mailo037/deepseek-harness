@@ -73,6 +73,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-brand-official': { kind: 'none', reason: 'Browser-side presentation occupants; registers nothing model-facing.' },
   'packages/client/ui-conversation': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-notifications': { kind: 'none', reason: 'Browser-side sounds and settings never enter a model request.' },
+  'packages/client/ui-launch': { kind: 'none', reason: 'Browser-side launch preference and Host settings registration never enter a model request; the OS login-item application is not model-visible.' },
   'packages/client/ui-shortcuts': { kind: 'none', reason: 'Browser-side shortcuts invoke UI actions and register nothing model-facing.' },
   'packages/client/ui-voice-input': { kind: 'indirect', reason: 'Speech recognition writes the composer draft; ordinary submission owns the model-visible user message.' },
   'packages/client/ui-message-feedback': { kind: 'none', reason: 'Browser-side controls over the message-feedback sidecar; ratings and notes never enter the Session log, model context, or telemetry.' },

@@ -79,6 +79,9 @@ export interface ApplyUpdateOutcome {
 
 /** Host-level unary methods. */
 export interface HostApi {
+  /** Resolve a bounded public-page HTML title; unavailable previews return null. */
+  linkTitle(request: RpcRequest<{ url: string }>, signal: AbortSignal): Promise<RpcResponse<{ title: string | null }>>
+
   /**
    * One-shot host snapshot. Empty payload uses the literal `{}` (extend in place when fields arrive).
    * version = the host app's version (nearest @deepseek-ai manifest of the running installation);

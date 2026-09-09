@@ -38,6 +38,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-subagent-report` | `report` | `ctx.subagents`, `ctx.systemPrompt`, `a live continuable in-process child Agent` | `tool/call`, `tool/result`, `a user-role message in the direct parent session` | - | Registered per continuable in-process child rather than globally, so this schema is visible only inside such a child and survives its global `toolFilter`. The same contribution installs the child-scoped `tool:report` prompt section, which this catalog does not render. The parent-facing `send_message` tool is installed independently. |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-tool-rebuild` | `rebuild_harness` | `ctx.tools`, `ctx.appLifecycle.restart`, `ctx.selfUpdate`, `ctx.webServer`, `ctx.jobs (optional)` | `tool/call`, `tool/result` | - | Host-plane web-only lifecycle control: the call stops the caller's running background jobs, records them in the logged result, and arms a post-turn rebuild + restart through the detached self-update helper (`pull: false`). Deployments without the restart capability, `ctx.selfUpdate`, or the web server fail the call, not the load. |
+| `@deepseek-ai/dsh-tool-session-start` | `create_session` | `ctx.tools`, `ctx.apiProxy`, `ctx.approval`, `ctx.workspaceRegistry (optional)`, `ctx.agentPresets (optional)`, `a top-level calling Agent` | `tool/call`, `tool/result`, `session/created on the host (the new chat)` | - | Host-plane web-only chat lifecycle: the call derives the target from the calling session (its registered workspace, else its cwd, plus its preset), asks the approval seam BEFORE creation, and creates through the gateway's `session.create` path, so the browser learns the chat through `host/session-added`. Subagent callers, an absent approval service, or any non-grant outcome fail the call without creating anything. The shipped web-app bundle mounts it; other profiles compose the row themselves. |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `followup_task`, `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/message/queued`, `team/message/delivered`, `team/task`, `tool/result` | - | All ten tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
@@ -1746,6 +1747,25 @@ Rebuild the harness from the current checkout and restart this web host. Stops y
 Source: [`packages/host/tool-rebuild/src/index.ts`](../packages/host/tool-rebuild/src/index.ts)
 
 Host-plane web-only lifecycle control: the call stops the caller's running background jobs, records them in the logged result, and arms a post-turn rebuild + restart through the detached self-update helper (`pull: false`). Deployments without the restart capability, `ctx.selfUpdate`, or the web server fail the call, not the load.
+
+<a id="deepseek-aidsh-tool-session-start"></a>
+
+## `@deepseek-ai/dsh-tool-session-start`
+
+### `create_session`
+
+Start a new chat (session) on this host, inside your own chat's workspace. Call this ONLY when the user explicitly asks for a new chat or a separate conversation — never to work around a long context, and never speculatively. The new chat starts empty and appears in the user's sidebar; the user must confirm the creation through the approval prompt before anything is created. The tool does not switch the user to the new chat and does not carry this conversation's history over. For task delegation use the subagent tools instead; this tool only opens an empty chat for the user.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/host/tool-session-start/src/index.ts`](../packages/host/tool-session-start/src/index.ts)
+
+Host-plane web-only chat lifecycle: the call derives the target from the calling session (its registered workspace, else its cwd, plus its preset), asks the approval seam BEFORE creation, and creates through the gateway's `session.create` path, so the browser learns the chat through `host/session-added`. Subagent callers, an absent approval service, or any non-grant outcome fail the call without creating anything. The shipped web-app bundle mounts it; other profiles compose the row themselves.
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 

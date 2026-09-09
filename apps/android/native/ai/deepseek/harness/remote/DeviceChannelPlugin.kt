@@ -16,6 +16,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Capacitor bridge between the app's WebView and [DeviceChannelService]:
@@ -44,12 +45,13 @@ class DeviceChannelPlugin : Plugin() {
 
     @PluginMethod
     fun start(call: PluginCall) {
+        val harnessId = call.getString("harnessId")
+        val name = call.getString("name")
         val wsUrls = call.getArray("wsUrls")
         val secret = call.getString("secret")
         val deviceId = call.getString("deviceId")
-        val deviceName = call.getString("deviceName") ?: "Android"
-        if (wsUrls == null || wsUrls.length() == 0 || secret == null || deviceId == null) {
-            call.reject("wsUrls, secret, and deviceId are required")
+        if (harnessId.isNullOrEmpty() || name.isNullOrEmpty() || wsUrls == null || wsUrls.length() == 0 || secret == null || deviceId == null) {
+            call.reject("harnessId, name, wsUrls, secret, and deviceId are required")
             return
         }
         val urls = (0 until wsUrls.length()).mapNotNull { wsUrls.getString(it) }
@@ -59,7 +61,13 @@ class DeviceChannelPlugin : Plugin() {
         }
         activePlugin = this
         val context = context.applicationContext
-        val intent = DeviceChannelService.startIntent(context, urls, secret, deviceId, deviceName)
+        if (urls.any { !it.startsWith("ws://") && !it.startsWith("wss://") }) {
+            call.reject("Channel addresses must use ws or wss")
+            return
+        }
+        val params = JSONObject().put("harnessId", harnessId).put("name", name)
+            .put("wsUrls", JSONArray(urls)).put("secret", secret).put("deviceId", deviceId)
+        val intent = DeviceChannelService.startIntent(context, params)
         ContextCompat.startForegroundService(context, intent)
         call.resolve()
     }
@@ -67,8 +75,10 @@ class DeviceChannelPlugin : Plugin() {
     @PluginMethod
     fun stop(call: PluginCall) {
         val context = context.applicationContext
+        val id = call.getString("harnessId") ?: run { call.reject("harnessId is required"); return }
         val intent = Intent(context, DeviceChannelService::class.java).apply {
             action = DeviceChannelService.ACTION_STOP
+            putExtra("harnessId", id)
         }
         context.startService(intent)
         call.resolve()
@@ -76,13 +86,8 @@ class DeviceChannelPlugin : Plugin() {
 
     @PluginMethod
     fun getChannelState(call: PluginCall) {
-        val data = JSObject()
-        data.put("connected", DeviceChannelService.isChannelConnected)
-        val origin = DeviceChannelService.connectedOrigin
-        if (origin != null) data.put("serverUrl", origin)
-        val accessToken = DeviceChannelService.guiAccessToken
-        if (accessToken != null) data.put("accessToken", accessToken)
-        call.resolve(data)
+        val id = call.getString("harnessId") ?: run { call.reject("harnessId is required"); return }
+        call.resolve(JSObject(DeviceChannelService.state(id).toString()))
     }
 
     @PluginMethod
@@ -116,11 +121,9 @@ class DeviceChannelPlugin : Plugin() {
 
     @PluginMethod
     fun getLaunchSession(call: PluginCall) {
-        val data = JSObject()
-        val session = pendingSessionId
-        pendingSessionId = null
-        if (session != null) data.put("sessionId", session)
-        call.resolve(data)
+        val target = pendingTarget
+        pendingTarget = null
+        call.resolve(if (target == null) JSObject() else JSObject(target.toString()))
     }
 
     override fun handleOnDestroy() {
@@ -132,18 +135,14 @@ class DeviceChannelPlugin : Plugin() {
         const val NOTIFICATIONS = "notifications"
 
         private const val PREFS = "dsh_remote_channel"
-        private const val PREF_WS_URLS = "last_ws_urls"
-        private const val PREF_SECRET = "last_secret"
-        private const val PREF_DEVICE_ID = "last_device_id"
         private const val CAPACITOR_PREFERENCES = "CapacitorStorage"
-        private const val PREF_GUI_ACCESS_TOKEN = "accessToken"
 
         /** The live plugin instance [DeviceChannelService] reports state through. */
         @Volatile
         private var activePlugin: DeviceChannelPlugin? = null
 
         @Volatile
-        private var pendingSessionId: String? = null
+        private var pendingTarget: JSONObject? = null
 
         /**
          * Record a launch intent's session and notify active JS listeners.
@@ -151,82 +150,38 @@ class DeviceChannelPlugin : Plugin() {
         @JvmStatic
         fun handleIntent(intent: Intent?) {
             val sessionId = intent?.getStringExtra("sessionId") ?: return
-            pendingSessionId = sessionId
+            val harnessId = intent.getStringExtra("harnessId") ?: return
+            pendingTarget = JSONObject().put("harnessId", harnessId).put("sessionId", sessionId)
             val plugin = activePlugin ?: return
-            val data = JSObject()
-            data.put("sessionId", sessionId)
-            plugin.notifyListeners("openSession", data)
+            plugin.notifyListeners("openSession", JSObject(pendingTarget.toString()))
         }
 
-        /**
-         * Report a channel-state change to JS listeners. Called by the
-         * foreground service; a no-op while no plugin instance is alive.
-         */
-        fun notifyChannelState(connected: Boolean, serverUrl: String?, accessToken: String? = null) {
-            val plugin = activePlugin ?: return
-            val data = JSObject()
-            data.put("connected", connected)
-            if (serverUrl != null) data.put("serverUrl", serverUrl)
-            if (accessToken != null) data.put("accessToken", accessToken)
-            plugin.notifyListeners("channelState", data)
+        /** Publish one Harness's state without changing the active GUI selection. */
+        fun notifyChannelState(state: JSONObject) {
+            activePlugin?.notifyListeners("channelState", JSObject(state.toString()))
         }
 
-        /**
-         * Move the just-authenticated channel URL to the front of the
-         * boot-persisted candidate list so [BootReceiver] and sticky restarts
-         * try the working endpoint first. Secrets never reach logs.
-         */
-        fun persistLastSuccessful(context: Context, wsUrl: String) {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val stored = prefs.getString(PREF_WS_URLS, null) ?: return
-            val urls = mutableListOf<String>()
-            try {
-                val array = JSONArray(stored)
-                for (i in 0 until array.length()) urls.add(array.getString(i))
-            } catch (_: Exception) {
-                // A corrupted persisted list cannot be reordered; the next
-                // full start (Plugin.start) rewrites it from the TS side.
-                return
-            }
-            val reordered = buildList {
-                add(wsUrl)
-                urls.filterTo(this) { it != wsUrl }
-            }
-            prefs.edit().putString(PREF_WS_URLS, JSONArray(reordered).toString()).apply()
-        }
-
-        /** Store the current host-issued GUI token in Capacitor Preferences. */
-        fun persistGuiAccessToken(context: Context, accessToken: String) {
+        /** Token ownership is keyed by the local Harness id, shared with HarnessStorage.ts. */
+        fun persistGuiAccessToken(context: Context, id: String, token: String) {
             context.getSharedPreferences(CAPACITOR_PREFERENCES, Context.MODE_PRIVATE)
-                .edit()
-                .putString(PREF_GUI_ACCESS_TOKEN, accessToken)
-                .apply()
+                .edit().putString("harness.$id.token", token).apply()
         }
 
-        /** Store the channel parameters for [BootReceiver] and sticky restarts. */
-        fun persistChannelParams(context: Context, wsUrls: List<String>, secret: String, deviceId: String) {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(PREF_WS_URLS, JSONArray(wsUrls).toString())
-                .putString(PREF_SECRET, secret)
-                .putString(PREF_DEVICE_ID, deviceId)
-                .apply()
+        /** Persist independent channel parameters for boot and sticky restarts. */
+        fun persistChannel(context: Context, params: JSONObject) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString("channel.${params.getString("harnessId")}", params.toString()).apply()
         }
 
-        /** Read the persisted channel parameters, or null when none were stored. */
-        fun loadChannelParams(context: Context): Triple<List<String>, String, String>? {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val stored = prefs.getString(PREF_WS_URLS, null) ?: return null
-            val secret = prefs.getString(PREF_SECRET, null) ?: return null
-            val deviceId = prefs.getString(PREF_DEVICE_ID, null) ?: return null
-            val urls = try {
-                val array = JSONArray(stored)
-                (0 until array.length()).mapNotNull { array.getString(it) }
-            } catch (_: Exception) {
-                emptyList()
-            }
-            if (urls.isEmpty()) return null
-            return Triple(urls, secret, deviceId)
+        fun removeChannel(context: Context, id: String) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("channel.$id").apply()
+        }
+
+        fun loadChannels(context: Context): List<JSONObject> {
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all
+                .filterKeys { it.startsWith("channel.") }.values.mapNotNull { value ->
+                    try { JSONObject(value as String) } catch (_: Exception) { null }
+                }
         }
     }
 }

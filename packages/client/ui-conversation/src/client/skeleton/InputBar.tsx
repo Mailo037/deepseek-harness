@@ -1012,7 +1012,7 @@ export function InputBar({
         decorationKind: 'token',
         tokenKey: 'token',
         hovered: hoveredKey === 'token',
-        icon: <ReferenceIcon kind="command" size={12} className={css.tokenIconGlyph} />,
+        icon: <ReferenceIcon kind="command" commandName={tokenText} size={12} className={css.tokenIconGlyph} />,
       }))
       cursor = deco.token.end
     }
@@ -1064,7 +1064,7 @@ export function InputBar({
           hostAttrs: { 'data-appearance': appearance },
           icon: appearance === 'file'
             ? <FileTypeIcon kind={fileTypeIconKind(text)} size={12} className={css.tokenIconGlyph} />
-            : <ReferenceIcon kind={appearance} size={12} className={css.tokenIconGlyph} />,
+            : <ReferenceIcon kind={appearance} commandName={text} size={12} className={css.tokenIconGlyph} />,
         }))
         cursor = b.ref.end
       }

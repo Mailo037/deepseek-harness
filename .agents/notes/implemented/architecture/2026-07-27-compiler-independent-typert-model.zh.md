@@ -10,6 +10,8 @@ Status: implemented
 
 host 与 client 属于独立 TypeScript project；把两者放进同一个 `ts.Program` 会合并冲突的 Cordis `Context` 与 `Events` 声明。与此同时，client 类型仍需显式引用 host 类型，因此完全隔离或在两边复制类型都不能表达真实依赖。
 
+双面包从各面的公开导出入口初始化分析。若使用共享 tsconfig 中的全部文件，会合并无关的浏览器与 Host 上下文声明；额外声明必须通过显式导入进入可达范围。
+
 ## Decision
 
 [`dsh-typert-generator`](../../../../packages/typert/generator/README.zh.md) 分别从 host 和 client project 建立 `ts.Program`，只把 compiler node、symbol 和 checker 当作提取工具。分析结束后，所有生成器和扫描器只消费 Typert 自有的 `WorkspaceModel`、`FaceModel` 与 `TypeGraph`，模型中不保留 AST 或 checker 对象。生成器不依赖 `@deepseek-ai/dsh-typert-registry`。

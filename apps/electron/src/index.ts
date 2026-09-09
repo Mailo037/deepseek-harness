@@ -19,6 +19,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { bootWebHost, type WebHost } from './host.ts'
 import { DEFAULT_GRACE_MS, GraceTimer } from './grace.ts'
+import { createElectronLaunchItemBackend } from './login-item.ts'
 import { createDesktopUpdater, type DesktopUpdater } from './updater.ts'
 
 /** Window geometry: a sensible desktop default, matching the web surface. */
@@ -49,6 +50,9 @@ function graceMs(): number {
 async function startHost(): Promise<void> {
   state.host = await bootWebHost({
     port: 0,
+    // The Electron main owns the login-item surface; the launch-at-login
+    // settings switch applies through it (platform-gated inside the backend).
+    launchItem: createElectronLaunchItemBackend(),
     onExit: (code) => {
       // The booted app requested exit (e.g. --help). Close cleanly.
       void shutdown(code)

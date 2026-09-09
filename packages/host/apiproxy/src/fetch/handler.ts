@@ -1,3 +1,4 @@
+import { hostLinkTitleRequestSchema } from '../api/host.schema.ts'
 /**
  * Server side of the fetch carrier: maps an ApiProxy onto a pure
  * WHATWG Request->Response function. Two-level parse: full form (type/rpcId/method +
@@ -113,6 +114,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'subagent.history': { schema: subagentHistoryRequestSchema, invoke: (api, r, signal) => api.subagents.history(r, signal) },
   'subagent.prompt': { schema: subagentPromptRequestSchema, invoke: (api, r, signal) => api.subagents.prompt(r, signal) },
   'subagent.interrupt': { schema: subagentInterruptRequestSchema, invoke: (api, r) => api.subagents.interrupt(r) },
+  'host.linkTitle': { schema: hostLinkTitleRequestSchema, invoke: (api, r, signal) => api.host.linkTitle(r, signal) },
   'host.describe': { schema: hostDescribeRequestSchema, invoke: (api, r) => api.host.describe(r) },
   'host.checkUpdate': { schema: hostCheckUpdateRequestSchema, invoke: (api, r) => api.host.checkUpdate(r) },
   'host.applyUpdate': { schema: hostApplyUpdateRequestSchema, invoke: (api, r) => api.host.applyUpdate(r) },

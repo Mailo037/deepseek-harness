@@ -167,17 +167,20 @@ describe('candidates', () => {
     releaseFiles()
     await expect(pending).resolves.toEqual([
       expect.objectContaining({
-        name: 'Folder · src/',
+        name: 'src/',
+        appearance: 'folder',
         description: 'src',
         section: 'Files & folders',
       }),
       expect.objectContaining({
-        name: 'File · a b.md',
+        name: 'a b.md',
+        appearance: 'file',
         description: 'docs/a b.md',
         section: 'Files & folders',
       }),
       expect.objectContaining({
-        name: 'Session · Research',
+        name: 'Research',
+        appearance: 'session',
         description: 'source · /project · 2023-11-14T22:13:20.000Z',
         section: 'Session conversations',
       }),
@@ -203,7 +206,7 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     const quoted = await source.candidates(session, request('READ', { quoted: true }))
-    expect(quoted).toEqual([expect.objectContaining({ name: 'File · README.md' })])
+    expect(quoted).toEqual([expect.objectContaining({ name: 'README.md', appearance: 'file' })])
     expect(source.onPick({
       candidate: quoted[0]!,
       session,
@@ -221,7 +224,7 @@ describe('candidates', () => {
     })
     expect(sessions).not.toHaveBeenCalled()
     await expect(source.candidates(session, request('research'))).resolves.toEqual([
-      expect.objectContaining({ name: 'Session · Research' }),
+      expect.objectContaining({ name: 'Research', appearance: 'session' }),
     ])
   })
 
@@ -268,7 +271,8 @@ describe('candidates', () => {
     const { source } = await bench(files, sessions)
     await expect(source.candidates(session, request('same'))).resolves.toEqual([
       expect.objectContaining({
-        name: 'Session · same',
+        name: 'same',
+        appearance: 'session',
         description: '(no cwd) · 1970-01-01T00:00:00.000Z',
       }),
     ])
@@ -304,7 +308,7 @@ describe('pick and codec', () => {
   it('inserts sessions as atomic chips whose clipboard and model forms are canonical mentions', async () => {
     const { source } = await bench()
     const candidates = await source.candidates(session, request(''))
-    const candidate = candidates.find(item => item.name === 'Session · Research')!
+    const candidate = candidates.find(item => item.name === 'Research')!
     const mention = '@[Research](dsh-session:InNvdXJjZSI)'
     expect(pick(source, candidate)).toEqual({
       insert: {

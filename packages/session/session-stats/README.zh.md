@@ -13,7 +13,8 @@
 - `decodeMs`/`decodeTokens` 累加首 token → 已组装消息的时长与提供方上报的输出 token，仅统计两者兼备的步。
 - `toolMs` 按 callId 配对累加 `tool/call` → `tool/result`；未解决的调用在 `turn/end` 时丢弃（结果总在其轮内落地）。
 - `filesEdited`/`linesAdded`/`linesRemoved` 折叠变更工具附加到 `tool/result` `meta` 的结果级 diff（`dsh-tool-fs` 写入 `{ diffs: [{ path, oldText, newText }] }`）：文件在整个日志中去重，行计数使用与客户端 diff 卡片相同的终止符规则。只有与已记录调用配对的结果才会贡献，与 `toolMs` 一致。
-- 每个字段在首个贡献事件之前均为 0。已装配的 registry 恒提供该键，客户端读取值本身，而非键的存在性。
+- `fileChanges` 携带每个修改路径及累计的 `added`、`removed` 计数，不含 diff 正文。失败结果不贡献文件变更。投影缓存使用状态版本 3，并从日志重建旧检查点。
+- 首个贡献事件之前，数值字段均为 0，`fileChanges` 为空。已装配的 registry 恒提供该键，客户端读取值本身，而非键的存在性。
 
 ## 组合
 

@@ -1,3 +1,4 @@
+import { IconLikeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 // @vitest-environment jsdom
 // InputBar behavior over the machine wiring: Enter-send semantics (IME guard,
 // Shift newline, busy Enter policy, Ctrl/Meta steering, repeat suppression), running
@@ -1262,6 +1263,25 @@ describe('machine pending lock', () => {
 })
 
 describe('decorations', () => {
+  it('uses the feedback glyph and preserves the argument hint and typed arguments', () => {
+    const { view, shell } = bench({ t: makeTranslate({}) })
+    act(() => {
+      shell.setDraft('/feedback ')
+      shell.beginCommand(
+        { token: '/feedback ', hint: '<text>', submit: () => Promise.resolve({ kind: 'success' as const }) },
+        { start: 0, end: 10, draftRev: shell.snapshot.draftRev },
+      )
+    })
+    const token = view.container.querySelector('[data-decoration="token"]')!
+    expect(token.querySelector('[data-pill]')?.textContent).toBe('Feedback')
+    const expected = render(<IconLikeOutline16 size={12} />)
+    expect(token.querySelector('svg')?.innerHTML).toBe(expected.container.querySelector('svg')?.innerHTML)
+    expect(view.container.querySelector('[data-decoration="hint"]')?.textContent).toBe('<text>')
+    act(() => { shell.setDraft('/feedback Something went wrong') })
+    expect(view.container.querySelector('[data-decoration="hint"]')).toBeNull()
+    expect(shell.snapshot.draft).toBe('/feedback Something went wrong')
+  })
+
   it('claimed token renders the mirror highlight and the blank-args hint', () => {
     // Dictionary-less stub: an unmatched hint key keeps the machine's raw hint.
     const { view, shell } = bench({ t: makeTranslate({}) })

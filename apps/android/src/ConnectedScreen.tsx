@@ -14,10 +14,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Network } from '@capacitor/network'
-import { guiUrlOf, persistAccessToken, persistLastSuccessful, type DeviceConfig } from './DeviceStorage.ts'
+import { guiUrlOf, type DeviceConfig } from './DeviceStorage.ts'
+import { persistHarnessOrigin, persistHarnessToken } from './HarnessStorage.ts'
 import { isTailscaleEndpoint, selectCandidates } from './EndpointSelection.ts'
 import {
-  getChannelState, getLaunchSession, isVpnActive, onChannelState, onOpenSession, startNotificationService,
+  getChannelState, isVpnActive, onChannelState,
 } from './NotificationService.ts'
 import {
   embeddedConnectionStateOf, openSessionMessageOf, type EmbeddedConnectionState,
@@ -26,6 +27,10 @@ import { CloudOffIcon, EyeIcon, LogoMark, MonitorXIcon, PowerOffIcon, RefreshIco
 
 interface ConnectedScreenProps {
   config: DeviceConfig
+  harnessId: string
+  harnessName?: string
+  sessionTarget?: { sessionId: string }
+  onSwitch: () => void
   onDisconnect: () => void
 }
 
@@ -46,7 +51,9 @@ async function probe(url: string, timeoutMs = 5000): Promise<boolean> {
   }
 }
 
-export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps): ReactNode {
+export function ConnectedScreen({
+  config, harnessId, harnessName, sessionTarget, onSwitch, onDisconnect,
+}: ConnectedScreenProps): ReactNode {
   const [probeState, setProbeState] = useState<'checking' | 'online' | 'offline'>('checking')
   const [networkOnline, setNetworkOnline] = useState(true)
   // The remote GUI is covered by a branded loader only while the connectivity
@@ -57,6 +64,7 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [addressVisible, setAddressVisible] = useState(false)
   const [embeddedConnectionState, setEmbeddedConnectionState] = useState<EmbeddedConnectionState>('reconnecting')
+  const embeddedStateRef = useRef<EmbeddedConnectionState>('reconnecting')
   const [vpnActive, setVpnActive] = useState<boolean | undefined>()
   const [loadingSlow, setLoadingSlow] = useState(false)
   // The origin the GUI currently uses. It follows probe successes and native
@@ -72,15 +80,6 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
   const guiUrl = guiUrlOf(guiConfig, origin)
   const tailscaleEndpoint = isTailscaleEndpoint(origin)
 
-  // Service activation is recoverable and independent from GUI navigation.
-  // Retrying here covers pairing-time bridge failures and stored sessions
-  // restored after the Android process was killed.
-  useEffect(() => {
-    void startNotificationService(config).catch(() => {
-      // The GUI remains usable; Android notifications retry on the next mount.
-    })
-  }, [config])
-
   /** Tell the served GUI which presentation shell embeds it. */
   const announceShell = useCallback((frame: HTMLIFrameElement): void => {
     frame.contentWindow?.postMessage({
@@ -95,29 +94,33 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
   /** Ask the embedded web GUI to navigate to a specific session. */
   const openSessionInIframe = useCallback((sessionId: string): void => {
     const frame = iframeRef.current
-    if (frame?.contentWindow && guiReady) {
+    if (frame?.contentWindow && embeddedStateRef.current === 'connected') {
       frame.contentWindow.postMessage(openSessionMessageOf(sessionId), new URL(guiUrl).origin)
     } else {
       pendingSessionRef.current = sessionId
     }
-  }, [guiUrl, guiReady])
+  }, [guiUrl])
 
   /** Switch the GUI to a working origin and persist it as last-successful. */
   const adopt = useCallback((candidate: string): void => {
     if (candidate === originRef.current) return
     originRef.current = candidate
     setOrigin(candidate)
-    void persistLastSuccessful(candidate).catch(() => {
+    void persistHarnessOrigin(harnessId, candidate).catch(() => {
       // A failed persist only costs one extra endpoint sweep after an app
       // restart; the GUI keeps working with the adopted origin either way.
     })
-  }, [])
+  }, [harnessId])
 
   /** Probe every candidate in order; true when one origin answered. */
   const probeCandidates = useCallback(async (): Promise<boolean> => {
+    const isConnected = (): boolean => embeddedStateRef.current === 'connected'
+    if (isConnected()) return true
     const candidates = selectCandidates(guiConfig.endpoints, originRef.current)
     for (const candidate of candidates) {
-      if (await probe(guiUrlOf(guiConfig, candidate))) {
+      const reachable = await probe(guiUrlOf(guiConfig, candidate))
+      if (isConnected()) return true
+      if (reachable) {
         adopt(candidate)
         return true
       }
@@ -131,6 +134,7 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
     setGuiReady(false)
     setDetailsOpen(false)
     setAddressVisible(false)
+    embeddedStateRef.current = 'reconnecting'
     setEmbeddedConnectionState('reconnecting')
   }, [origin, accessToken])
 
@@ -140,7 +144,12 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
       if (event.source !== iframeRef.current?.contentWindow || event.origin !== expectedOrigin) return
       const next = embeddedConnectionStateOf(event.data)
       if (next !== null) {
+        embeddedStateRef.current = next
         setEmbeddedConnectionState(next)
+        if (next === 'connected') {
+          setGuiReady(true)
+          setProbeState('online')
+        }
         if (next === 'connected' && pendingSessionRef.current && iframeRef.current.contentWindow) {
           const sessionId = pendingSessionRef.current
           pendingSessionRef.current = null
@@ -192,7 +201,6 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
     void Network.getStatus().then((status) => { setNetworkOnline(status.connected) })
     const run = async (): Promise<void> => {
       setProbeState('checking')
-      setGuiReady(false)
       const ok = await probeCandidates()
       setProbeState(ok ? 'online' : 'offline')
       setGuiReady(true)
@@ -210,12 +218,12 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
   useEffect(() => {
     let disposed = false
     const applyChannelState = (state: Awaited<ReturnType<typeof getChannelState>>): void => {
-      if (disposed) return
-      if (state.connected && state.serverUrl !== undefined) adopt(state.serverUrl)
+      if (disposed || state.harnessId !== harnessId) return
+      if (state.connected && state.serverUrl !== undefined && embeddedStateRef.current !== 'connected') adopt(state.serverUrl)
       if (state.accessToken !== undefined && state.accessToken !== accessTokenRef.current) {
         accessTokenRef.current = state.accessToken
         setAccessToken(state.accessToken)
-        void persistAccessToken(state.accessToken).catch(() => {
+        void persistHarnessToken(harnessId, state.accessToken).catch(() => {
           // The in-memory token still repairs this session when persistence fails.
         })
       }
@@ -223,7 +231,7 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
     const listener = onChannelState(applyChannelState)
     const refreshNativeState = async (): Promise<void> => {
       try {
-        applyChannelState(await getChannelState())
+        applyChannelState(await getChannelState(harnessId))
       } catch {
         // A native state read can fail while the plugin is being torn down.
       }
@@ -238,43 +246,19 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
       clearInterval(stateRefresh)
       void listener.then((activeListener) => { activeListener.remove() })
     }
-  }, [adopt])
+  }, [adopt, harnessId])
 
-  // Listen for session open requests from launch intents and notifications.
   useEffect(() => {
-    void getLaunchSession().then((session) => {
-      if (session) openSessionInIframe(session)
-    })
-    const listener = onOpenSession((sessionId) => {
-      openSessionInIframe(sessionId)
-    })
-    return () => {
-      void listener.then((l) => {
-        l.remove()
-      })
-    }
-  }, [openSessionInIframe])
+    if (sessionTarget) openSessionInIframe(sessionTarget.sessionId)
+  }, [sessionTarget, openSessionInIframe])
 
-  // Flush any pending session navigation once the iframe document is ready.
-  useEffect(() => {
-    if (guiReady && pendingSessionRef.current && iframeRef.current?.contentWindow) {
-      const sessionId = pendingSessionRef.current
-      pendingSessionRef.current = null
-      iframeRef.current.contentWindow.postMessage(openSessionMessageOf(sessionId), new URL(guiUrl).origin)
-    }
-  }, [guiReady, guiUrl])
-
-  // While offline (and the device itself online), re-probe every 10 s; a
-  // successful probe flips straight back to the online state with a fresh
-  // GUI load.
+  // Re-probe unavailable endpoints while retaining the embedded document.
   useEffect(() => {
     if (probeState !== 'offline' || !networkOnline) return
     const auto = setInterval(() => {
       void probeCandidates().then((ok) => {
         if (ok) {
-          setGuiReady(false)
           setProbeState('online')
-          setGuiReady(true)
         }
       })
     }, 10_000)
@@ -285,7 +269,7 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
   // failures flip to the unreachable screen (one failure may be a Wi-Fi
   // blip), so a dead session never hides behind a green dot.
   useEffect(() => {
-    if (probeState !== 'online') return
+    if (probeState !== 'online' || embeddedConnectionState === 'connected') return
     let failures = 0
     const watchdog = setInterval(() => {
       void probe(guiUrlOf(guiConfig, originRef.current)).then((ok) => {
@@ -295,17 +279,15 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
         }
         failures += 1
         if (failures >= 2) {
-          setGuiReady(false)
           setProbeState('offline')
         }
       })
     }, 10_000)
     return () => { clearInterval(watchdog) }
-  }, [guiConfig, probeState])
+  }, [guiConfig, probeState, embeddedConnectionState])
 
   const retry = useCallback(() => {
     setProbeState('checking')
-    setGuiReady(false)
     void probeCandidates().then((ok) => {
       setProbeState(ok ? 'online' : 'offline')
       setGuiReady(true)
@@ -336,22 +318,15 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
   return (
     <div className="iframe-wrapper">
       <div className="iframe-bar">
-        <div
-          className="connection-status"
-          data-state={reconnecting ? 'reconnecting' : 'connected'}
-          role="status"
-          aria-live="polite"
-          aria-label={reconnecting ? 'Reconnecting' : 'Remote, connected'}
-        >
-          <span className={`dot ${reconnecting ? 'reconnecting pulse' : 'connected pulse'}`} aria-hidden="true" />
-          <span className="connection-status-window" aria-hidden="true">
-            <span className="connection-status-track">
-              <span className="connection-status-label">Remote</span>
-              <span className="connection-status-label">Reconnecting</span>
-            </span>
-          </span>
+        <button className="harness-switch" onClick={onSwitch} aria-label="Harnesses" aria-haspopup="dialog">
+          <span className="harness-switch-name">{harnessName ?? new URL(config.serverUrl).hostname}</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+        </button>
+        <div className="connection-status" role="status" aria-live="polite"
+          aria-label={reconnecting ? 'Reconnecting' : 'Remote, connected'}>
+          <span className={`dot ${reconnecting ? 'reconnecting' : 'connected'}`} aria-hidden="true" />
+          <span>{reconnecting ? 'Reconnecting' : 'Connected'}</span>
         </div>
-        <span className="bar-spacer" />
         {probeState === 'offline' && (
           <button className="bar-button compact" onClick={retry} aria-label="Retry connection" title="Retry connection">
             <RefreshIcon size={14} />
@@ -401,7 +376,7 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
           </div>
         )}
       </div>
-      {!networkOnline ? (
+      {!guiReady && !networkOnline ? (
         <div className="screen screen-enter">
           <span className="splash-mark"><CloudOffIcon size={28} /></span>
           <h1 className="title">No network</h1>
@@ -410,7 +385,7 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
             notifications resume on reconnect.
           </p>
         </div>
-      ) : probeState === 'offline' ? (
+      ) : !guiReady && probeState === 'offline' ? (
         <div className="screen screen-enter">
           <span className="splash-mark"><MonitorXIcon size={28} /></span>
           <h1 className="title">PC not reachable</h1>
@@ -428,39 +403,32 @@ export function ConnectedScreen({ config, onDisconnect }: ConnectedScreenProps):
           </button>
           <button className="button ghost" onClick={disconnect}>Disconnect</button>
         </div>
-      ) : (
-        <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
-          <iframe
-            key={guiUrl}
-            ref={iframeRef}
-            className="iframe-remote"
-            src={guiUrl}
-            title="Harness Remote GUI"
-            onLoad={(event) => {
-              setGuiReady(true)
-              announceShell(event.currentTarget)
-              if (pendingSessionRef.current) {
-                const sessionId = pendingSessionRef.current
-                pendingSessionRef.current = null
-                event.currentTarget.contentWindow?.postMessage(openSessionMessageOf(sessionId), new URL(guiUrl).origin)
-              }
-            }}
-          />
-          {!guiReady && (
-            <div className="gui-loader">
-              <div className="splash-mark">
-                <LogoMark size={32} />
-                <span className="splash-ring" />
-              </div>
-              <p className="hint">Loading the remote GUI…</p>
-              <span className="spinner" />
-              {loadingAdvice !== null && (
-                <p className="gui-loader-advice" role="status">{loadingAdvice}</p>
-              )}
+      ) : null}
+      <div style={{ position: 'relative', flex: 1, display: !guiReady && (!networkOnline || probeState === 'offline') ? 'none' : 'flex' }}>
+        <iframe
+          ref={iframeRef}
+          className="iframe-remote"
+          src={guiUrl}
+          title="Harness Remote GUI"
+          onLoad={(event) => {
+            setGuiReady(true)
+            announceShell(event.currentTarget)
+          }}
+        />
+        {!guiReady && (
+          <div className="gui-loader">
+            <div className="splash-mark">
+              <LogoMark size={32} />
+              <span className="splash-ring" />
             </div>
-          )}
-        </div>
-      )}
+            <p className="hint">Loading the remote GUI…</p>
+            <span className="spinner" />
+            {loadingAdvice !== null && (
+              <p className="gui-loader-advice" role="status">{loadingAdvice}</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

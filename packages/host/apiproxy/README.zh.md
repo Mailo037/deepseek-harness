@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+当已完成轮次的部分工作位于首个返回事件之前时，普通及寻址历史页可携带 `headTurn`。其中 `turn`、`startSeq`、`startTime` 和 `endTime` 均来自与该页相同的会话快照。元数据不会插入连续分页范围之外的事件，也不会激活 Agent；运行中的轮次及未遗漏工作的页面不携带摘要。
+
 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
 
 ## 共享 Agent 默认值（`agent-default-model` Settings 分节）
@@ -67,6 +69,10 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 ## 载体层（`/client` + 根路径）
 
 `AbstractApiClient` 持有全部协议不变量：签发 rpcId、包装／解包信封、Zod 解析、SSE 帧解码、一元请求超时，以及按微任务批处的信封观测（`subscribeEnvelopes`）；平台子类只提供 `doFetch` 传输环节。浏览器端 rpcId 使用 `crypto.getRandomValues()`，因此普通 HTTP 非回环来源不依赖仅安全上下文可用的 `crypto.randomUUID()` 方法；没有 Web Crypto 的运行时会在发送前失败，而不会降低关联标识的随机强度。`InProcessApiClient` 以 `toFetchHandler(api)` 为基础，仍是同构接点：它运行完整的协议序列化与校验路径而不经过网络，供需要该路径的调用方和载体测试使用。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。
+
+## 网站标题预览
+
+`host.linkTitle` 通过现有认证 API 返回公网 HTTP(S) 页面的标题或 null。请求不发送 Cookie 或环境凭据，仅接受 HTML，最多读取 256 KiB、等待五秒并跟随三次重定向。每次连接固定经过验证的公网 IPv4 地址；拒绝私网、自定义端口、内嵌凭据及 IPv6 目标。客户端将标题实体解码为文本。仅由 JavaScript 生成的标题和不可访问页面保留客户端后备标签。
 
 ## 模型体验
 

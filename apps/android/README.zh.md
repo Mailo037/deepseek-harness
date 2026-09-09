@@ -6,13 +6,19 @@ DeepSeek Harness Remote 的 Android App（第 2 阶段）：提供二维码配�
 
 ## 精简客户端约定
 
+顶部栏中的当前 Harness 名称打开已保存服务器的切换器。**Add Harness** 配对另一台服务器，同时保留现有配对。所有已保存 Harness 都保持独立的后台通知通道；切换仅改变可见 GUI。通知先打开其来源 Harness，再打开对应会话。**Disconnect** 仅移除当前选中的本地配对。首次启动会自动导入现有单服务器配对。每个 Harness 都有本地 id、独立凭据和单独更新的 GUI 令牌；主机设备 id 和会话 id 无需全局唯一。
+
+网络中断和可达性检查期间，嵌入的 GUI 保持挂载。即使通知通道使用另一个可达地址，已连接的 GUI 也保留其端点。通知导航等待 GUI 的连接公告；HTTP 探测和 iframe 加载事件都不会消耗待打开的会话目标。
+
+配对使用与重连存储相同的规范化非回环端点。在配对响应前关闭 socket 会使该尝试失败，并继续下一个地址。成功、失败、超时和取消都会释放 socket 处理函数、定时器和取消监听器。端点持久化仅更新端点字段，保留原生通道更新的 GUI 令牌。
+
 App **从不打包 Web GUI**。GUI 由 PC（`dsh --profile web`）提供，并在每次连接时通过全屏 iframe 重新加载——改进 GUI 不需要更新 App。APK 只包含：
 
 1. **配对页面**——扫描二维码（Settings → Remote devices →「生成配对码」）或手动输入服务器 URL 与配对令牌；执行 `pair` 握手，并存储主机返回的设备密钥与 GUI 访问令牌。因此二维码与手动配对以相同方式认证嵌入式 GUI。
 2. **已连接页面**——远程 GUI 的全屏 iframe，配有安静的状态栏、品牌加载器、连接丢失 UI（探测 + 重试按钮 + 10 秒自动重新探测 + 离线横幅）和连接详情弹层。每次 iframe 加载后，App 会通知其信息性 Android 外壳上下文；served GUI 在重连期间保持内容可见，并把实时连接状态报告回父页面。状态栏在 `Remote` 与 `Reconnecting` 之间纵向切换，而服务器 origin 在详情弹层中默认模糊并由 `Show` 控件遮盖。选中 Tailscale 端点时还会触发原生 Android VPN 传输检查，因此慢速加载和无法访问状态会提示用户何时启用 Tailscale。
-3. **通知前台服务**（`DeviceChannelService`）——使用设备密钥认证的持久 WebSocket；为每个主机 `notification` 帧发布通知，在有会话标题时显示该标题，并通过退避机制重连。
+3. **通知前台服务**（`DeviceChannelService`）——为每个已保存 Harness 保持独立认证的 WebSocket；通知显示 Harness 名称和会话消息，每条通道采用自己的退避机制重连。通知 intent 同时标识 Harness 和会话。
 
-本地配对与连接外壳直接导入 Web GUI 的 `ui-theme` base、design-platform 和 shadow/type token 样式表。因此 Android CSS 只负责组合与移动端人体工学：安全区域、页面过渡、主要触摸目标，以及紧凑的 40 px 已连接栏。配色方案、语义颜色、表面层级、边框、字体、阴影、圆角和动效时长都与 Web GUI 使用同一真源。可见标签保持句首字母大写形式。
+本地配对与连接外壳直接导入 Web GUI 的 `ui-theme` base、design-platform 和 shadow/type token 样式表。因此 Android CSS 只负责组合与移动端人体工学：安全区域、页面过渡、主要触摸目标，以及带 44 px 控件的 56 px 已连接栏。顶部栏显示当前 Harness 名称和固定的连接状态标签。切换器采用 Web GUI 的中性选中背景和圆角列表行。配色方案、语义颜色、表面层级、边框、字体、阴影、圆角和动效时长都与 Web GUI 使用同一真源。可见标签保持句首字母大写形式。
 
 ## 目录布局
 
@@ -21,7 +27,8 @@ apps/android/
   src/                 App UI (React + Vite, built into dist/)
     PairingProtocol.ts Wire types + QR payload parsing (mirror of the host package)
     PairingService.ts  In-app pair handshake over WebSocket (reports stage progress)
-    DeviceStorage.ts   Server URL, device secret, and GUI token persistence
+    DeviceStorage.ts   Legacy single-server import and GUI URL helpers
+    HarnessStorage.ts  Independent saved pairings and active Harness selection
     NotificationService.ts  Bridge to the native plugin, including Android VPN state
     AppUpdate.ts       Start the native GitHub Release APK update check
     ShellProtocol.ts    Versioned embedded-GUI connection-state parser
@@ -91,9 +98,13 @@ pnpm dsh:build --apk                      # ... also sync Capacitor and build th
 1. 在 PC 上运行 `dsh --profile web`（如果通过 LAN 访问 GUI，请加入 `--trusted-host <LAN-IP>`）。
 2. 在 GUI 中打开 **Settings → 远程设备 / Remote devices → 生成配对码 / Generate pairing code**。
 3. 在 App 中选择 **Scan QR Code**——App 会按顺序尝试二维码载荷中的端点（先 LAN，再尝试已配置的额外端点），完成配对并进入 GUI。
-4. App 会在存储配对配置后立即打开已认证 GUI。前台服务与 Android 通知权限随后启动；即使任一操作失败，也不会把 App 困在连接页面。主机会把 `turn-error`／`turn-completed` 通知推送给服务。
+4. App 会在存储配对配置后立即打开已认证 GUI。其前台通道与 Android 通知权限随后启动；即使任一操作失败，也不会把 App 困在连接页面。主机会把 `turn-error`／`turn-completed` 通知推送给服务。
 
 手动配对：输入服务器 URL（`192.168.1.5:3080`）和配对卡片中显示的令牌。
+
+## 验证
+
+`pnpm test` 覆盖配对、迁移、令牌隔离、连接页面以及切换到通知所属 Harness。`pnpm build && node tests/browser/multi-harness.mjs` 使用两个模拟远程 GUI 和模拟原生桥接，将构建后的外壳与保存的无障碍快照进行比较。原生编译使用 `pnpm android:build`；`node scripts/run-gradle.mjs testDebugUnitTest` 运行现有发布版本测试。同时运行原生通道、Android 通知点击、Doze 和重启恢复仍需设备测试环境。
 
 ## 已知限制与暂缓工作
 

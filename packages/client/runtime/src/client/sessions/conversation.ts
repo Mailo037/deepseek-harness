@@ -12,7 +12,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import type {
-  RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
+  HistoryTurn, RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PendingInteraction } from './pending.ts'
 import type { ContextProvenanceView, KnownContextForm } from './context-provenance.ts'
@@ -467,6 +467,8 @@ export interface ConversationSnapshot {
   openError: RpcError | null
   hasMore: boolean
   loadingOlder: boolean
+  /** Page-cut completed turns stay folded when their missing prefixes finish loading. */
+  historyTurns?: readonly (HistoryTurn & { readonly loaded: boolean })[]
   promptError: PromptError | null
   /**
    * Whether this session still has an empty log (no user message yet).

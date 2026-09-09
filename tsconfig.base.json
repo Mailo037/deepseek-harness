@@ -159,6 +159,7 @@
       "@deepseek-ai/dsh-client-*/invariant": ["./packages/client/*/src/invariant.ts"],
       "@deepseek-ai/dsh-headless/startup": ["./packages/bundle/headless/src/startup.ts"],
       "@deepseek-ai/dsh-web-app/startup": ["./packages/bundle/web-app/src/startup.ts"],
+      "@deepseek-ai/dsh-web-app/launch-item": ["./packages/bundle/web-app/src/launch-item.ts"],
       "@deepseek-ai/dsh-client-*/client": ["./packages/client/*/src/client"],
        // One wildcard maps every @deepseek-ai/dsh-<name> to its source. Package
       // dir names are unique across groups, so first-on-disk-wins resolution is
@@ -180,6 +181,7 @@
       "@deepseek-ai/dsh-host-webserver": ["./packages/host/webserver/src"],
       "@deepseek-ai/dsh-host-self-update": ["./packages/host/self-update/src"],
       "@deepseek-ai/dsh-tool-rebuild": ["./packages/host/tool-rebuild/src"],
+      "@deepseek-ai/dsh-tool-session-start": ["./packages/host/tool-session-start/src"],
       "@deepseek-ai/dsh-host-frontend-static": ["./packages/host/frontend-static/src"],
       "@deepseek-ai/dsh-host-plugin-inventory": ["./packages/host/plugin-inventory/src"],
       "@deepseek-ai/dsh-host-plugin-inventory/types": ["./packages/host/plugin-inventory/src/types.ts"],
@@ -208,6 +210,7 @@
       "@deepseek-ai/dsh-client-test-runtime": ["./packages/test-support/client-runtime/src"],
       "@deepseek-ai/dsh-client-test-runtime/invariant": ["./packages/test-support/client-runtime/src/invariant.ts"],
       "@deepseek-ai/dsh-client-ui-layout": ["./packages/client/ui-layout/src"],
+      "@deepseek-ai/dsh-client-ui-launch": ["./packages/client/ui-launch/src"],
       "@deepseek-ai/dsh-client-ui-sidebar": ["./packages/client/ui-sidebar/src"],
       "@deepseek-ai/dsh-client-ui-shortcuts": ["./packages/client/ui-shortcuts/src"],
       "@deepseek-ai/dsh-client-ui-brand-official": ["./packages/client/ui-brand-official/src"],

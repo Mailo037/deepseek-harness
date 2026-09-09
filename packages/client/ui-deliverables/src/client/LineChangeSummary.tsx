@@ -1,10 +1,11 @@
 // LineChangeSummary: one composer-adjacent readout of successful applied
-// diffs. It derives all values from the current Conversation timeline and
+// diffs. It reads whole-log file totals from the Session projection and
 // keeps its disclosure state local to the rendered Session scope.
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { BottomSheet, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { NS } from './locales.ts'
 import { basename, summarizeLineChanges } from './turn-deliverables.ts'
 import css from './LineChangeSummary.module.css'
@@ -34,8 +35,13 @@ function FilePath({ path }: { readonly path: string }) {
  * @param props - input-dock owner snapshot and localized copy.
  * @returns Nothing without successful applied diffs, otherwise the summary disclosure.
  */
-export function LineChangeSummary({ session, t }: LineChangeSummaryProps) {
-  const summary = summarizeLineChanges(session.chat.timeline)
+export function LineChangeSummary({ session, useProjection, t }: LineChangeSummaryProps) {
+  const projected = useProjection('sessionStats')
+  // Projection values cross the wire without client-side domain validation;
+  // an already-running Host may not yet publish the per-file breakdown.
+  const summary = projected === undefined || !Array.isArray(projected.fileChanges)
+    ? summarizeLineChanges(session.chat.timeline)
+    : { files: projected.fileChanges, added: projected.linesAdded, removed: projected.linesRemoved }
   const [open, setOpen] = useState(false)
   const [phone, setPhone] = useState(
     () => typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_QUERY).matches,

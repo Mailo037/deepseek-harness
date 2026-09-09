@@ -10,6 +10,8 @@ vi.mock('@capacitor/preferences', () => ({
   },
 }))
 
+const { Preferences } = await import('@capacitor/preferences')
+
 const { loadConfig, persistLastSuccessful, persistAccessToken, saveConfig, guiUrlOf, clearConfig } = await import('../src/DeviceStorage.ts')
 
 /** Seed a legacy pre-Tailscale config: only the single server URL, no endpoints key. */
@@ -92,6 +94,22 @@ describe('persistLastSuccessful', () => {
     await persistLastSuccessful('http://192.168.1.5:3080')
     const config = await loadConfig()
     expect(config?.endpoints).toEqual(['http://192.168.1.5:3080'])
+  })
+
+  it('preserves a token renewed by the native channel during endpoint persistence', async () => {
+    seedLegacy()
+    const originalSet = Preferences.set.bind(Preferences)
+    const spy = vi.spyOn(Preferences, 'set').mockImplementation(async (entry) => {
+      if (entry.key === 'serverUrl') store.set('accessToken', 'native-renewed')
+      await originalSet(entry)
+    })
+    try {
+      await persistLastSuccessful('http://mypc.tailnet.ts.net:3080')
+      expect((await loadConfig())?.accessToken).toBe('native-renewed')
+      expect(spy.mock.calls.map(([entry]) => entry.key)).not.toContain('deviceSecret')
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('is a no-op without a stored config', async () => {

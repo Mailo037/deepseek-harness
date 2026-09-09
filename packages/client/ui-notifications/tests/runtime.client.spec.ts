@@ -11,7 +11,7 @@ import {
 } from '../src/notification-settings.ts'
 import {
   defaultNotificationPresenter, NotificationRuntime, openSessionSafely,
-  type NotificationPresenter,
+  type NotificationPermissionState, type NotificationPresenter, type PermissionFace,
 } from '../src/client/runtime.ts'
 
 function emptyList(): SessionListState {
@@ -71,12 +71,18 @@ function fakeHost(section: NotificationSettings | undefined) {
 async function runtime(
   section: NotificationSettings | undefined = DEFAULT_NOTIFICATION_SETTINGS,
   notify?: NotificationPresenter,
+  permissions?: Partial<PermissionFace>,
 ) {
   const ctx = new Context()
   const list = createSnapshotStore<SessionListState>(emptyList())
   const play = vi.fn()
   const host = fakeHost(section)
-  const service = new NotificationRuntime(ctx, host.host, { list }, play, notify)
+  const face: PermissionFace = {
+    read: () => 'granted',
+    request: () => Promise.resolve('granted'),
+    ...permissions,
+  }
+  const service = new NotificationRuntime(ctx, host.host, { list }, play, notify, face)
   return { ctx, list, play, ...host, service }
 }
 
@@ -146,6 +152,51 @@ describe('NotificationRuntime', () => {
     b.list.set(withRows(row('a', { running: true })))
     b.list.set(withRows(row('a')))
     expect(b.play).toHaveBeenLastCalledWith('bell')
+  })
+
+  it('projects the browser permission and republishes when it moves', async () => {
+    let state: NotificationPermissionState = 'default'
+    const b = await runtime(DEFAULT_NOTIFICATION_SETTINGS, undefined, { read: () => state })
+    expect(b.service.getSnapshot().permission).toBe('default')
+
+    state = 'granted'
+    b.service.refreshPermission()
+    expect(b.service.getSnapshot().permission).toBe('granted')
+
+    // A same-state refresh changes nothing, not even the revision.
+    const revision = b.service.getSnapshot().revision
+    b.service.refreshPermission()
+    expect(b.service.getSnapshot().revision).toBe(revision)
+  })
+
+  it('asks for permission only from the default state and publishes the answer', async () => {
+    let state: NotificationPermissionState = 'default'
+    let requested = 0
+    const b = await runtime(DEFAULT_NOTIFICATION_SETTINGS, undefined, {
+      read: () => state,
+      request: () => {
+        requested += 1
+        state = 'granted'
+        return Promise.resolve(state)
+      },
+    })
+    await b.service.requestPermission()
+    expect(requested).toBe(1)
+    expect(b.service.getSnapshot().permission).toBe('granted')
+
+    // Granted: the browser has nothing left to ask.
+    await b.service.requestPermission()
+    expect(requested).toBe(1)
+  })
+
+  it('keeps the browser state authoritative when the prompt fails', async () => {
+    const state: NotificationPermissionState = 'default'
+    const b = await runtime(DEFAULT_NOTIFICATION_SETTINGS, undefined, {
+      read: () => state,
+      request: () => Promise.reject(new Error('prompt dismissed')),
+    })
+    await b.service.requestPermission()
+    expect(b.service.getSnapshot().permission).toBe('default')
   })
 
   it('notifies each event through the presenter when enabled', async () => {

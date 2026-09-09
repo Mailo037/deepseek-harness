@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-28-tailscale-remote-device.md
-2026-08-28-tailscale-remote-device.md: 446ae711d72ff7e15f0686dab0dcaace66c99875
-2026-08-28-tailscale-remote-device.zh.md: c87be4c9148105b3084e60cff1a6d8c43108d47e
+2026-08-28-tailscale-remote-device.md: fda82caf624b476a362405cd6d12a62fcb9b5194
+2026-08-28-tailscale-remote-device.zh.md: f13b64c3aa4e2c9d08ee37ea5e8139f125161f85

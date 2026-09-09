@@ -25,6 +25,7 @@ export function createNotificationsRowStore(): EngineStoreHandle<NotificationsRo
       doneSound: 'chime',
       attentionSound: 'bell',
       errorSound: 'pulse',
+      permission: 'unsupported',
       revision: -1,
     }),
     actions: {
@@ -34,6 +35,7 @@ export function createNotificationsRowStore(): EngineStoreHandle<NotificationsRo
         d.doneSound = snapshot.doneSound
         d.attentionSound = snapshot.attentionSound
         d.errorSound = snapshot.errorSound
+        d.permission = snapshot.permission
         d.revision = snapshot.revision
       },
     },

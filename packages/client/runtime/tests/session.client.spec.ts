@@ -408,6 +408,20 @@ describe('live event path', () => {
 })
 
 describe('paging', () => {
+  it('retains a page-cut summary after its complete prefix arrives', async () => {
+    const events = plainTurn(0, 1, 'question', 'answer')
+    const headTurn = { turn: 1, startSeq: 0, startTime: 1_000, endTime: 4_000 }
+    const { api, session } = makeSession()
+    api.onHistory = payload => payload.beforeSeq === undefined
+      ? Promise.resolve(ok({ events: entries(events.slice(3)) as never[], hasMore: true, headTurn }))
+      : histResponse(events.slice(0, 3), false)
+    await session.open()
+    expect(session.getSnapshot().historyTurns).toEqual([{ ...headTurn, loaded: false }])
+    await session.loadOlder()
+    expect(session.getSnapshot().historyTurns).toEqual([{ ...headTurn, loaded: true }])
+    expect(session.getSnapshot().nodes.map(node => node.seq)).toEqual([1, 3])
+  })
+
   it('prepends an older page and keeps seq continuity', async () => {
     const older = plainTurn(0, 0, '旧问', '旧答')
     const newer = plainTurn(6, 1, '新问', '新答')
@@ -475,6 +489,22 @@ describe('paging', () => {
     }))
     await Promise.all([first, second])
     expect(api.callsOf('session.history')).toHaveLength(2) // open + one page, not two
+  })
+
+  it('discards an older page from before reconnect', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(6, 1, 'old window', 'old reply'), true)
+    await session.open()
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => gate.promise
+    const pending = session.loadOlder()
+    api.onHistory = () => histResponse(plainTurn(0, 1, 'new window', 'new reply'))
+    await session.resync()
+    gate.resolve(ok({ events: entries(plainTurn(0, 0, 'stale', 'stale')) as never[], hasMore: true }))
+    await pending
+    expect(session.getSnapshot().nodes.map(node => node.seq)).toEqual([1, 3])
+    expect(session.getSnapshot().loadingOlder).toBe(false)
+    expect(session.getSnapshot().hasMore).toBe(false)
   })
 
   it('grows the older page size exponentially and caps it', async () => {

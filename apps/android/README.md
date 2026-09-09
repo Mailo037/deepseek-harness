@@ -9,6 +9,12 @@ Android notifications when a session needs attention.
 
 ## Thin-client contract
 
+The active Harness name in the top bar opens the saved-server switcher. **Add Harness** pairs another server without forgetting existing pairings. All saved Harnesses keep independent background notification channels; switching changes only the visible GUI. A notification opens its originating Harness and then its session. **Disconnect** removes only the currently selected local pairing. The first launch imports an existing single-server pairing automatically. Each Harness has a local id, separate credentials and a separately refreshed GUI token; host device ids and session ids need not be globally unique.
+
+The embedded GUI remains mounted during network loss and reachability checks. A connected GUI keeps its endpoint even when the notification channel uses another reachable address. Notification navigation waits for the GUI's connection announcement; neither an HTTP probe nor the iframe load event consumes a pending chat target.
+
+Pairing uses the same normalized, non-loopback endpoints that it stores for reconnection. Closing a socket before the pairing reply fails that attempt and allows the next address to run. Success, failure, timeout, and cancellation release socket handlers, timers, and abort listeners. Endpoint persistence updates only endpoint fields, preserving GUI tokens renewed by the native channel.
+
 The app **never bundles the web GUI**. The GUI is served by the PC
 (`dsh --profile web`) and loaded fresh in a full-screen iframe on every
 connect — an app update is never needed for GUI improvements. The APK contains
@@ -20,12 +26,12 @@ only:
    returned by the host. QR and manual pairing therefore authenticate the
    embedded GUI identically.
 2. **Connected screen** — full-screen iframe of the remote GUI with a quiet status bar, a branded loader, connection-lost UI (probe + retry button + 10 s auto-reprobe + offline banner), and a connection-details popover. After each iframe load, the app announces its informational Android shell context; the served GUI keeps content visible during reconnects and reports its live connection state back to the parent. The status bar animates vertically between `Remote` and `Reconnecting`, while the server origin starts blurred behind a `Show` control in the details popover. A selected Tailscale endpoint also triggers a native Android VPN-transport check, so slow loading and unreachable states tell the user when to enable Tailscale.
-3. **Notification foreground service** (`DeviceChannelService`) — the persistent WebSocket authenticated with the device secret; posts a notification for every host `notification` frame, showing the session title when available, and reconnects with backoff.
+3. **Notification foreground service** (`DeviceChannelService`) — one independently authenticated WebSocket per saved Harness; posts host notifications with the Harness name and session message, and reconnects each channel with its own backoff. Notification intents identify both the Harness and the session.
 
 The local pairing and connection chrome imports the Web GUI's `ui-theme`
 base, design-platform, and shadow/type token sheets directly. Android CSS
 therefore owns composition and mobile ergonomics only: safe areas, screen
-transitions, primary touch targets, and the compact 40 px connected bar. Color schemes, semantic colors, surface hierarchy, borders, typography, shadows, radii, and motion durations follow the same source of truth as the Web GUI. Visible labels remain in sentence case.
+transitions, primary touch targets, and the 56 px connected bar with 44 px controls. The bar shows the active Harness name and a fixed connection-status label. The switcher uses the Web GUI's neutral selection fill and rounded list rows. Color schemes, semantic colors, surface hierarchy, borders, typography, shadows, radii, and motion durations follow the same source of truth as the Web GUI. Visible labels remain in sentence case.
 
 ## Directory layout
 
@@ -34,7 +40,8 @@ apps/android/
   src/                 App UI (React + Vite, built into dist/)
     PairingProtocol.ts Wire types + QR payload parsing (mirror of the host package)
     PairingService.ts  In-app pair handshake over WebSocket (reports stage progress)
-    DeviceStorage.ts   Server URL, device secret, and GUI token persistence
+    DeviceStorage.ts   Legacy single-server import and GUI URL helpers
+    HarnessStorage.ts  Independent saved pairings and active Harness selection
     NotificationService.ts  Bridge to the native plugin, including Android VPN state
     AppUpdate.ts       Start the native GitHub Release APK update check
     ShellProtocol.ts    Versioned embedded-GUI connection-state parser
@@ -131,12 +138,16 @@ pnpm dsh:build --apk                      # ... also sync Capacitor and build th
    payload in order (LAN first, then any configured extras), pairs, and
    navigates to the GUI.
 4. The app opens the authenticated GUI as soon as the paired config is stored.
-   The foreground service and Android notification permission start afterward;
+   Its foreground channel and Android notification permission start afterward;
    either may fail without trapping the app on the connecting screen. The host
    pushes `turn-error` / `turn-completed` notifications to the service.
 
 Manual pairing: enter the server URL (`192.168.1.5:3080`) and the token shown
 in the pairing card.
+
+## Validation
+
+`pnpm test` covers pairing, migration, token isolation, the connected screen, and switching to a notification's Harness. `pnpm build && node tests/browser/multi-harness.mjs` checks the built shell with two simulated remote GUIs and a simulated native bridge against its saved accessibility snapshot. Native compilation uses `pnpm android:build`; `node scripts/run-gradle.mjs testDebugUnitTest` runs the existing release-version tests. Simultaneous native channels, Android notification taps, Doze, and reboot recovery still require the device test environment.
 
 ## Known Limitations and Deferred Work
 

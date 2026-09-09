@@ -49,14 +49,12 @@ export async function pairWithQrData(
     throw new Error('The QR code lists no server addresses — regenerate the pairing code on the PC.')
   }
 
-  // Build server URLs from the endpoints (a scheme prefix on an endpoint is
-  // kept so tunnel entries can request TLS).
-  const serverUrls = payload.endpoints.map((ep) => {
-    const protocol = ep.includes('://') ? '' : 'http://'
-    return `${protocol}${ep}`
-  })
+  const serverUrls = endpointsOf(payload.endpoints)
+  if (serverUrls.length === 0) {
+    throw new Error('The QR code lists no reachable server addresses; regenerate the pairing code on the PC.')
+  }
   const result = await pairWithEndpoints(payload.token, serverUrls, deviceName, signal, onStage)
-  return { ...result, endpoints: endpointsOf(payload.endpoints) }
+  return { ...result, endpoints: serverUrls }
 }
 
 /**
@@ -73,8 +71,10 @@ export async function pairWithToken(
   signal?: AbortSignal,
   onStage?: PairingStageListener,
 ): Promise<PairingResult> {
-  const result = await pairWithEndpoints(token, [serverUrl], deviceName, signal, onStage)
-  return { ...result, endpoints: [serverUrl] }
+  const endpoints = endpointsOf([serverUrl])
+  if (endpoints.length === 0) throw new Error('Enter a valid server address reachable from this phone.')
+  const result = await pairWithEndpoints(token, endpoints, deviceName, signal, onStage)
+  return { ...result, endpoints }
 }
 
 async function pairWithEndpoints(
@@ -112,19 +112,26 @@ function pairOverWs(
 ): Promise<{ deviceId: string; secret: string; accessToken: string }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl)
-    // Abort unwinds the attempt itself: close alone would produce a clean
-    // close event (wasClean) that no handler rejects, leaving the caller
-    // hanging until the timeout.
-    const cleanup = (): void => {
+    const dispose = (): void => {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', abort)
+      ws.onopen = null
+      ws.onmessage = null
+      ws.onerror = null
+      ws.onclose = null
       ws.close()
-      reject(new Error('Cancelled'))
     }
-    signal?.addEventListener('abort', cleanup, { once: true })
-
-    const timeout = setTimeout(() => {
-      ws.close()
-      reject(new Error('Connection timed out'))
-    }, 10_000)
+    const fail = (message: string): void => {
+      dispose()
+      reject(new Error(message))
+    }
+    const abort = (): void => { fail('Cancelled') }
+    const timeout = setTimeout(() => { fail('Connection timed out') }, 10_000)
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted === true) {
+      abort()
+      return
+    }
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'pair', token, name, platform }))
@@ -138,6 +145,7 @@ function pairOverWs(
       } catch {
         return
       }
+      if (typeof msg !== 'object' || msg === null) return
       const parsed = msg as Partial<PairedMessage | RejectedMessage>
       if (parsed.type === 'paired') {
         const paired = parsed
@@ -150,29 +158,22 @@ function pairOverWs(
         ) {
           return
         }
-        clearTimeout(timeout)
-        ws.close()
+        dispose()
         resolve({
           deviceId: paired.deviceId,
           secret: paired.secret,
           accessToken: paired.accessToken,
         })
       } else if (parsed.type === 'rejected') {
-        clearTimeout(timeout)
-        ws.close()
-        reject(new Error(`Server rejected: ${(parsed as RejectedMessage).reason}`))
+        fail(`Server rejected: ${(parsed as RejectedMessage).reason}`)
       }
       // Ignore other message types during pairing.
     }
 
     ws.onerror = () => {
-      clearTimeout(timeout)
-      reject(new Error('WebSocket connection failed'))
+      fail('WebSocket connection failed')
     }
 
-    ws.onclose = (event) => {
-      clearTimeout(timeout)
-      if (!event.wasClean) reject(new Error('Connection closed unexpectedly'))
-    }
+    ws.onclose = () => { fail('Connection closed before pairing completed') }
   })
 }

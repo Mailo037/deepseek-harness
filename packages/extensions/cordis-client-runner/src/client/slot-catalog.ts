@@ -216,7 +216,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /** Send one prompt into the session as the immediate next turn (ahead of any queued turns); the turn-error retry path. */\n  sendMessage: (text: string) => void\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n  /**\n   * Assistant renderer omits its reasoning blocks — ChatView shows them as a\n   * Think row inside the adjacent tool window instead of inline above the text.\n   */\n  hideAssistantReasoning?: boolean | undefined\n}',
+      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /** Send one prompt into the session as the immediate next turn (ahead of any queued turns); the turn-error retry path. */\n  sendMessage: (text: string) => void\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  /** Cached optional website title lookup for transcript link tokens. */\n  resolveLinkTitle?: ((url: string) => Promise<string | null>) | undefined\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n  /**\n   * Assistant renderer omits its reasoning blocks — ChatView shows them as a\n   * Think row inside the adjacent tool window instead of inline above the text.\n   */\n  hideAssistantReasoning?: boolean | undefined\n}',
     ],
     ownerPropsReferences: [
       'MarkdownFileMentions',
@@ -1376,6 +1376,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-locale LanguageRow id \'language\'',
       'client-ui-agent-preset AgentPresetRow id \'agent-preset\'',
       'client-ui-conversation EnterBehaviorRow id \'composer-enter\'',
+      'client-ui-launch LaunchRow id \'launch\'',
       'client-ui-notifications NotificationsRow id \'notifications\'',
       'client-ui-permission-presets PermissionRow id \'permission\'',
       'client-ui-theme AppearanceRow id \'appearance\'',

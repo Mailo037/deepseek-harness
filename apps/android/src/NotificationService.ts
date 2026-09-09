@@ -10,12 +10,13 @@
  */
 
 import { registerPlugin } from '@capacitor/core'
-import type { DeviceConfig } from './DeviceStorage.ts'
+import type { SavedHarness } from './HarnessStorage.ts'
 import { selectCandidates } from './EndpointSelection.ts'
 import { channelUrlOf } from './PairingProtocol.ts'
 
 /** State of the native device channel, reported by the foreground service. */
 export interface ChannelState {
+  harnessId: string
   connected: boolean
   /** Origin the channel is currently connected to, when connected. */
   serverUrl?: string
@@ -29,22 +30,25 @@ export interface ChannelState {
  * registered below; the app type checks against this structural interface.
  */
 interface DeviceChannelPlugin {
-  start(options: { wsUrls: string[]; secret: string; deviceId: string; deviceName: string }): Promise<void>
-  stop(): Promise<void>
+  start(options: { harnessId: string; name: string; wsUrls: string[]; secret: string; deviceId: string; deviceName: string }): Promise<void>
+  stop(options: { harnessId: string }): Promise<void>
   setNotificationPermission(): Promise<void>
-  getChannelState(): Promise<ChannelState>
+  getChannelState(options: { harnessId: string }): Promise<ChannelState>
   getNetworkState(): Promise<{ vpnActive: boolean }>
-  getLaunchSession(): Promise<{ sessionId?: string }>
+  getLaunchSession(): Promise<Partial<SessionTarget>>
   addListener(eventName: 'channelState', cb: (state: ChannelState) => void): Promise<{ remove: () => void }>
-  addListener(eventName: 'openSession', cb: (data: { sessionId: string }) => void): Promise<{ remove: () => void }>
+  addListener(eventName: 'openSession', cb: (data: SessionTarget) => void): Promise<{ remove: () => void }>
 }
 
 const plugin = registerPlugin<DeviceChannelPlugin>('DeviceChannel')
 
 /** Start the foreground notification channel for a paired device. */
-export async function startNotificationService(config: DeviceConfig): Promise<void> {
+export async function startNotificationService(harness: SavedHarness): Promise<void> {
+  const { config } = harness
   const wsUrls = selectCandidates(config.endpoints, config.serverUrl).map(channelUrlOf)
   await plugin.start({
+    harnessId: harness.id,
+    name: harness.name,
     wsUrls,
     secret: config.deviceSecret,
     deviceId: config.deviceId,
@@ -53,8 +57,8 @@ export async function startNotificationService(config: DeviceConfig): Promise<vo
 }
 
 /** Stop the foreground notification channel (e.g. on disconnect). */
-export async function stopNotificationService(): Promise<void> {
-  await plugin.stop()
+export async function stopNotificationService(harnessId: string): Promise<void> {
+  await plugin.stop({ harnessId })
 }
 
 /** Request notification permission (Android 13+ POST_NOTIFICATIONS). */
@@ -63,8 +67,8 @@ export async function ensureNotificationPermission(): Promise<void> {
 }
 
 /** Read the current native channel state. */
-export async function getChannelState(): Promise<ChannelState> {
-  return plugin.getChannelState()
+export async function getChannelState(harnessId: string): Promise<ChannelState> {
+  return plugin.getChannelState({ harnessId })
 }
 
 /** Whether Android currently exposes an active VPN transport. */
@@ -77,15 +81,21 @@ export function onChannelState(cb: (state: ChannelState) => void): Promise<{ rem
   return plugin.addListener('channelState', cb)
 }
 
-/** Read the pending session id from a launch intent, if any. */
-export async function getLaunchSession(): Promise<string | undefined> {
-  const result = await plugin.getLaunchSession().catch(() => ({ sessionId: undefined }))
-  return result.sessionId
+/** A notification identifies both its Harness and session. */
+export interface SessionTarget {
+  harnessId: string
+  sessionId: string
 }
 
-/** Subscribe to session open requests from notification taps. */
-export function onOpenSession(cb: (sessionId: string) => void): Promise<{ remove: () => void }> {
-  return plugin.addListener('openSession', (data) => {
-    if (data.sessionId) cb(data.sessionId)
-  })
+/** Consume the notification that launched the Android activity. */
+export async function getLaunchSession(): Promise<SessionTarget | undefined> {
+  const result = await plugin.getLaunchSession()
+  return typeof result.harnessId === 'string' && typeof result.sessionId === 'string'
+    ? { harnessId: result.harnessId, sessionId: result.sessionId }
+    : undefined
+}
+
+/** Subscribe to notification taps from every saved Harness. */
+export function onOpenSession(cb: (target: SessionTarget) => void): Promise<{ remove: () => void }> {
+  return plugin.addListener('openSession', cb)
 }

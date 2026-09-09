@@ -30,6 +30,7 @@ import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { LaunchItemBackend } from '@deepseek-ai/dsh-client-ui-launch'
 
 /** Diagnostic prefix for boot errors and profile machinery. */
 const NAME = 'dsh-electron'
@@ -106,6 +107,14 @@ export interface BootWebHostOptions {
    * restart capability as unavailable.
    */
   onRestart?: () => void
+  /**
+   * The desktop surface's launch backend for the launch-at-computer-start
+   * preference (`apps/electron` supplies its Electron login-item face). The
+   * Electron main constructs it — this module stays Electron-free — and the
+   * backend is provided onto the host tree before settlement so the ui-launch
+   * Host half can register the namespace it applies through.
+   */
+  launchItem?: LaunchItemBackend
 }
 
 /** A booted web host owned by the caller: the settled tree and its URL. */
@@ -168,6 +177,12 @@ export async function bootWebHost(options: BootWebHostOptions = {}): Promise<Web
   ]), (hostCtx) => {
     app.current = hostCtx
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, environment)
+    // The desktop surface owns the launch-at-login application: the Electron
+    // entry supplies the login-item backend, the browser settings switch
+    // routes here through the ui-launch Host half.
+    if (options.launchItem !== undefined) {
+      hostCtx.provide('launchSettings', options.launchItem)
+    }
     provideCmdline(hostCtx, {
       args,
       exit: code => options.onExit?.(code),

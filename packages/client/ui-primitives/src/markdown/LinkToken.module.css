@@ -1,0 +1,19 @@
+.token {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  gap: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  line-height: inherit;
+  text-decoration: none;
+}
+.token:hover { text-decoration: underline; text-underline-offset: 3px; }
+.token:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.icon { flex: none; width: 14px; height: 14px; border-radius: 2px; }
+.label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

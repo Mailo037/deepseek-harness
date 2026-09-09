@@ -955,6 +955,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'launchSettings',
+    summary: 'The surface-provided launch backend: register or unregister the app\'s login item.',
+    description: 'The surface-provided launch backend: register or unregister the app\'s login item.',
+    methods: [
+      {
+        signature: 'readonly supported: boolean',
+        description: 'Whether this surface can apply login-item changes at all.',
+        parameters: [],
+      },
+      {
+        signature: 'apply(launchAtLogin: boolean): void',
+        description: 'Apply one preference value. Implementations persist to the OS (registry Run key, LaunchAgent, XDG autostart) — never to the settings document.',
+        parameters: [{ name: 'launchAtLogin', description: 'whether the app should start at computer startup.' }],
+      },
+    ],
+  },
+  {
     key: 'llm',
     summary: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
     description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',

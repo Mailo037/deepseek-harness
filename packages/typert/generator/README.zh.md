@@ -6,6 +6,8 @@ TypeScript 项目分析器和模型驱动的 Typert 生成器。在生成任何�
 
 分析器可以分别使用由 `tsconfig.host.json` 或 `tsconfig.client.json` 初始化的独立 `ts.Program`。直接项目引用确定编译器 face 的成员归属，而包子路径确定 Typert 运行时 face 的贡献：声明 `dsh.client` 的普通单项目包可以同时贡献 Host 与 Client 运行时模型；只有通过 `tsconfig.host.json` 或 `tsconfig.client.json` 显式引用的拆分项目，才会被限制在相应 face。`package.json#exports` 确定所有跨包公开边界，跨 face 的边只能来自源码导入或重新导出。NPM 依赖拥有的类型（包括 `@types` 包中的全局声明）继续以 `external` 引用表示，不会被展开。
 
+双面包的分析从选中面的公开导出开始，而非共享项目中的全部文件。显式导入仍然可达；无关的浏览器声明不会通过项目 include 列表进入 Host 程序。
+
 ## 分析模型
 
 每个 face 包含包导出、Cordis 服务与事件、显式标记的对象与 schema，以及涵盖其可达声明的类型图。类型图保留声明标识、泛型参数及应用、显式继承、条件类型与映射类型、导入属性、abstract 修饰符和源码 JSDoc。服务和 `@typert object` 对外接口仅暴露公共实例成员；构造函数、静态成员与非公共成员均被排除。

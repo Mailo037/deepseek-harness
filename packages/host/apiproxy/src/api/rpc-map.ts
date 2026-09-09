@@ -40,6 +40,7 @@ export interface RpcMethodMap {
   'subagent.history': SubagentsApi['history']
   'subagent.prompt': SubagentsApi['prompt']
   'subagent.interrupt': SubagentsApi['interrupt']
+  'host.linkTitle': HostApi['linkTitle']
   'host.describe': HostApi['describe']
   'host.checkUpdate': HostApi['checkUpdate']
   'host.applyUpdate': HostApi['applyUpdate']

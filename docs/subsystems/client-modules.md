@@ -123,4 +123,21 @@ onGraphChanged(listener: () => void): () => void
 ```
 
 Source: [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)
+
+<a id="ctxlaunchsettings--launchitembackend"></a>
+
+### `ctx.launchSettings` — `LaunchItemBackend`
+
+The surface-provided launch backend: register or unregister the app's login item.
+
+```ts cordis-catalog
+/**
+ * Apply one preference value. Implementations persist to the OS (registry
+ * Run key, LaunchAgent, XDG autostart) — never to the settings document.
+ * @param launchAtLogin - whether the app should start at computer startup.
+ */
+apply(launchAtLogin: boolean): void
+```
+
+Source: [`packages/client/ui-launch/src/index.ts`](../../packages/client/ui-launch/src/index.ts)
 <!-- END GENERATED cordis-surface -->

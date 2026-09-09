@@ -15,7 +15,7 @@ export {}
 /**
  * Whole-log conversation figures, independent of how much history a client
  * has paged in. Counts and wall times all fold from the complete durable log;
- * every field is 0 until its first contributing event lands. Field names
+ * numeric fields start at 0 and the file list starts empty. Field names
  * mirror the client window fold so an assembly without this unit can fall
  * back to it wholesale.
  */
@@ -42,6 +42,8 @@ export interface SessionStatsProjection {
   linesAdded: number
   /** Summed removed lines across applied result-time diffs. */
   linesRemoved: number
+  /** Applied line totals grouped by exact path across the complete log, without diff text. */
+  fileChanges: { path: string; added: number; removed: number }[]
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

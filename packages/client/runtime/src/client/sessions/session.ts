@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  HistoryEntry, IApiClient, MessageId, MuxFrame, PromptContentPart, QueueAction, RpcError,
+  HistoryEntry, HistoryTurn, IApiClient, MessageId, MuxFrame, PromptContentPart, QueueAction, RpcError,
   RpcId, RpcResponse, RpcResult, SessionId, SubagentAddress, ToolEventView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 // Value import from the inline-safe wire layer (not the connection plugin):
@@ -111,6 +111,7 @@ export class Session implements SessionFace {
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
+  private historyTurns: NonNullable<ConversationSnapshot['historyTurns']> = []
   /** Older pages fetched so far; drives exponential page-size growth in {@link loadOlder}. */
   private loadOlderPages = 0
   private pending = new Map<string, PendingInteraction>()
@@ -444,11 +445,13 @@ export class Session implements SessionFace {
   /** Page up: pull one earlier page with the window's first seq as beforeSeq and prepend. */
   async loadOlder(): Promise<void> {
     if (this.openState !== 'open' || !this.hasMore || this.loadingOlder) return
+    const generation = this.openGeneration
     this.loadingOlder = true
     this.notifier.markDirty()
     try {
       const page = this.loadOlderPages
       const { result } = await this.history({ beforeSeq: this.baseSeq, maxMessages: loadOlderPageSize(page) })
+      if (generation !== this.openGeneration) return
       if (!result.ok) return // keep the window as-is; do not overwrite openError (open already succeeded)
       const older = result.value.events
       if (older.length === 0) {
@@ -470,6 +473,7 @@ export class Session implements SessionFace {
       this.views = [...older.map(e => e.view), ...this.views]
       /* v8 ignore next -- the ?? arm needs older[0] undefined, but the empty-page branch above already returned. */
       this.baseSeq = older[0]?.event.seq ?? this.baseSeq
+      this.updateHistoryTurns(result.value.headTurn)
       this.hasMore = result.value.hasMore
       // Grown only on an advanced page; an exhausted history resets so a later
       // re-request (hasMore flipped back on) starts again at the base size.
@@ -478,8 +482,10 @@ export class Session implements SessionFace {
     } catch (error) {
       console.error('[web-runtime] loadOlder failed:', error)
     } finally {
-      this.loadingOlder = false
-      this.notifier.markDirty()
+      if (generation === this.openGeneration) {
+        this.loadingOlder = false
+        this.notifier.markDirty()
+      }
     }
   }
 
@@ -501,6 +507,8 @@ export class Session implements SessionFace {
     this.events = []
     this.views = []
     this.baseSeq = 0
+    this.historyTurns = []
+    this.loadingOlder = false
     // Superseded, not settled: the baseline replay re-sends still-pending requested frames verbatim
     // (same rpcId), re-minting fresh waits; a stale reference's respond() still reaches the host.
     this.pending.clear()
@@ -697,13 +705,13 @@ export class Session implements SessionFace {
         this.openError = result.error
         return
       }
-      this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
+      this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.headTurn)
       // Gap detection: baseline past the window tail and liveBuffer did not cover it -> pull the tail page once more.
       const tailSeq = this.windowTailSeq()
       if (this.subscribedLastSeq !== null && tailSeq !== null && this.subscribedLastSeq > tailSeq) {
         result = (await this.history({ maxMessages: INITIAL_PAGE_MESSAGES })).result
         if (generation !== this.openGeneration) return
-        if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
+        if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.headTurn)
       }
       this.openState = 'open'
     } catch (error) {
@@ -724,10 +732,12 @@ export class Session implements SessionFace {
    *  A carried projections block seeds the value store (higher seq wins, so a stale
    *  baseline cannot overwrite a newer push frame); the window events themselves are
    *  never folded — the host is the only computation site. */
-  private installWindow(entries: HistoryEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
+  private installWindow(entries: HistoryEntry[], hasMore: boolean, projections?: ProjectionsBaseline, headTurn?: HistoryTurn): void {
     this.events = entries.map(e => e.event)
     this.views = entries.map(e => e.view)
     this.baseSeq = this.events[0]?.seq ?? 0
+    this.historyTurns = []
+    this.updateHistoryTurns(headTurn)
     this.hasMore = hasMore
     if (this.events.some(event => event.type === 'turn/start')) this.firstPromptPendingTurn = false
     this.conversation.replaceWindow(entries.map(conversationInput), hasMore)
@@ -788,7 +798,7 @@ export class Session implements SessionFace {
       const { result } = await this.history({ maxMessages: PAGE_MESSAGES })
       // Failure or superseded by a full resync: drop — the resync path rebuilds and clears the buffer itself.
       if (result.ok && generation === this.openGeneration && this.openState === 'open') {
-        this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
+        this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.headTurn)
       }
     } catch (error) {
       console.error('[web-runtime] gap repair failed:', error)
@@ -800,6 +810,12 @@ export class Session implements SessionFace {
   private windowTailSeq(): number | null {
     const tail = this.events[this.events.length - 1]
     return tail === undefined ? null : tail.seq
+  }
+
+  private updateHistoryTurns(headTurn?: HistoryTurn): void {
+    const turns = this.historyTurns.filter(turn => turn.turn !== headTurn?.turn)
+    if (headTurn !== undefined) turns.unshift({ ...headTurn, loaded: false })
+    this.historyTurns = turns.map(turn => ({ ...turn, loaded: this.baseSeq <= turn.startSeq }))
   }
 
   private buildSnapshot(): ConversationSnapshot {
@@ -835,6 +851,7 @@ export class Session implements SessionFace {
       openError: this.openError,
       hasMore: this.hasMore,
       loadingOlder: this.loadingOlder,
+      historyTurns: this.historyTurns,
       promptError: this.promptError,
       blank: this.blankBit,
       lastAgentError: this.lastAgentError,
@@ -853,6 +870,7 @@ export class Session implements SessionFace {
   private async history(payload: { beforeSeq?: number; maxMessages?: number }): Promise<RpcResponse<{
     events: HistoryEntry[]
     hasMore: boolean
+    headTurn?: HistoryTurn
     projections?: ProjectionsBaseline
   }>> {
     let retries = 0

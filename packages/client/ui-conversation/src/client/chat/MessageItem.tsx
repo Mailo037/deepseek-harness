@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 import type {
   ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { JsonBlock, MessageText, StateDot, FileTypeIcon, fileTypeIconKind } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRefreshOutline14, JsonBlock, MessageText, StateDot, FileTypeIcon, fileTypeIconKind } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -146,6 +146,13 @@ function ModelRetryItem({ node, active, t }: {
   return (
     <details className={css.retryRow} data-active={active || undefined}>
       <summary className={css.retrySummary}>
+        {/* Leading refresh glyph fills the ToolCallGroup icon column (so the
+            run's vertical connector line is occluded behind the disc), matching
+            the Think/Context row chrome. The status text stays the row's only
+            accessible content. */}
+        <span className={css.retryLeading} aria-hidden>
+          <IconRefreshOutline14 size={14} />
+        </span>
         <span className={css.retryText} role="status">
           {t('message.retry.status', { label, retry: node.retry, maximum, seconds })}
         </span>
@@ -268,7 +275,9 @@ function TurnMaxTokensItem({ t }: {
  * scan as the composer, minus the lexicon: sent tokens were validated at
  * compose time, so shape alone decorates).
  */
-function projectUserText(text: string, sessionLabels: readonly string[]): ReactNode {
+function projectUserText(
+  text: string, sessionLabels: readonly string[], resolveLinkTitle?: (url: string) => Promise<string | null>,
+): ReactNode {
   const ranges: { start: number; end: number; label: string; kind: 'session' | 'plain' }[] = []
   for (const rawLabel of [...new Set(sessionLabels)].sort((a, b) => b.length - a.length)) {
     const label = `@${rawLabel}`
@@ -296,7 +305,9 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
   for (const range of ranges) {
     if (range.start < cursor) continue
     const { start: tokenStart, end, label, kind } = range
-    if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
+    if (tokenStart > cursor) {
+      parts.push(<MessageText linkTokens resolveLinkTitle={resolveLinkTitle} key={cursor} text={text.slice(cursor, tokenStart)} />)
+    }
     const referenceKind = kind === 'session'
       ? 'session'
       : label.startsWith('@')
@@ -319,19 +330,21 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
             ? <FileTypeIcon kind={fileTypeIconKind(label)} size={16} className={css.refIcon} />
             : <ReferenceIcon kind={referenceKind} size={16} className={css.refIcon} />
         )}
-        {displayLabel}
+        <span className={css.refLabel}>{displayLabel}</span>
       </span>,
     )
     cursor = end
   }
-  if (parts.length === 0) return <MessageText text={text} />
-  if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
+  if (parts.length === 0) return <MessageText linkTokens resolveLinkTitle={resolveLinkTitle} text={text} />
+  if (cursor < text.length) {
+    parts.push(<MessageText linkTokens resolveLinkTitle={resolveLinkTitle} key={cursor} text={text.slice(cursor)} />)
+  }
   return <>{parts}</>
 }
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, renderMessageImages, actions, pending = false, referenceLabels = [], t,
+  content, renderMessageImages, actions, pending = false, referenceLabels = [], resolveLinkTitle, t,
 }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
@@ -341,6 +354,7 @@ function UserStyleBubble({
   pending?: boolean
   /** Exact session mention labels associated by the adjacent recall node. */
   referenceLabels?: readonly string[]
+  resolveLinkTitle?: ((url: string) => Promise<string | null>) | undefined
   t: ChatViewSlotProps['t']
 }): ReactNode {
   const { text, images, rest } = contentParts(content)
@@ -352,7 +366,7 @@ function UserStyleBubble({
         {renderMessageImages({ images, align: 'end' })}
         {showBubble && <div className={css.bubble}>
           <ClampableBubbleBody measureKey={content} t={t}>
-            {projectUserText(text, referenceLabels)}
+            {projectUserText(text, referenceLabels, resolveLinkTitle)}
             {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
           </ClampableBubbleBody>
         </div>}
@@ -398,12 +412,13 @@ export function PendingSteeringBubble({ content, renderMessageImages, t }: {
 
 /** User and admitted-steering keyed Chat renderer. */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
-  node, renderMessageImages, t,
+  node, renderMessageImages, resolveLinkTitle, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
   return (
     <UserStyleBubble
       content={data.content}
+      resolveLinkTitle={resolveLinkTitle}
       renderMessageImages={renderMessageImages}
       {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
       t={t}

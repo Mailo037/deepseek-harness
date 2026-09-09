@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+如果已完成轮次的部分工作位于当前历史页之前，界面会立即显示折叠的耗时行。浏览器插件配置 `historyPrefetchDelayMs`（默认 400 毫秒，非负整数）控制每次自动补载前的延迟；展开耗时行会立即请求下一页。补载保留该行及其展开状态。卸载视图会取消待执行的计时器，读取失败后等待用户重试。
+
 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock（与输入区一同 sticky 的会话统计行）、输入区 dock（队列行加 todo 计划条）、详情壳层，以及按 scope 寻址的 ConversationController。工具展示属于 [`ui-tool`](../ui-tool/README.zh.md)。
 
 会话窗口回放时，ChatView 会在既有 assistant 与用户气泡的几何内，用本地加载行保持 assistant 居左、用户居右的文本记录节奏。预览只播报本地化加载状态，不虚构 Conversation Node 或消息文本，并会在减少运动下移除脉冲动画。历史加载失败时以本地化原因替换消息流，并提供一个通过 scoped conversation 服务重新执行 open 的重试控件。

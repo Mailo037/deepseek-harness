@@ -184,6 +184,7 @@ export class FakeApiClient implements IApiClient {
 
   readonly host: IApiClient['host'] = {
     describe: (payload: unknown) => this.record('host.describe', payload, this.onDescribe(payload)),
+    linkTitle: (payload: unknown) => this.record('host.linkTitle', payload, Promise.resolve(ok({ title: null }))),
     checkUpdate: (payload: unknown) => this.record('host.checkUpdate', payload, Promise.resolve(ok({
       available: false,
       branch: 'master',

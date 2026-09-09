@@ -10,6 +10,8 @@ The Web GUI is loopback-bound by design: `dsh --profile web` refuses `--host 0.0
 
 ## Decision
 
+The Android app assigns a local Harness id to each saved pairing. GUI tokens use separate per-Harness preference keys shared with the native service. One foreground service owns a map of independent channels; all channel mutations run on the main looper, and callbacks from replaced sockets are ignored. Switching the GUI never stops another channel. Notification identity includes the Harness id and session id, so independent hosts may reuse session ids without replacing each other's notifications. Existing single-server storage is imported before the new index is committed.
+
 **A device plane mounts inside the web profile, behind explicit pairing instead of an open port.** `@deepseek-ai/dsh-host-remote` owns four responsibilities:
 
 - **Pairing** — `pairingCreate()` mints a one-time token with a configurable lifetime and returns a QR payload carrying the endpoint list (auto-detected LAN IPv4s plus configured extras). The payload is JSON (`v: 1`), so a future Android client can carry several endpoints and try them in order.
@@ -26,9 +28,15 @@ The browser surface reads and drives the plane through the `device` Remote names
 
 ## Testing
 
+The Android iframe remains mounted across network and probe transitions. A live GUI connection takes precedence over the notification channel's endpoint choice, preventing competing transports from repeatedly navigating the iframe. Pending notification targets wait for a GUI connection announcement instead of document load or HTTP reachability, since those events do not establish that session navigation is available. Android component regressions assert iframe identity across network loss and delayed notification delivery.
+
+Android pairing owns each attempted socket until a reply or terminal event and releases callbacks and timers on settlement. A clean close before a reply is a failed attempt. Endpoint persistence writes only endpoint fields because the native channel independently renews GUI tokens; writing back an earlier full configuration can restore a stale token. Android tests cover clean-close fallback, cancellation, timeout, malformed messages, and token renewal during endpoint persistence.
+
 `packages/host/remote/tests/` covers the plane at four levels: pairing unit tests (one-time consumption, expiry, endpoint building), registry tests over the real storage-domain machinery (memory backend, persistence across reopen), a real HTTP+WebSocket channel suite (pair, reject, reconnect, notify, revoke, broadcast), and a `RemoteGateway` suite mounted on the real `WebServer` (`127.0.0.1:0`) asserting the namespace methods, one-time tokens over the wire, and revoke-kills-socket end to end. The bridge suite emits `session/event` `turn/end` frames and asserts title-based notification text plus the id fallback. The client package carries a component spec (jsdom, mocked `qrcode`) and a browser-plugin spec (registration, locale following, lazy Remote reads).
 
 ## Alternatives considered
+
+**One active background connection.** Rejected because switching the visible GUI would silence the other saved Harnesses. Independent channels share one foreground service while retaining separate credentials, retries and notification targets.
 
 **Serve the channel on a dedicated port outside the webserver.** Rejected: a second listener would need its own TLS/tunnel story and would not inherit the profile's bind configuration; the webserver upgrade registry already owns route lifecycle and teardown.
 

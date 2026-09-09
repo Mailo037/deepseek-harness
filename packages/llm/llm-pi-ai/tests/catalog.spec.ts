@@ -877,6 +877,21 @@ describe('compat switches', () => {
     expect(customBai.get('deepseek-r1')?.compat).toEqual({ supportsDeveloperRole: false })
   })
 
+  it('routes a model the b.ai catalog does not describe to B.AI, not the openrouter template', () => {
+    // `b.ai` is synthesized from openrouter when pi-ai does not ship it, and a
+    // model the b.ai catalog does not list falls back to the provider-level
+    // endpoint. That fallback must stay B.AI's, so a B.AI key never reaches
+    // OpenRouter, which would reject it as an invalid key.
+    const resolved = resolveProfiles({
+      'b.ai': {
+        models: [{ id: 'glm-5.3-flash' }],
+      },
+    })
+    const profile = resolved.get('b.ai')
+    expect(profile?.piProvider.baseUrl).toBe('https://api.b.ai/v1')
+    expect(profile?.piProvider.getModels()[0]?.baseUrl).toBe('https://api.b.ai/v1')
+  })
+
   it('carries an anthropic-only switch onto an anthropic-messages route', () => {
     const models = modelsOf({
       'acme-claude': {

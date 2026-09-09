@@ -167,6 +167,7 @@ describe('createFixtureApi', () => {
         // Session-stats unit composed: no figure accrues on the empty log.
         sessionStats: {
           turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+          filesEdited: 0, linesAdded: 0, linesRemoved: 0, fileChanges: [],
         },
         imageLimits: {
           maxImageBytes: 5 * 1024 * 1024,

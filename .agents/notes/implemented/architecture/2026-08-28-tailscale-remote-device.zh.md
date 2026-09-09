@@ -10,7 +10,7 @@ Android 远程 App 只存储一个服务器 origin。手机在家庭 Wi-Fi 和�
 
 ## 决策
 
-**使用一个纯选择模块持久化多个端点。** App 保存二维码中的完整规范化端点列表，并丢弃 loopback 别名，因为它们在手机上只会指向手机自身；同时保存最近成功的 origin。`EndpointSelection.ts` 通过纯函数 `endpointsOf` 和 `selectCandidates` 统一选择逻辑。GUI 探测与 `NotificationService` 都从这里取得候选顺序，Kotlin service 接收已排序的 `wsUrls`，因此选择规则只有一个实现。优先级为：最近成功 → 存储顺序（LAN → Tailscale → 其他）。GUI 探测成功或 channel 收到 `authed` 后都会写回获胜 origin，使两个平面收敛到同一端点。
+**使用一个纯选择模块持久化多个端点。** App 保存二维码中的完整规范化端点列表，并丢弃 loopback 别名，因为它们在手机上只会指向手机自身；同时保存最近成功的 origin。`EndpointSelection.ts` 通过纯函数 `endpointsOf` 和 `selectCandidates` 统一选择逻辑。GUI 探测与 `NotificationService` 都从这里取得候选顺序，Kotlin service 接收已排序的 `wsUrls`，因此选择规则只有一个实现。优先级为：最近成功 → 存储顺序（LAN → Tailscale → 其他）。GUI 通过 `persistHarnessOrigin` 保存可用 origin；每条原生通道在内存中将成功端点置于首位。已连接 GUI 保留自己的端点，不跟随其他传输。
 
 **在 tailnet 上使用 HTTP，而不是 `tailscale serve`。** `tailscale serve` 代理到 `127.0.0.1`，Harness 会把所有访问视为 loopback，`isLoopbackRequest` 因而绕过 GUI access-token 防护，使 tailnet 成员资格与 GUI 鉴权之间的纵深防御退化为单层。通过加密 tailnet 直接使用 `http://`/`ws://`，可让 `100.x.y.z` 保持非 loopback，防护仍然生效。无需 TLS、证书或 MagicDNS；LAN 本来就需要 `usesCleartextTraffic`。
 
@@ -20,11 +20,11 @@ Android 远程 App 只存储一个服务器 origin。手机在家庭 Wi-Fi 和�
 
 ## 对设计草案的一项有意偏离
 
-`BootReceiver` 草案使用 `SharedPreferences.getStringSet` 读取持久化候选，但 `Set` 会破坏候选顺序，而最近成功优先正依赖该顺序。Channel 参数改为在相同 key（`last_ws_urls`、`last_secret`、`last_device_id`）下保存 JSON 数组字符串；`loadChannelParams` 是 `BootReceiver` 与 sticky restart 共用的唯一读取器。
+通道参数按本地 Harness id 保存为 JSON 对象，其中包含有序 `wsUrls` 数组。`loadChannels` 同时用于开机和 sticky restart。JSON 数组保留候选顺序；`SharedPreferences.getStringSet` 会破坏最近成功优先的顺序。
 
 ## 测试
 
-`apps/android/tests/` 新增无需模拟器的 vitest 单元测试：端点规范化、loopback 过滤、去重、候选排序，以及旧单 URL 配置迁移到 `endpoints` 与最近成功值，同时保留身份字段并验证 `persistLastSuccessful` 的追加语义。`tests/device/` 下的模拟器测试通道未变。Wi-Fi 与移动数据切换、Doze、开机等网络迁移仍属于真机手工矩阵；决定这些迁移的选择逻辑已由单元测试覆盖。
+`apps/android/tests/` 新增无需模拟器的 vitest 单元测试：端点规范化、loopback 过滤、去重、候选排序，以及旧单 URL 配置迁移到 `endpoints` 与最近成功值，同时保留身份字段并验证 `persistLastSuccessful` 的追加语义。Wi-Fi 与移动数据切换、Doze、开机等网络迁移仍属于真机手工矩阵；决定这些迁移的选择逻辑已由单元测试覆盖。
 
 ## 曾考虑的替代方案
 
@@ -42,4 +42,4 @@ Android 远程 App 只存储一个服务器 origin。手机在家庭 Wi-Fi 和�
 
 ## 后果
 
-App 现在会收敛到一份有序端点列表，Wi-Fi 与移动数据切换或退出 Doze 后无需重启 channel，也不会丢失 GUI 连接。接受的代价是：tailnet 上的明文 HTTP/WS 不再叠加 TLS 或证书，而是依赖加密隧道；网络迁移仍是真机手工矩阵，而不是自动化测试。
+每个 Harness 保留自己的有序端点列表和重试状态。Wi-Fi 与移动数据切换或退出 Doze 后无需重新配对即可重试；临时连接中断期间可见 GUI 保持挂载。接受的代价是：tailnet 上的明文 HTTP/WS 不再叠加 TLS 或证书，而是依赖加密隧道；网络迁移仍是真机手工矩阵，而不是自动化测试。

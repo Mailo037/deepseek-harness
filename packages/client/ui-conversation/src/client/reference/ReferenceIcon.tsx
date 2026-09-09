@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react'
 import {
   IconBrowseOutline16, IconFolderClose16, IconSkillOutline16,
+  IconAgentPresetOutline16, IconArchiveOutline20, IconBranchOutline16,
+  IconCodeOutline16, IconDownloadOutline16, IconGoalOutline16, IconLikeOutline16,
+  IconListPenOutline16, IconQuestionOutline14, IconRefreshOutline14,
+  IconSearchOutline16, IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Reference domains with distinct composer and transcript glyphs. */
@@ -9,6 +13,7 @@ export type ReferenceIconKind = 'session' | 'file' | 'folder' | 'skill' | 'comma
 /** Props shared by inline reference glyphs. */
 export interface ReferenceIconProps {
   kind: ReferenceIconKind
+  commandName?: string
   size?: number
   className?: string | undefined
 }
@@ -18,7 +23,7 @@ export interface ReferenceIconProps {
  * @param props - Reference kind, optional size, and optional CSS class.
  * @returns The corresponding current-color SVG glyph.
  */
-export function ReferenceIcon({ kind, size = 16, className }: ReferenceIconProps): ReactNode {
+export function ReferenceIcon({ kind, commandName, size = 16, className }: ReferenceIconProps): ReactNode {
   switch (kind) {
     case 'session':
       return (
@@ -32,18 +37,19 @@ export function ReferenceIcon({ kind, size = 16, className }: ReferenceIconProps
     case 'file': return <IconBrowseOutline16 size={size} className={className} />
     case 'folder': return <IconFolderClose16 size={size} className={className} />
     case 'skill': return <IconSkillOutline16 size={size} className={className} />
-    case 'command':
-      // Terminal-prompt glyph: the command token's domain mark.
-      return (
-        <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path
-            d="M2.5 4L6.5 8L2.5 12M8.5 12.5H13.5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )
+    case 'command': {
+      const icons = {
+        compact: IconRefreshOutline14, export: IconDownloadOutline16,
+        feedback: IconLikeOutline16, goal: IconGoalOutline16,
+        permission: IconSettingsOutline16, plan: IconListPenOutline16,
+        model: IconAgentPresetOutline16, branch: IconBranchOutline16,
+        fork: IconBranchOutline16, search: IconSearchOutline16,
+        web: IconSearchOutline16, archive: IconArchiveOutline20,
+        help: IconQuestionOutline14, info: IconQuestionOutline14,
+      }
+      const name = commandName?.replace(/^\//u, '').trim().toLowerCase() ?? ''
+      const Icon = Object.hasOwn(icons, name) ? icons[name as keyof typeof icons] : IconCodeOutline16
+      return <Icon size={size} className={className} />
+    }
   }
 }

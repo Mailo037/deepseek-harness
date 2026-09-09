@@ -15,6 +15,14 @@ import type { RpcId, RpcRequest, RpcResponse } from './rpc.ts'
 import type { ToolEventView } from './events.ts'
 import type { WorkspaceId } from './workspace.ts'
 
+/** Logged bounds of the completed turn cut by a history page's leading edge. */
+export interface HistoryTurn {
+  readonly turn: number
+  readonly startSeq: number
+  readonly startTime: number
+  readonly endTime: number
+}
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     sessionListMetadata: SessionListMetadata
@@ -302,11 +310,13 @@ export interface SessionsApi {
    * the client needs a fresh baseline already pulls the tail page, and
    * loadOlder (the only beforeSeq path) is the only path that never needs one.
    * A deployment without the registry serves histories without the block.
+   * `headTurn` carries logged bounds when completed work precedes the page,
+   * allowing the reader to fold the partial turn before fetching its prefix.
    * Reading history uses an attached Session or persistence inspection and
    * never resumes or publishes an Agent.
    */
   history(request: RpcRequest<{ sessionId: SessionId; beforeSeq?: number; maxMessages?: number }>):
-  Promise<RpcResponse<{ events: HistoryEntry[]; hasMore: boolean; projections?: SessionProjectionsBlock }>>
+  Promise<RpcResponse<{ events: HistoryEntry[]; hasMore: boolean; headTurn?: HistoryTurn; projections?: SessionProjectionsBlock }>>
 
   /**
    * Reads a fresh advisory model directory for an ordinary session. Provider

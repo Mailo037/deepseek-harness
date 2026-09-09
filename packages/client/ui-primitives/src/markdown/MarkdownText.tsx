@@ -1,3 +1,4 @@
+import { LinkTitleContext } from './LinkToken.tsx'
 /**
  * Untrusted assistant-Markdown renderer over the direct mdast pipeline:
  * `parse.ts` grammars, the incremental streaming parser, and `render.tsx`.
@@ -160,12 +161,15 @@ class StreamingRenderer {
  * relative links, and unsafe protocols are disabled, while absolute HTTP(S)
  * images render directly.
  */
-export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions, linkFavicons = false }: {
+export const MarkdownText = memo(function MarkdownText({
+  text, streaming = false, codeLabels, fileMentions, linkFavicons = false, resolveLinkTitle,
+}: {
   text: string
   streaming?: boolean
   codeLabels?: MarkdownCodeLabels | undefined
   fileMentions?: MarkdownFileMentions | undefined
   /** Prepend the site's favicon beside external anchors (chat surfaces opt in; default off keeps other consumers' DOM unchanged). */
+  resolveLinkTitle?: ((url: string) => Promise<string | null>) | undefined
   linkFavicons?: boolean
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
@@ -181,5 +185,5 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming = false
     }
     return streamRef.current.render(text)
   }, [text, streaming, codeLabels, fileMentions, linkFavicons])
-  return <div className={css.markdown}>{children}</div>
+  return <LinkTitleContext.Provider value={resolveLinkTitle}><div className={css.markdown}>{children}</div></LinkTitleContext.Provider>
 })

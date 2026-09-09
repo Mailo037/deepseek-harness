@@ -2,6 +2,11 @@
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
+  androidHeading: '1. 安装 Android 应用',
+  androidHint: '在手机上下载并安装最新 Android 版本中的 APK，然后打开 Harness Remote。',
+  androidDownload: '下载 Android 应用（GitHub）',
+  pairingRegenerate: '生成新的配对码',
+  devicesRefresh: '刷新设备',
   nav: '远程设备',
   tailscaleHeading: 'Tailscale 远程访问',
   tailscaleHint: '让手机在任何网络（含移动数据）都能连接此电脑。点击后，AI 会在当前会话中执行完整设置：检查本机 Tailscale，把绑定、信任主机与端点写入用户 profile 补丁（实时生效，无需重启），然后给你手机端步骤。',
@@ -11,7 +16,7 @@ export const zh = {
   tailscaleSendError: '设置任务发送失败，请重试。',
   tailscalePrompt: '请为我的手机配置 Tailscale 远程访问，让手机能访问这台电脑的 Web 界面和远程设备通道。请按照 dsh-tailscale-remote-setup 技能执行。检查本机 Tailscale 状态（缺失或未登录时先给我安装与登录步骤），解析 Tailscale 地址与本服务实际端口，把绑定、trusted-host 与 remote 端点三行合并进我的用户 profile 补丁（$DSH_HOME/profiles/web/cordis.patch.yml），保留我的其他行；用 --dump-config 与经 tailnet 地址的请求验证；最后给我手机端步骤：安装 Tailscale、登录同一 tailnet、关闭电池优化、生成配对码。走 tailnet 上的明文 http——绝不用 tailscale serve。',
   pairingHeading: '配对码',
-  pairingHint: '用手机扫描二维码即可连接此电脑。配对码一次性有效，并会在几分钟后过期。',
+  pairingHint: '2. 在 Harness Remote 中扫描此二维码。手机必须能访问此电脑；在外使用时请先设置 Tailscale。配对码仅可使用一次，过期后请生成新码。',
   pairingGenerate: '生成配对码',
   pairingLoading: '正在生成配对码…',
   pairingExpiresAt: '过期时间',
@@ -57,6 +62,11 @@ export type RemoteLocaleKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
+  androidHeading: '1. Install the Android app',
+  androidHint: 'On your phone, download and install the APK from the latest Android release, then open Harness Remote.',
+  androidDownload: 'Download Android app (GitHub)',
+  pairingRegenerate: 'Generate new pairing code',
+  devicesRefresh: 'Refresh devices',
   nav: 'Remote devices',
   tailscaleHeading: 'Tailscale remote access',
   tailscaleHint: 'Reach this PC from any network, including mobile data. Clicking hands the full setup to the AI in your current session: it checks Tailscale on this PC, writes the bind, trusted hosts, and endpoints into your user profile patch (live, no restart), then gives you the phone steps.',
@@ -66,7 +76,7 @@ export const en = {
   tailscaleSendError: 'Sending the setup task failed; try again.',
   tailscalePrompt: "Set up Tailscale remote access so my phone can reach this PC's web GUI and its remote device channel. Follow the dsh-tailscale-remote-setup skill. Check Tailscale on this PC (installation and login steps first if it is missing or logged out), resolve the Tailscale address and this server's live port, merge the bind, trusted-host, and remote endpoint rows into my user profile patch at $DSH_HOME/profiles/web/cordis.patch.yml preserving my other rows, verify with --dump-config and a request over the tailnet address, then give me the phone steps: install Tailscale, join the same tailnet, disable battery optimization, and generate a pairing code. Plain http over the tailnet — never tailscale serve.",
   pairingHeading: 'Pairing code',
-  pairingHint: 'Scan the QR code with your phone to connect to this computer. Each code is one-time and expires after a few minutes.',
+  pairingHint: '2. Scan this code in Harness Remote. Your phone must be able to reach this PC; set up Tailscale first for access away from home. Codes work once; generate a new one after expiry.',
   pairingGenerate: 'Generate pairing code',
   pairingLoading: 'Generating pairing code…',
   pairingExpiresAt: 'Expires at',

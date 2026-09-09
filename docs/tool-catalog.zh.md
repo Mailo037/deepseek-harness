@@ -42,6 +42,7 @@
 | `@deepseek-ai/dsh-tool-subagent-report` | `report` | `ctx.subagents`、`ctx.systemPrompt`、`a live continuable in-process child Agent` | `tool/call`、`tool/result`、`a user-role message in the direct parent session` | - | 按可继续的进程内子级注册，而非全局注册，因此该 schema 仅在这种子级内部可见，并且不受其全局 `toolFilter` 影响。同一份贡献还会安装子级作用域的 `tool:report` 系统提示词 section，本目录不渲染该 section。面向父级的 `send_message` 工具单独安装。 |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`、`job_list`、`job_output` | `ctx.tools`、`ctx.jobs`、`ctx.systemPrompt` | `tool/call`、`tool/result`、`user/message via agent.inject() for background completion notices` | - | 与任务种类无关的后台任务控制器：后台 bash 命令、PTY 发送和 subagent 都通过相同的 3 个工具读取、列出和终止。加载该插件会挂接控制器，从而启用生产方的 `ctx.jobs.start()`。 |
 | `@deepseek-ai/dsh-tool-rebuild` | `rebuild_harness` | `ctx.tools`, `ctx.appLifecycle.restart`, `ctx.selfUpdate`, `ctx.webServer`, `ctx.jobs (optional)` | `tool/call`, `tool/result` | - | 仅用于 Web 的宿主平面生命周期控制：调用会停止调用者正在运行的后台任务，将它们记录在日志结果中，并通过独立的自更新助手安排轮次结束后的重新构建和重启（`pull: false`）。缺少重启能力、`ctx.selfUpdate` 或 Web 服务器的部署会在调用时失败，而不是加载时失败。 |
+| `@deepseek-ai/dsh-tool-session-start` | `create_session` | `ctx.tools`, `ctx.apiProxy`, `ctx.approval`, `ctx.workspaceRegistry (optional)`, `ctx.agentPresets (optional)`, `a top-level calling Agent` | `tool/call`, `tool/result`, `session/created on the host (the new chat)` | - | 仅用于 Web 的宿主平面聊天生命周期控制：调用从调用会话推导目标（其登记的工作区，否则其 cwd，并沿用其 preset），在创建之前先走审批环节，并通过网关的 `session.create` 路径创建，浏览器因此通过 `host/session-added` 得知新聊天。子代理调用者、缺失的审批服务或任何非放行结果都会在不创建任何内容的情况下失败。shipped 的 web-app bundle 挂载它；其他 profile 自行组合该行。 |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `followup_task`、`interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
@@ -1752,6 +1753,25 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 来源： [`packages/host/tool-rebuild/src/index.ts`](../packages/host/tool-rebuild/src/index.ts)
 
 仅用于 Web 的宿主平面生命周期控制：调用会停止调用者正在运行的后台任务，将它们记录在日志结果中，并通过独立的自更新助手安排轮次结束后的重新构建和重启（`pull: false`）。缺少重启能力、`ctx.selfUpdate` 或 Web 服务器的部署会在调用时失败，而不是加载时失败。
+
+<a id="deepseek-aidsh-tool-session-start"></a>
+
+## `@deepseek-ai/dsh-tool-session-start`
+
+### `create_session`
+
+Start a new chat (session) on this host, inside your own chat's workspace. Call this ONLY when the user explicitly asks for a new chat or a separate conversation — never to work around a long context, and never speculatively. The new chat starts empty and appears in the user's sidebar; the user must confirm the creation through the approval prompt before anything is created. The tool does not switch the user to the new chat and does not carry this conversation's history over. For task delegation use the subagent tools instead; this tool only opens an empty chat for the user.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源： [`packages/host/tool-session-start/src/index.ts`](../packages/host/tool-session-start/src/index.ts)
+
+仅用于 Web 的宿主平面聊天生命周期控制：调用从调用会话推导目标（其登记的工作区，否则其 cwd，并沿用其 preset），在创建之前先走审批环节，并通过网关的 `session.create` 路径创建，浏览器因此通过 `host/session-added` 得知新聊天。子代理调用者、缺失的审批服务或任何非放行结果都会在不创建任何内容的情况下失败。shipped 的 web-app bundle 挂载它；其他 profile 自行组合该行。
 
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>

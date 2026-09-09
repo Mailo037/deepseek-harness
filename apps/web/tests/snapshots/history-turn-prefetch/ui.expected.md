@@ -1,0 +1,35 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "History prefetch" [disabled]
+  - button "Session actions for History prefetch":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Original prompt 7/25 {{clock}}
+- button "Copy":
+  - img
+- button "Ran for {{duration}}":
+  - text: Ran for {{duration}}
+  - img
+- paragraph: Final answer
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: 7/25 {{clock}} Ran for {{duration}}
+- textbox "Message the agent"
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Start voice input":
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 60 steps LLM {{duration}}

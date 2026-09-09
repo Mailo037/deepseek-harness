@@ -739,6 +739,46 @@ describe('ChatView', () => {
     expect(view.getByText('done')).toBeTruthy()
   })
 
+  it('shows a cut turn immediately and preloads after the reading pause', async () => {
+    vi.useFakeTimers()
+    const historyTurn = { turn: 1, startSeq: 0, startTime: 1_000, endTime: 4_000, loaded: false }
+    const h = makeHarness({
+      nodes: [settledTool(10, 'tail', 1), assistant(12, 'done', 1)],
+      turnEnds: new Map([[1, 13]]),
+      historyTurns: [historyTurn], hasMore: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const fold = view.getByRole('button', { name: '用时 3秒' })
+    expect(fold.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-tail')).toBeNull()
+    expect(h.loadOlder).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(399) })
+    expect(h.loadOlder).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(h.loadOlder).toHaveBeenCalledTimes(1)
+    fireEvent.click(fold)
+    expect(h.loadOlder).toHaveBeenCalledTimes(2)
+    act(() => { h.set({ historyTurns: [{ ...historyTurn, loaded: true }], hasMore: false }) })
+    expect(view.getByRole('button', { name: '用时 3秒' })).toBe(fold)
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(h.loadOlder).toHaveBeenCalledTimes(2)
+  })
+
+  it('prioritizes an opened cut turn and cancels delayed work on unmount', async () => {
+    vi.useFakeTimers()
+    const h = makeHarness({
+      nodes: [assistant(12, 'done', 1)], turnEnds: new Map([[1, 13]]), hasMore: true,
+      historyTurns: [{ turn: 1, startSeq: 0, startTime: 1_000, endTime: 4_000, loaded: false }],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(view.getByRole('button', { name: '用时 3秒' }))
+    expect(h.loadOlder).toHaveBeenCalledTimes(1)
+    view.unmount()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(h.loadOlder).toHaveBeenCalledTimes(1)
+  })
+
   it('renders ONE duration fold when a session-scoped row splits a folded turn', () => {
     // A mid-turn admitted steer carries no turn affinity; it splits the
     // turn's nodes into two segments without ending the turn. The fold

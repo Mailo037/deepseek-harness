@@ -16,7 +16,7 @@
  * may add node types this renderer has no mapping for.
  */
 
-import { Fragment, createElement, useState } from 'react'
+import { Fragment, createElement } from 'react'
 import type { Key, ReactNode } from 'react'
 import clsx from 'clsx'
 import type * as Md from 'mdast'
@@ -26,7 +26,7 @@ import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import { FileTypeIcon, fileTypeIconKind } from '../FileTypeIcon.tsx'
-import { IconLinkOutline16 } from '../icons/index.tsx'
+import { LinkToken } from './LinkToken.tsx'
 import css from './MarkdownText.module.css'
 
 /** Copy-button labels forwarded to fence CodeBlocks (this package is cordis-free, so copy arrives via props). */
@@ -250,7 +250,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
       // authored text, not a parsed destination, so no normalizeUri: port,
       // path, and query render unchanged.
       const href = inlineCodeHttpUrl(value)
-      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link')}</code>
+      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link', context.linkFavicons === true)}</code>
       const cleanValue = value.replace(/^[#@]\s*/u, '')
       // A token the owner's file-mention vocabulary recognizes opens that
       // file; the resolver, not this renderer, decides what names a file.
@@ -484,34 +484,6 @@ function renderTableRow(
   return <tr key={key}>{cells}</tr>
 }
 
-/**
- * One external link's favicon: the site's own `/favicon.ico`, falling back to
- * the generic link glyph when it fails to load (many sites answer 404). The
- * request carries no referrer, matching the renderer's remote-image policy.
- */
-function LinkFavicon({ href }: { href: string }) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading')
-  const origin = new URL(href).origin
-  return (
-    <>
-      {status !== 'failed' && (
-        <img
-          className={css.linkIcon}
-          src={`${origin}/favicon.ico`}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          onLoad={() => { setStatus('loaded') }}
-          onError={() => { setStatus('failed') }}
-          style={status === 'loaded' ? undefined : { display: 'none' }}
-        />
-      )}
-      {status !== 'loaded' && <IconLinkOutline16 size={14} className={css.linkIcon} />}
-    </>
-  )
-}
-
 /** Anchor over an already-authored href; `favicon` decorates an external anchor with the site glyph. */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, favicon = false): ReactNode {
   const safeHref = sanitizeUrl(href)
@@ -534,12 +506,7 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key, favicon =
       </a>
     )
   }
-  return (
-    <a key={key} href={safeHref} target="_blank" rel="noopener noreferrer" className={css.linkWithIcon}>
-      <LinkFavicon href={safeHref} />
-      {children}
-    </a>
-  )
+  return <LinkToken key={key} href={safeHref}>{children}</LinkToken>
 }
 
 /** Anchor over a parsed markdown destination, which hast normalized before the allowlist saw it. */

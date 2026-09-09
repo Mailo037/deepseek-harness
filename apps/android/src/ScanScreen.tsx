@@ -6,7 +6,7 @@
  * static "Connecting…" text.
  */
 
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { BarcodeScanner } from 'capacitor-barcode-scanner'
 import {
   pairWithQrData,
@@ -16,13 +16,13 @@ import {
   type PairingStageListener,
 } from './PairingService.ts'
 import { parsePairingPayload } from './PairingProtocol.ts'
-import { normalizeServerUrl, saveConfig, type DeviceConfig } from './DeviceStorage.ts'
+import { normalizeServerUrl, type DeviceConfig } from './DeviceStorage.ts'
 import { ensureNotificationPermission } from './NotificationService.ts'
 import { ConnectingScreen } from './ConnectingScreen.tsx'
 import { AlertIcon, LogoMark, QrIcon } from './components/Brand.tsx'
 
 interface PairingScreenProps {
-  onPaired: (config: DeviceConfig) => void
+  onPaired: (config: DeviceConfig) => Promise<void>
 }
 
 /** Prefix the endpoint loop uses for its aggregated failure message. */
@@ -49,6 +49,7 @@ export function PairingScreen({ onPaired }: PairingScreenProps): ReactNode {
   const [manualToken, setManualToken] = useState('')
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => { abortRef.current?.abort() }, [])
 
   const onStage: PairingStageListener = (stage) => {
     setPairing(previous => (previous === null ? previous : { stage }))
@@ -65,8 +66,7 @@ export function PairingScreen({ onPaired }: PairingScreenProps): ReactNode {
     }
     setPairing({ stage: { kind: 'setup' } })
     if (signal.aborted) return
-    await saveConfig(config)
-    onPaired(config)
+    await onPaired(config)
     // Notifications enhance a connected session but do not establish it.
     // ConnectedScreen starts the service after this route change; the grant
     // request also runs without trapping the UI on "Connecting".

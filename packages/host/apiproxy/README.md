@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+Ordinary and addressed history pages optionally carry `headTurn` when a completed turn has work before the first returned event. Its `turn`, `startSeq`, `startTime`, and `endTime` come from the same session cut as the page. The metadata does not insert events outside the contiguous page or activate an Agent; running turns and pages without omitted work carry no summary.
+
 The API gateway shared by every client consists of the TypeScript API contract (`src/api/`, zero Node dependencies, importable from the browser), the fetch carrier pair (`src/fetch/`: `toFetchHandler` on the host side, `AbstractApiClient` plus platform subclasses on the client side), and the host-side implementation (`src/api-proxy.ts`: `createApiProxy` plus the default-exported `ApiProxyService` gateway plugin — config `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?}`, provides `ctx.apiProxy`). This package registers no routes; carriers such as HTTP wrap `ctx.apiProxy` themselves. The shipped Web composition lives in [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml), while its default Agent model selection belongs to [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.md) in the base bundle.
 
 ## The shared Agent default (`agent-default-model` Settings section)
@@ -67,6 +69,10 @@ The `settings.*`, `credentials.*`, and `llm.*` domains are the configuration-pag
 ## Carrier layer (`/client` + root)
 
 `AbstractApiClient` holds every protocol invariant — rpcId minting, envelope wrap/unwrap, zod parsing, SSE frame decoding, unary timeout, microtask-batched envelope observation (`subscribeEnvelopes`) — while platform subclasses supply only the `doFetch` transport aspect. Browser-side rpcIds use `crypto.getRandomValues()`, so a plain-HTTP non-loopback origin does not depend on the secure-context-only `crypto.randomUUID()` method; a runtime without Web Crypto fails before dispatch instead of weakening correlation entropy. `InProcessApiClient` over `toFetchHandler(api)` remains the isomorphic point for callers and carrier tests that need the full wire serialization/validation path without a network. Product `dsh --profile headless` is a direct core entry point and does not mount this package.
+
+## Website title previews
+
+`host.linkTitle` returns a public HTTP(S) page title or null through the existing authenticated API carrier. Requests send no cookies or ambient credentials, accept HTML only, stop after 256 KiB or five seconds, and follow at most three redirects. Each connection pins a validated public IPv4 address; private networks, custom ports, embedded credentials and IPv6 targets are refused. Client rendering decodes title entities as text. JavaScript-only titles and inaccessible pages retain the client fallback label.
 
 ## Model Experience
 

@@ -1,3 +1,4 @@
+import { resolveLinkTitle } from './link-title.ts'
 /**
  * Host-side ApiProxy implementation. Signature discipline: unary takes the
  * narrow RpcRequest<P> and echoes request.rpcId on the RpcResponse<T>.
@@ -9,6 +10,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
+import { historyHeadTurn } from './history-turn.ts'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
@@ -892,9 +894,11 @@ function historyPage(
   beforeSeq: number | undefined,
   maxMessages: number | undefined,
   scope?: ScopeKey,
-): { events: HistoryEntry[]; hasMore: boolean } {
+): { events: HistoryEntry[]; hasMore: boolean; headTurn?: import('./api/sessions.ts').HistoryTurn } {
   const page = paginate(events, beforeSeq, maxMessages ?? DEFAULT_MAX_MESSAGES)
+  const headTurn = historyHeadTurn(events, page.events[0]?.seq)
   return {
+    ...headTurn === undefined ? {} : { headTurn },
     events: page.events.map((event) => {
       const view = viewFor(ctx, event, callId => backscanArgs(page.events, callId), scope)
       return { event, ...view === undefined ? {} : { view } }
@@ -2484,8 +2488,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           const cut = historyCutOf(source, beforeSeq === undefined)
           const page = historyPage(ctx, cut.events, beforeSeq, maxMessages, scope)
           return ok(request, {
-            events: page.events,
-            hasMore: page.hasMore,
+            ...page,
             ...cut.projections === undefined ? {} : { projections: cut.projections },
           })
         } catch (error: unknown) {
@@ -3340,6 +3343,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     host: {
+      async linkTitle(request, signal) {
+        return ok(request, { title: await resolveLinkTitle(request.payload.url, signal) })
+      },
       describe(request) {
         const selection = defaults.defaultModelSelection()
         // The git identity is an optional capability: a built installation

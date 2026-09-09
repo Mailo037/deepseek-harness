@@ -328,8 +328,29 @@ describe('LineChangeSummary', () => {
     const session = {
       chat: { timeline: { turnOrder: [1], turns: new Map([[1, turnLocation(1, data)]]) } },
     }
-    return { session } as LineChangeSummaryProps
+    return { session, useProjection: () => undefined } as LineChangeSummaryProps
   }
+
+  it('shows whole-session files even when their turns are outside the loaded history', () => {
+    const input = props({ produced: [], lineChanges: [] })
+    const projected = { fileChanges: [{ path: 'older.ts', added: 7, removed: 2 }], linesAdded: 7, linesRemoved: 2 }
+    const view = render(<LineChangeSummary {...input} useProjection={() => projected} t={t} />)
+    fireEvent.click(view.getByRole('button', { name: '1 files changed, +7 lines and -2 lines' }))
+    expect(view.getByText('older.ts')).toBeTruthy()
+    const updated = { fileChanges: [{ path: 'older.ts', added: 9, removed: 3 }], linesAdded: 9, linesRemoved: 3 }
+    view.rerender(<LineChangeSummary {...input} useProjection={() => updated} t={t} />)
+    expect(view.getByRole('button', { name: '1 files changed, +9 lines and -3 lines' })).toBeTruthy()
+  })
+
+  it('keeps the dock usable when a received projection lacks its file breakdown', () => {
+    const input = props({ produced: [], lineChanges: [{ seq: 2, path: 'loaded.ts', added: 3, removed: 1 }] })
+    const incomplete = JSON.parse('{"linesAdded":20,"linesRemoved":4}') as import('@deepseek-ai/dsh-session-stats').SessionStatsProjection
+    const view = render(<LineChangeSummary {...input} useProjection={() => incomplete} t={t} />)
+    expect(view.getByRole('button', { name: '1 files changed, +3 lines and -1 lines' })).toBeTruthy()
+    const complete = { fileChanges: [{ path: 'all.ts', added: 20, removed: 4 }], linesAdded: 20, linesRemoved: 4 }
+    view.rerender(<LineChangeSummary {...input} useProjection={() => complete} t={t} />)
+    expect(view.getByRole('button', { name: '1 files changed, +20 lines and -4 lines' })).toBeTruthy()
+  })
 
   it('centers a clickable total above the composer and opens the per-file breakdown', () => {
     const view = render(

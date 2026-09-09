@@ -19,6 +19,8 @@ import { ReasoningRow } from './ReasoningRow.tsx'
 import css from './AssistantMarkdown.module.css'
 
 export interface AssistantMarkdownProps {
+  /** Optional title resolver supplied by the conversation owner. */
+  resolveLinkTitle?: ((url: string) => Promise<string | null>) | undefined
   blocks: readonly AssistantBlock[]
   streaming: boolean
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
@@ -38,7 +40,7 @@ export interface AssistantMarkdownProps {
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, includeReasoning = true, renderMessageImages, mentions, t,
+  blocks, streaming, interrupted, includeReasoning = true, renderMessageImages, mentions, resolveLinkTitle, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -65,6 +67,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             streaming={streaming}
             codeLabels={codeLabels}
             fileMentions={mentions}
+            resolveLinkTitle={resolveLinkTitle}
             linkFavicons
           />,
         )

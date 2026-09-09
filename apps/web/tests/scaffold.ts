@@ -495,6 +495,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
       { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
     ] },
+    // The launch-at-login backend's provide is Windows-only; the goldens must
+    // stay platform-neutral, so this lane never composes the backend. The
+    // ui-launch row stays mounted and exercises its renders-nothing state,
+    // which is exactly the Linux golden behavior, on every host.
+    { id: 'web-launch-item', disabled: true },
     ...options.agentPresets === undefined
       ? []
       // Never the derived harness-home root: a developer's own presets must not

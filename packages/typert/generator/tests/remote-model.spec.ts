@@ -378,7 +378,14 @@ export interface RemainingSchema {
       files: [],
       references: [{ path: './packages/remote-fixture' }],
     }, null, 2)}\n`)
-    writeFileSync(join(root, 'packages/remote-fixture/src/client.ts'), `/** @typert schema */
+    writeFileSync(join(root, 'packages/remote-fixture/src/client.ts'), `import type { TypertContext } from '@deepseek-ai/dsh-typert-protocol'
+import type { AgentId } from '@fixture/domain'
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertContextMap {
+    agent: TypertContext<AgentId>
+  }
+}
+/** @typert schema */
 export interface ClientMarker {
   readonly ready: boolean
 }

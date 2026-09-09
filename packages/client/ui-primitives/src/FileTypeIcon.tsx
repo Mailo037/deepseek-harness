@@ -4,10 +4,10 @@
  * current-color SVG. Pure presentation — no runtime state.
  */
 import type { ReactNode } from 'react'
-import { IconBrowseOutline16, IconCodeOutline16 } from './icons/index.tsx'
+import { IconBrowseOutline16, IconCodeOutline16, IconSettingsOutline16 } from './icons/index.tsx'
 
 /** File-token glyph domains: format badges plus the generic fallbacks. */
-export type FileTypeIconKind = 'file' | 'image' | 'code' | 'js' | 'ts' | 'py'
+export type FileTypeIconKind = 'file' | 'image' | 'code' | 'js' | 'ts' | 'py' | 'pdf' | 'config'
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'])
 const JS_EXTENSIONS = new Set(['js', 'mjs', 'cjs', 'jsx'])
@@ -25,11 +25,14 @@ const CODE_EXTENSIONS = new Set([
  * @returns The glyph kind the file token renders.
  */
 export function fileTypeIconKind(path: string): FileTypeIconKind {
-  const name = path.split(/[\\/]/u).pop() ?? path
+  const name = (path.split(/[?#]/u)[0] ?? path).split(/[\\/]/u).pop()?.replace(/^@?"|"$/gu, '').toLowerCase() ?? path
+  if (/^(?:\.env(?:\..+)?|\.[\w-]*rc|dockerfile|makefile)$/u.test(name)) return 'config'
   const dot = name.lastIndexOf('.')
   if (dot <= 0 || dot === name.length - 1) return 'file'
   // Quoted display forms (`@"a/x.png"`) keep their closing quote here.
   const ext = name.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]+$/u, '')
+  if (ext === 'pdf') return 'pdf'
+  if (['json', 'jsonc', 'json5', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'config', 'env', 'properties'].includes(ext)) return 'config'
   if (IMAGE_EXTENSIONS.has(ext)) return 'image'
   if (ext === 'py') return 'py'
   if (TS_EXTENSIONS.has(ext)) return 'ts'
@@ -70,6 +73,8 @@ export function FileTypeIcon({ kind, size = 16, className }: {
 }): ReactNode {
   switch (kind) {
     case 'file': return <IconBrowseOutline16 size={size} className={className} />
+    case 'pdf': return badge('PDF', size, className)
+    case 'config': return <IconSettingsOutline16 size={size} className={className} />
     case 'code': return <IconCodeOutline16 size={size} className={className} />
     case 'image':
       return (

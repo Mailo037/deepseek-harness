@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-android",
   "description": "DeepSeek Harness Remote — Android thin client: QR pairing, WebView of the PC-served GUI, and a foreground WebSocket notification service",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -9,6 +9,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:browser": "pnpm build && node tests/browser/multi-harness.mjs",
     "cap:init": "cap init",
     "cap:sync": "cap sync android && node scripts/sync-native.mjs",
     "cap:open": "cap open android",
@@ -27,9 +28,10 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
-    "@vitejs/plugin-react": "^4.3.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.61.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.8.0",
