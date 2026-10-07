@@ -51,7 +51,7 @@ jobs:
           cd android && ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: harness-remote-apk
           path: apps/android/android/app/build/outputs/apk/debug/*.apk
