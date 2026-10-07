@@ -48,7 +48,7 @@ jobs:
         working-directory: apps/electron
         run: node scripts/smoke-launch.mjs --packaged
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: electron-windows-${{ github.sha }}
           path: apps/electron/release/*
